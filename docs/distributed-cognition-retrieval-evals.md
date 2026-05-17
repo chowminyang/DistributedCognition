@@ -8,6 +8,20 @@ Use these lightweight checks after changing context indexing, Mnemon promotion, 
 2. Mount selected read-only context folders under `/workspace/extra/context-*`.
 3. Run `distributed_cognition_build_context_index`.
 4. Run `distributed_cognition_health_check`.
+5. From the Mac host, run:
+
+```bash
+pnpm run dc:retrieval-eval -- --root "<local Distributed-Cognition folder>"
+```
+
+You can also set `DC_SECOND_BRAIN_ROOT` on the Mac host.
+
+The script writes:
+
+```text
+project-wikis/retrieval-eval-report.md
+.dc-index/retrieval-eval-report.json
+```
 
 ## Golden Questions
 

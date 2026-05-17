@@ -41,7 +41,7 @@ But the most important technical layer is Mnemon.
 
 Mnemon is not there to remember every single thing I say. That would just create a larger mess.
 
-Its job is to help decide what is important and what is less important.
+Its job is to help decide what is important and what is less important. In practice, it is the layer that distinguishes keys and pivots from noise.
 
 For me, the important things are:
 
@@ -57,6 +57,13 @@ For me, the important things are:
 The less important things are still allowed to exist, but they stay closer to the raw archive: passing context, one-off phrasing, temporary uncertainty, conversational clutter, and details that do not need to shape future reasoning.
 
 That distinction matters. A second brain should not be a landfill. It should know the difference between a transcript, a note, a durable memory, and a pivot.
+
+The full pipeline is roughly:
+
+1. Raw sources: voice notes, quick messages, meeting reflections, web clips, drafts.
+2. Extraction: structured Markdown plus Mnemon memories for the durable parts.
+3. Synthesis: Obsidian-readable wiki pages, current project maps, decision logs, open questions, deadline watch.
+4. Delegation: local Codex agents receive the work that needs research, writing, building, testing, or document creation.
 
 This matters because a lot of knowledge work fails in the gap between reflection and concretisation.
 
@@ -85,3 +92,5 @@ A second brain connected to an expandable team of brains and hands.
 The part I am most interested in is not automation for its own sake. It is whether we can design systems that help us think better, remember more honestly, delegate more clearly, and remain more responsible for the work that matters.
 
 Diagram below is the public version. It deliberately removes private details, project names, paths, and account information, but shows the basic shape of the system.
+
+Suggested image: `docs/distributed-cognition-public-architecture.png`

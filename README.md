@@ -4,16 +4,53 @@ DistributedCognition is a local-first, WhatsApp-based reflective capture and pro
 
 It is designed as a second mind for capturing voice notes, reflections, decisions, open questions, and project context, then turning the high-signal parts into structured Markdown, curated Mnemon memory, and local Codex handoffs. The default architecture keeps storage on the local computer, mounts only explicitly selected folders into Docker, and routes larger work to local agents rather than giving the WhatsApp-facing assistant broad host access.
 
+![DistributedCognition public architecture](docs/distributed-cognition-public-architecture.png)
+
 Key additions in this fork:
 
 - WhatsApp/Baileys private-mode allowlist and safe outbound sending.
 - OpenAI/Codex provider path with lightweight model routing.
-- Distributed Cognition note capture, audio transcription, context indexing, Mnemon promotion, project wiki promotion, and deadline-watch tools.
+- Distributed Cognition note capture, audio transcription, context indexing, Mnemon promotion, project wiki promotion, deadline-watch tools, and an Obsidian-friendly dashboard.
 - Host-side Codex/action bridges for local project work, web research, Word documents, and PowerPoint generation.
+- Optional launchd jobs for periodically running the local bridges on macOS.
 - Public-web search/read tools with private-network and sensitive-content guards.
+- Lightweight retrieval eval reports for checking what the Dropbox-backed context index can and should surface.
 - Documentation for local Dropbox-style mounts and future Raspberry Pi deployment.
 
-See [docs/distributed-cognition.md](docs/distributed-cognition.md) for the Distributed Cognition setup and safety model.
+Useful Distributed Cognition docs:
+
+- [Setup and safety model](docs/distributed-cognition.md)
+- [Synthetic flow demo](docs/distributed-cognition-flow-demo.md)
+- [Retrieval eval checklist](docs/distributed-cognition-retrieval-evals.md)
+- [Public LinkedIn post draft](docs/linkedin-distributed-cognition-post.md)
+
+## Distributed Cognition Commissioning
+
+The intended live loop is:
+
+```text
+private WhatsApp text or voice note
+  -> raw Markdown capture
+  -> processed reflection / decision / note
+  -> selective Mnemon durable-memory upgrade
+  -> project wiki, deadline, and open-question updates
+  -> optional local Codex handoff
+  -> Codex desktop/app-visible local work
+```
+
+For host-side setup after configuring the selected second-brain folder:
+
+```bash
+pnpm run dc:ensure-docker-access -- --second-brain-root "<local Distributed-Cognition folder>"
+pnpm run dc:dashboard -- --root "<local Distributed-Cognition folder>"
+pnpm run dc:retrieval-eval -- --root "<local Distributed-Cognition folder>"
+pnpm run dc:codex-bridge -- process
+pnpm run dc:codex-bridge -- process --execute
+pnpm run dc:action-bridge -- process
+pnpm run dc:action-bridge -- process --execute
+```
+
+The bridge commands run on the Mac host, not inside the WhatsApp container. The container may queue work, but local Codex execution remains controlled by the host allowlist and bridge config.
 
 ## Upstream NanoClaw
 

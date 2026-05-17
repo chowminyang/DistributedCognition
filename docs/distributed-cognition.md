@@ -451,6 +451,59 @@ Safety boundary:
 - Codex Cloud action execution is non-default and requires explicit host-side config.
 - Actions involving emails, calendar invites, WhatsApp messages to others, purchases, submissions, or external communication require explicit confirmation and are not included in this bridge.
 
+## macOS Bridge Automation
+
+For always-on Mac use, run the host-side bridges periodically with launchd. These jobs should live in the user's local `~/Library/LaunchAgents` folder, not inside this repository, because they contain machine-specific paths.
+
+Recommended schedule:
+
+- `dc:codex-bridge`: every 5 minutes, runs `pnpm run dc:codex-bridge -- process --execute`.
+- `dc:action-bridge`: every 5 minutes, runs `pnpm run dc:action-bridge -- process --execute`.
+
+Keep the launchd jobs pointed at the local NanoClaw checkout and the host `pnpm` executable. Logs can be written under the checkout's ignored `logs/launchd/` folder. Do not commit generated LaunchAgent plists unless they have been rewritten as generic templates with placeholder paths.
+
+## Dashboard And Obsidian Templates
+
+Generate the local dashboard after health checks, context indexing, or bridge processing:
+
+```bash
+pnpm run dc:dashboard -- --root "<local Distributed-Cognition folder>"
+```
+
+You can also set `DC_SECOND_BRAIN_ROOT` on the Mac host. If neither `--root` nor the environment variable is set, the script only auto-selects a common Dropbox path when that folder already exists.
+
+This writes:
+
+```text
+project-wikis/distributed-cognition-dashboard.md
+_templates/project-wiki.md
+_templates/reflection.md
+_templates/decision.md
+_templates/codex-handoff.md
+_templates/weekly-review.md
+```
+
+The dashboard is intended for Obsidian. It links system health, context index freshness, Codex Workbench, retrieval evals, queue counts, deadline watch, and recent captures. The templates use frontmatter so future wiki pages, reflections, decisions, handoffs, and weekly reviews are easier to scan and query.
+
+## Retrieval Evals
+
+Run retrieval evals after changing context indexing, selected mounts, Mnemon promotion rules, or project-status logic:
+
+```bash
+pnpm run dc:retrieval-eval -- --root "<local Distributed-Cognition folder>"
+```
+
+You can also set `DC_SECOND_BRAIN_ROOT` on the Mac host. As with the dashboard script, common macOS Dropbox paths are only used when they already exist.
+
+This writes:
+
+```text
+project-wikis/retrieval-eval-report.md
+.dc-index/retrieval-eval-report.json
+```
+
+The report checks whether the context index can surface source files for common project questions. It also records skipped-file reasons and reminds DC what to promote into Mnemon versus what to leave as Markdown. The eval is not a generic benchmark; it is a practical attention check for this second-brain workflow.
+
 ## Promotion Workflow
 
 Use promotion as a reviewed pipeline:
