@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 
 import { scrubPrivateText } from './notes.js';
+import { appendProvenanceEvent } from './provenance.js';
 
 export type DistributedQueueKind = 'codex_handoff' | 'action_request';
 export type DistributedQueueStatus =
@@ -227,6 +228,21 @@ export function appendProgressEvent(
   };
   fs.mkdirSync(indexDir(root), { recursive: true });
   fs.appendFileSync(operationsLogPath(root), `${JSON.stringify(entry)}\n`);
+  appendProvenanceEvent(root, {
+    id: `${entry.kind}-${entry.id}-${entry.status}`,
+    timestamp: entry.timestamp,
+    kind: entry.status === 'queued' ? 'queue_created' : 'queue_progress',
+    title: `${kindLabel(entry.kind)} ${entry.status}`,
+    summary: entry.detail,
+    sourcePaths: [],
+    outputPaths: ['.dc-index/operations-log.jsonl'],
+    metadata: {
+      queueId: entry.id,
+      queueKind: entry.kind,
+      status: entry.status,
+      target: entry.target,
+    },
+  });
   return entry;
 }
 

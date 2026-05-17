@@ -31,6 +31,17 @@ describe('Distributed Cognition capabilities', () => {
     expect(route.capability.id).toBe('report_status');
   });
 
+  it('routes attention, ontology, memory hygiene, and provenance requests', () => {
+    expect(classifyDistributedCapability('DC, run attention calibration.').capability.id).toBe('calibrate_attention');
+    expect(classifyDistributedCapability('Refresh the project ontology.').capability.id).toBe(
+      'refresh_project_ontology',
+    );
+    expect(classifyDistributedCapability('Run memory hygiene for changed my mind notes.').capability.id).toBe(
+      'refresh_memory_hygiene',
+    );
+    expect(classifyDistributedCapability('Show me the provenance ledger.').capability.id).toBe('show_provenance');
+  });
+
   it('keeps ordinary reflections as capture work', () => {
     const route = classifyDistributedCapability('Today I realised the office is really about transformation.');
     expect(route.capability.id).toBe('capture_reflection');

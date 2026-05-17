@@ -5,6 +5,8 @@ import path from 'path';
 
 import Database from 'better-sqlite3';
 
+import { appendProvenanceEvent } from '../src/distributed-cognition/provenance.js';
+
 const DEFAULT_SECOND_BRAIN_ROOT = path.join(os.homedir(), 'Library/CloudStorage/Dropbox/Distributed-Cognition');
 const DEFAULT_MNEMON_DB = path.join(process.cwd(), 'groups/dm-with-minyangchow/.mnemon/memory.db');
 const DEFAULT_GROUP_CONFIG = path.join(process.cwd(), 'groups/dm-with-minyangchow/container.json');
@@ -142,7 +144,10 @@ function slugify(input: string): string {
 }
 
 function normalizeText(input: string): string {
-  return input.replace(/\u0000/g, '').replace(/\s+/g, ' ').trim();
+  return input
+    .replace(/\u0000/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 function extractSections(markdown: string): Map<string, string> {
@@ -202,10 +207,12 @@ function messageTypeFrom(classification: string): string {
 
 function isRawDump(input: string): boolean {
   if (/^#{1,6}\s+(raw|reflection|transcript|decision)\b/im.test(input)) return true;
-  return input
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean).length > 8;
+  return (
+    input
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean).length > 8
+  );
 }
 
 function candidateFromFile(root: string, filePath: string): Candidate | undefined {
@@ -258,9 +265,7 @@ function listMarkdownFiles(root: string, limit: number): string[] {
       if (entry.isFile() && entry.name.endsWith('.md')) files.push(path.join(dir, entry.name));
     }
   }
-  return files
-    .sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs)
-    .slice(0, limit);
+  return files.sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs).slice(0, limit);
 }
 
 function ensureMnemonSchema(db: Database.Database): void {
@@ -451,6 +456,23 @@ function storeMemory(db: Database.Database, root: string, candidate: Candidate):
     candidate.memory,
     JSON.stringify({ sourceFile: candidate.relativePath, auditPath }),
   );
+  appendProvenanceEvent(root, {
+    id,
+    kind: 'memory_promotion',
+    title: candidate.title,
+    summary: candidate.rationale,
+    sourcePaths: [candidate.relativePath],
+    outputPaths: [auditPath],
+    metadata: {
+      workflow: 'distributed-cognition-memory-bridge',
+      layer: candidate.layer,
+      entityType: candidate.entityType,
+      entityName: candidate.entityName,
+      importance: candidate.importance,
+      confidence: candidate.confidence,
+      status: 'current',
+    },
+  });
   return { id, auditPath };
 }
 

@@ -369,6 +369,32 @@ interface WebSearchResult {
   snippet: string;
 }
 
+type ProvenanceEventKind =
+  | 'capture'
+  | 'classification'
+  | 'attention_score'
+  | 'coaching_prompt'
+  | 'memory_promotion'
+  | 'memory_hygiene'
+  | 'project_ontology'
+  | 'project_status'
+  | 'wiki_update'
+  | 'queue_created'
+  | 'queue_progress'
+  | 'bridge_execution'
+  | 'dashboard'
+  | 'context_index';
+
+interface ProvenanceEventInput {
+  id: string;
+  kind: ProvenanceEventKind;
+  title: string;
+  summary?: string;
+  sourcePaths?: string[];
+  outputPaths?: string[];
+  metadata?: Record<string, string | number | boolean | string[] | undefined>;
+}
+
 let tokenEncoder: Tiktoken | undefined;
 
 function ok(text: string) {
@@ -581,6 +607,23 @@ export function scoreAttention(text: string, type: MessageType, temporal?: Tempo
     projectSignals: signals,
     rationale: reasons.length > 0 ? reasons.join('; ') : 'ordinary capture with no durable or urgent signal detected',
   };
+}
+
+function reflectionCoachingPrompt(text: string, type: MessageType, attention = scoreAttention(text, type)): string | undefined {
+  if (type === 'sensitive_data_warning') return 'Please resend a redacted version before I process this.';
+  if (type === 'decision') return 'What evidence or change would make you revisit this decision?';
+  if (type === 'action_request') return 'What would a good finished output look like, and where should Codex or the action bridge work?';
+  if (type === 'forget_or_correction_request') return 'What old belief or memory should this supersede, and what should replace it?';
+  if (attention.actionability === 'possible') {
+    return 'Is there a concrete next action here, or should I keep this as thinking material for now?';
+  }
+  if (attention.durability === 'useful' && attention.importance !== 'high') {
+    return 'Is this a durable pivot I should remember, or just a useful reflection to keep in Markdown?';
+  }
+  if (type === 'reflection' && !/[?]/.test(text)) {
+    return 'What is the decision, tension, or open question at the heart of this reflection?';
+  }
+  return undefined;
 }
 
 function ensureCaptureMetadataMarkdown(
@@ -1181,6 +1224,70 @@ function contextIndexPaths(indexRoot: string): { dir: string; entries: string; m
   };
 }
 
+function provenanceLogPath(root: string): string {
+  return path.join(contextIndexPaths(root).dir, 'events.jsonl');
+}
+
+function appendProvenanceEvent(root: string, event: ProvenanceEventInput): void {
+  const realRoot = requireRoot(root);
+  const paths = contextIndexPaths(realRoot);
+  fs.mkdirSync(paths.dir, { recursive: true });
+  const cleanMetadata: Record<string, string | number | boolean | string[] | undefined> = {};
+  for (const [key, value] of Object.entries(event.metadata ?? {})) {
+    cleanMetadata[key] = Array.isArray(value)
+      ? value.map((item) => scrubPrivateText(item))
+      : typeof value === 'string'
+        ? scrubPrivateText(value)
+        : value;
+  }
+  fs.appendFileSync(
+    provenanceLogPath(realRoot),
+    `${JSON.stringify({
+      version: 1,
+      timestamp: timestamp(new Date()),
+      id: scrubPrivateText(event.id),
+      kind: event.kind,
+      title: scrubPrivateText(event.title),
+      summary: event.summary ? scrubPrivateText(event.summary) : undefined,
+      sourcePaths: (event.sourcePaths ?? []).map((item) => scrubPrivateText(item.replace(/\\/g, '/'))),
+      outputPaths: (event.outputPaths ?? []).map((item) => scrubPrivateText(item.replace(/\\/g, '/'))),
+      metadata: cleanMetadata,
+    })}\n`,
+  );
+}
+
+function readProvenanceEvents(root: string, limit = 200): Array<{
+  timestamp?: string;
+  kind?: string;
+  title?: string;
+  summary?: string;
+  sourcePaths?: string[];
+  outputPaths?: string[];
+}> {
+  const filePath = provenanceLogPath(root);
+  if (!fs.existsSync(filePath)) return [];
+  return fs
+    .readFileSync(filePath, 'utf-8')
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .slice(-Math.max(1, Math.min(1_000, limit)))
+    .map((line) => {
+      try {
+        return JSON.parse(line) as {
+          timestamp?: string;
+          kind?: string;
+          title?: string;
+          summary?: string;
+          sourcePaths?: string[];
+          outputPaths?: string[];
+        };
+      } catch {
+        return { title: 'Unreadable provenance event' };
+      }
+    });
+}
+
 function resolveIndexRoot(explicit?: unknown): string {
   if (typeof explicit === 'string' && explicit.trim()) return requireRoot(explicit.trim());
   return requireRoot(rootPath());
@@ -1417,6 +1524,65 @@ function writeNew(filePath: string, content: string): string {
   throw new Error(`Could not create unique note path for ${filePath}`);
 }
 
+function relativeSecondBrainPath(root: string, filePath: string): string {
+  return toRelativeDisplayPath(requireRoot(root), filePath);
+}
+
+function appendCaptureProvenance(
+  root: string,
+  input: {
+    id: string;
+    type: MessageType;
+    rawPath: string;
+    processedPath: string;
+    deadlineWatchPath?: string;
+    attention: AttentionMetadata;
+    coaching?: string;
+  },
+): void {
+  const outputPaths = [input.rawPath, input.processedPath, input.deadlineWatchPath]
+    .filter((value): value is string => Boolean(value))
+    .map((filePath) => relativeSecondBrainPath(root, filePath));
+  appendProvenanceEvent(root, {
+    id: input.id,
+    kind: 'capture',
+    title: `Captured ${input.type}`,
+    summary: 'Captured raw and processed Markdown from WhatsApp.',
+    outputPaths,
+    metadata: {
+      messageType: input.type,
+      importance: input.attention.importance,
+      durability: input.attention.durability,
+      actionability: input.attention.actionability,
+      timeSensitivity: input.attention.timeSensitivity,
+      projectSignals: input.attention.projectSignals,
+    },
+  });
+  appendProvenanceEvent(root, {
+    id: `${input.id}-classification`,
+    kind: 'classification',
+    title: `Classified as ${input.type}`,
+    summary: input.attention.rationale,
+    sourcePaths: outputPaths.slice(0, 1),
+    outputPaths: outputPaths.slice(1, 2),
+    metadata: {
+      messageType: input.type,
+      importance: input.attention.importance,
+      durability: input.attention.durability,
+    },
+  });
+  if (input.coaching) {
+    appendProvenanceEvent(root, {
+      id: `${input.id}-coaching`,
+      kind: 'coaching_prompt',
+      title: 'Reflection coaching prompt',
+      summary: input.coaching,
+      sourcePaths: outputPaths,
+      metadata: { messageType: input.type },
+    });
+  }
+}
+
 function processedFolder(type: MessageType): SecondBrainFolder {
   if (type === 'reflection') return 'daily-reflections';
   if (type === 'weekly_synthesis_request') return 'weekly-reviews';
@@ -1610,6 +1776,7 @@ function template(
   attention: AttentionMetadata,
 ): string {
   const triage = mnemonTriage(body, type);
+  const coaching = reflectionCoachingPrompt(body, type, attention);
   let markdown: string;
   if (type === 'decision') {
     markdown = [
@@ -1642,6 +1809,9 @@ function template(
       '## Mnemon triage',
       `Recommendation: ${triage.recommendation}`,
       `Reason: ${triage.reason}`,
+      '',
+      '## Reflection coaching',
+      coaching ?? 'No follow-up needed.',
       '',
     ].join('\n');
   } else if (type === 'weekly_synthesis_request') {
@@ -1720,6 +1890,9 @@ function template(
       '## Mnemon triage',
       `Recommendation: ${triage.recommendation}`,
       `Reason: ${triage.reason}`,
+      '',
+      '## Reflection coaching',
+      coaching ?? 'No follow-up needed.',
       '',
     ].join('\n');
   }
@@ -2495,12 +2668,54 @@ function capabilityRoute(
       reason: 'current-information or public-web signal detected',
     };
   }
+  if (/\b(attention calibration|promote more|remember fewer|ignore logistics|challenge me more)\b/i.test(lower)) {
+    return {
+      capability: 'calibrate_attention',
+      messageType,
+      confidence: 'high',
+      tools: ['distributed_cognition_attention_calibration'],
+      reason: 'attention calibration signal detected',
+    };
+  }
+  if (/\b(memory hygiene|changed my mind|obsolete memories|superseded memories|memory audit)\b/i.test(lower)) {
+    return {
+      capability: 'refresh_memory_hygiene',
+      messageType,
+      confidence: 'high',
+      tools: ['distributed_cognition_memory_hygiene', 'distributed_cognition_auto_upgrade_memory'],
+      reason: 'memory hygiene signal detected',
+    };
+  }
+  if (/\b(project ontology|ontology|concept map|project graph)\b/i.test(lower)) {
+    return {
+      capability: 'refresh_project_ontology',
+      messageType,
+      confidence: 'high',
+      tools: ['distributed_cognition_project_ontology'],
+      reason: 'project ontology signal detected',
+    };
+  }
+  if (/\b(provenance|why do you think|source trail|audit trail)\b/i.test(lower)) {
+    return {
+      capability: 'show_provenance',
+      messageType,
+      confidence: 'high',
+      tools: ['distributed_cognition_provenance_ledger'],
+      reason: 'provenance or source-trail signal detected',
+    };
+  }
   if (/\b(health check|are you alive|queue status|what is queued|dashboard|workbench|status)\b/i.test(lower)) {
     return {
       capability: 'report_status',
       messageType,
       confidence: 'high',
-      tools: ['distributed_cognition_health_check', 'distributed_cognition_queue_status'],
+      tools: [
+        'distributed_cognition_health_check',
+        'distributed_cognition_queue_status',
+        'distributed_cognition_attention_calibration',
+        'distributed_cognition_memory_hygiene',
+        'distributed_cognition_project_ontology',
+      ],
       reason: 'status or queue visibility signal detected',
     };
   }
@@ -2950,6 +3165,22 @@ function storeDurableMemory(root: string, input: DurableMemoryInput, signalReaso
   const audit = memoryAuditMarkdown(input, result, sources, ts);
   const writtenAuditPath = writeNew(auditPath, audit);
   result.auditPath = writtenAuditPath;
+  appendProvenanceEvent(root, {
+    id,
+    kind: 'memory_promotion',
+    title: title,
+    summary: signalReason,
+    sourcePaths: sources.map((source) => source.relativePath),
+    outputPaths: [relativeSecondBrainPath(root, writtenAuditPath)],
+    metadata: {
+      layer,
+      entityType: entityType ?? undefined,
+      entityName: entityName ?? undefined,
+      importance: clampMemoryScore(input.importance, 0.8),
+      confidence: clampMemoryScore(input.confidence, 0.85),
+      status: 'current',
+    },
+  });
   return result;
 }
 
@@ -3245,11 +3476,12 @@ function appendOperationEvent(
   const realRoot = requireRoot(root);
   const paths = contextIndexPaths(realRoot);
   fs.mkdirSync(paths.dir, { recursive: true });
+  const eventTimestamp = timestamp(new Date());
   fs.appendFileSync(
     operationLogPath(realRoot),
     `${JSON.stringify({
       version: 1,
-      timestamp: timestamp(new Date()),
+      timestamp: eventTimestamp,
       id: scrubPrivateText(event.id),
       kind: event.kind,
       status: event.status,
@@ -3258,6 +3490,20 @@ function appendOperationEvent(
       target: event.target ? scrubPrivateText(event.target) : undefined,
     })}\n`,
   );
+  appendProvenanceEvent(realRoot, {
+    id: `${event.kind}-${event.id}-${event.status}`,
+    kind: event.status === 'queued' ? 'queue_created' : 'queue_progress',
+    title: `${event.kind} ${event.status}`,
+    summary: event.detail,
+    outputPaths: ['.dc-index/operations-log.jsonl'],
+    metadata: {
+      queueId: event.id,
+      queueKind: event.kind,
+      status: event.status,
+      target: event.target,
+      eventTimestamp,
+    },
+  });
 }
 
 function readOperationEvents(root: string, limit = 12): string[] {
@@ -3303,6 +3549,204 @@ function unifiedQueueStatusMarkdown(root: string): string {
     '',
     '## Recent Progress Events',
     ...(readOperationEvents(root).length > 0 ? readOperationEvents(root) : ['No progress events recorded yet.']),
+    '',
+  ].join('\n');
+}
+
+function markdownFiles(root: string, folders: readonly string[]): Array<{ relativePath: string; content: string }> {
+  const realRoot = requireRoot(root);
+  const files: Array<{ relativePath: string; content: string }> = [];
+  for (const folder of folders) {
+    const dir = path.join(realRoot, folder);
+    if (!fs.existsSync(dir)) continue;
+    for (const file of fs.readdirSync(dir).filter((name) => name.endsWith('.md'))) {
+      files.push({ relativePath: `${folder}/${file}`, content: fs.readFileSync(path.join(dir, file), 'utf-8') });
+    }
+  }
+  return files;
+}
+
+function markdownField(markdown: string, label: string): string {
+  const match = markdown.match(new RegExp(`^${label}:\\s*(.+)$`, 'im'));
+  return match?.[1]?.trim() || 'unspecified';
+}
+
+function attentionCalibrationMarkdown(root: string): string {
+  const notes = markdownFiles(root, [
+    'daily-reflections',
+    'processed-notes',
+    'pending-review',
+    'weekly-reviews',
+    'decision-log',
+    'open-questions',
+  ]);
+  const scored = notes
+    .filter((note) => /^## Attention metadata\b/m.test(note.content))
+    .map((note) => ({
+      path: note.relativePath,
+      importance: markdownField(note.content, 'Importance'),
+      durability: markdownField(note.content, 'Durability'),
+      actionability: markdownField(note.content, 'Actionability'),
+      timeSensitivity: markdownField(note.content, 'Time sensitivity'),
+      rationale: markdownField(note.content, 'Rationale'),
+    }));
+  const count = (field: keyof (typeof scored)[number], value: string) =>
+    scored.filter((item) => item[field] === value).length;
+  const promotions = readProvenanceEvents(root, 1_000).filter((event) => event.kind === 'memory_promotion').length;
+  const coaching = readProvenanceEvents(root, 1_000).filter((event) => event.kind === 'coaching_prompt').length;
+  return [
+    ...frontmatterBlock({
+      type: 'attention_calibration',
+      generated: timestamp(new Date()),
+      tags: ['distributed-cognition/attention'],
+    }),
+    '',
+    `# Attention Calibration — ${timestamp(new Date())}`,
+    '',
+    '## Summary',
+    `- Captures scored: ${scored.length}`,
+    `- Durable memories promoted: ${promotions}`,
+    `- Coaching prompts generated: ${coaching}`,
+    `- High importance: ${count('importance', 'high')}`,
+    `- Medium importance: ${count('importance', 'medium')}`,
+    `- Low importance: ${count('importance', 'low')}`,
+    `- Durable: ${count('durability', 'durable')}`,
+    `- Useful but not durable: ${count('durability', 'useful')}`,
+    `- Transient: ${count('durability', 'transient')}`,
+    '',
+    '## Calibration Feedback',
+    '- Say "DC, promote more decisions" if important choices are staying as loose notes.',
+    '- Say "DC, ignore logistics" if low-value meeting clutter is being over-scored.',
+    '- Say "DC, challenge me more" if reflections are being filed without useful follow-up questions.',
+    '- Say "DC, remember fewer things" if Mnemon starts feeling noisy.',
+    '',
+    '## Recent Attention Decisions',
+    scored.length > 0
+      ? scored
+          .slice(-12)
+          .reverse()
+          .map(
+            (item) =>
+              `- [[${item.path}]] — ${item.importance}, ${item.durability}, ${item.actionability}, ${item.timeSensitivity}; ${item.rationale}`,
+          )
+          .join('\n')
+      : 'No scored captures found yet.',
+    '',
+  ].join('\n');
+}
+
+function memoryHygieneMarkdown(root: string): string {
+  const approved = markdownFiles(root, ['approved-updates']);
+  const review = markdownFiles(root, ['pending-review', 'decision-log', 'weekly-reviews']);
+  const auditNotes = approved.filter((note) => /\bDurable Memory Upgrade\b|## Mnemon\b/i.test(note.content));
+  const changedMind = review.filter((note) => /\bchanged my mind|obsolete|superseded|supersedes\b/i.test(note.content));
+  const corrections = review.filter((note) => /\bforget_or_correction_request|correction|forget\b/i.test(note.content));
+  const stale = review.filter((note) => /\bReview after:\s*(?!None detected)/i.test(note.content));
+  const links = (items: Array<{ relativePath: string }>) =>
+    items.length > 0 ? items.slice(0, 20).map((item) => `- [[${item.relativePath}]]`) : ['- None found'];
+  return [
+    ...frontmatterBlock({
+      type: 'memory_hygiene',
+      generated: timestamp(new Date()),
+      tags: ['distributed-cognition/memory-hygiene'],
+    }),
+    '',
+    `# Memory Hygiene — ${timestamp(new Date())}`,
+    '',
+    '## Current Rules',
+    '- Mnemon should contain durable keys, pivots, decisions, preferences, corrections, and stable project constraints.',
+    '- Raw transcripts, ordinary meeting clutter, and tentative mood should stay in Markdown.',
+    '- Changed thinking should create a dated changed-my-mind or supersession note instead of silently overwriting memory.',
+    '',
+    '## Durable Memory Audit Notes',
+    ...links(auditNotes),
+    '',
+    '## Changed-My-Mind / Supersession Candidates',
+    ...links(changedMind),
+    '',
+    '## Correction / Forget Candidates',
+    ...links(corrections),
+    '',
+    '## Decisions With Review Windows',
+    ...links(stale),
+    '',
+  ].join('\n');
+}
+
+function projectOntologyMarkdown(root: string): string {
+  const notes = markdownFiles(root, ['daily-reflections', 'processed-notes', 'pending-review', 'weekly-reviews', 'decision-log']);
+  const sourcesBySignal = new Map<string, string[]>();
+  for (const note of notes) {
+    for (const signal of projectSignals(note.content)) {
+      const sources = sourcesBySignal.get(signal) ?? [];
+      if (!sources.includes(note.relativePath)) sources.push(note.relativePath);
+      sourcesBySignal.set(signal, sources);
+    }
+  }
+  const node = (label: string) => {
+    const sources = sourcesBySignal.get(label) ?? [];
+    return `- **${label}** — ${sources.length > 0 ? sources.slice(0, 5).map((source) => `[[${source}]]`).join(', ') : 'not yet observed in notes'}`;
+  };
+  return [
+    ...frontmatterBlock({
+      type: 'project_ontology',
+      generated: timestamp(new Date()),
+      tags: ['distributed-cognition/ontology'],
+    }),
+    '',
+    `# Project Ontology — ${timestamp(new Date())}`,
+    '',
+    '## Projects',
+    ...['AIME', 'p(AI)tient', 'CORTEX', 'CREATE Hackathon'].map(node),
+    '',
+    '## Themes',
+    ...[
+      'AI-enhanced assessment',
+      'productive struggle',
+      'discernment',
+      'uncertainty tolerance',
+      'wisdom',
+      'education strategy and governance',
+    ].map(node),
+    '',
+    '## Workflows',
+    ...['grants', 'papers and manuscripts', 'workshops and talks'].map(node),
+    '',
+    '## Usage Rule',
+    '- Mnemon stores concise pivots; wiki pages store readable synthesis; raw transcripts stay raw.',
+    '',
+  ].join('\n');
+}
+
+function provenanceMarkdown(root: string): string {
+  const events = readProvenanceEvents(root, 200);
+  const counts = new Map<string, number>();
+  for (const event of events) counts.set(event.kind ?? 'unknown', (counts.get(event.kind ?? 'unknown') ?? 0) + 1);
+  return [
+    ...frontmatterBlock({
+      type: 'provenance_ledger',
+      generated: timestamp(new Date()),
+      tags: ['distributed-cognition/provenance'],
+    }),
+    '',
+    `# Provenance Ledger — ${timestamp(new Date())}`,
+    '',
+    '## Counts',
+    events.length > 0
+      ? [...counts.entries()]
+          .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+          .map(([kind, count]) => `- ${kind}: ${count}`)
+          .join('\n')
+      : '- None recorded',
+    '',
+    '## Recent Events',
+    events.length > 0
+      ? events
+          .slice(-20)
+          .reverse()
+          .map((event) => `- ${event.timestamp ?? 'unknown'}: ${event.kind ?? 'event'} — ${event.title ?? 'untitled'}`)
+          .join('\n')
+      : 'No provenance events recorded yet.',
     '',
   ].join('\n');
 }
@@ -3472,6 +3916,14 @@ function codexHandoffMarkdown(record: CodexHandoffRecord, project: CodexProjectS
     '## Status',
     'queued',
     '',
+    '## Lifecycle',
+    '- drafted: DC composed the task, plan, and acceptance criteria.',
+    '- queued: machine-readable handoff is waiting under `.dc-index/codex-handoffs/queued/`.',
+    '- executing: host Codex bridge has started local or cloud execution.',
+    '- blocked: host bridge needs configuration, allowlist, credentials, or clarification.',
+    '- completed: bridge moved the record to completed and updated this note.',
+    '- needs review: Minyang reviews changed files, tests, and residual risk.',
+    '',
     '## Project',
     `- Name: ${project.name}`,
     `- Relative path: ${project.relativePath}`,
@@ -3547,6 +3999,14 @@ function actionRequestMarkdown(record: ActionRequestRecord): string {
     '',
     '## Status',
     'queued',
+    '',
+    '## Lifecycle',
+    '- drafted: DC composed the artifact/research request.',
+    '- queued: machine-readable request is waiting under `.dc-index/action-requests/queued/`.',
+    '- executing: host action bridge has started local work.',
+    '- blocked: bridge needs missing config, an allowlisted action, or clarification.',
+    '- completed: artifact or local handoff output is available.',
+    '- needs review: Minyang checks the result before reuse or sharing.',
     '',
     '## Action Type',
     record.actionType,
@@ -3723,6 +4183,18 @@ function captureAudioTranscript(inputPath: string, transcript: string, args: Rec
         attention,
       ),
     );
+    appendCaptureProvenance(root, {
+      id: file.replace(/\.md$/, ''),
+      type,
+      rawPath,
+      processedPath,
+      attention,
+      coaching: reflectionCoachingPrompt(
+        'Audio transcript withheld because prohibited sensitive content was detected.',
+        type,
+        attention,
+      ),
+    });
     return `Audio transcript appears to contain prohibited sensitive data. Wrote redacted audit markers only.\nraw: ${rawPath}\nprocessed: ${processedPath}`;
   }
 
@@ -3743,6 +4215,15 @@ function captureAudioTranscript(inputPath: string, transcript: string, args: Rec
       : template(type, ts, cleanTranscript, temporal, attention);
   const processedPath = writeNew(resolveNotePath(root, processedFolder(type), file), processedMarkdown);
   const deadlineWatchPath = appendDeadlineWatch(root, temporal, path.join('inbox-whatsapp', path.basename(rawPath)));
+  appendCaptureProvenance(root, {
+    id: file.replace(/\.md$/, ''),
+    type,
+    rawPath,
+    processedPath,
+    deadlineWatchPath,
+    attention,
+    coaching: reflectionCoachingPrompt(cleanTranscript, type, attention),
+  });
 
   return [
     `Captured audio as ${type}`,
@@ -3825,6 +4306,15 @@ export const captureNote: McpToolDefinition = {
         temporal,
         path.join('inbox-whatsapp', path.basename(rawPath)),
       );
+      appendCaptureProvenance(root, {
+        id: file.replace(/\.md$/, ''),
+        type,
+        rawPath,
+        processedPath,
+        deadlineWatchPath,
+        attention,
+        coaching: reflectionCoachingPrompt(rawText, type, attention),
+      });
       return ok(
         [
           `Captured ${type}`,
@@ -4393,6 +4883,124 @@ export const queueStatus: McpToolDefinition = {
       const wiki = resolveProjectWikiPath(root, 'Work Queue', 'project-wikis/work-queue.md');
       fs.writeFileSync(wiki.filePath, markdown);
       return ok([markdown, `wiki: ${wiki.filePath}`].join('\n'));
+    } catch (e) {
+      return err(e instanceof Error ? e.message : String(e));
+    }
+  },
+};
+
+export const attentionCalibration: McpToolDefinition = {
+  tool: {
+    name: 'distributed_cognition_attention_calibration',
+    description:
+      'Write an Obsidian-friendly attention calibration report showing what was promoted, kept in Markdown, and where DC may be over- or under-attending.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        root: { type: 'string', description: 'Optional second-brain root. Defaults to the mounted path.' },
+      },
+    },
+  },
+  async handler(args) {
+    try {
+      const root = rootPath(args.root);
+      ensureFolders(root);
+      const wiki = resolveProjectWikiPath(root, 'Attention Calibration', 'project-wikis/attention-calibration.md');
+      fs.writeFileSync(wiki.filePath, attentionCalibrationMarkdown(root));
+      appendProvenanceEvent(root, {
+        id: `attention-${Date.now()}`,
+        kind: 'attention_score',
+        title: 'Attention calibration refreshed',
+        outputPaths: [wiki.relativePath],
+      });
+      return ok(`Wrote attention calibration report.\nwiki: ${wiki.filePath}`);
+    } catch (e) {
+      return err(e instanceof Error ? e.message : String(e));
+    }
+  },
+};
+
+export const memoryHygiene: McpToolDefinition = {
+  tool: {
+    name: 'distributed_cognition_memory_hygiene',
+    description:
+      'Write an Obsidian-friendly memory hygiene report for durable memory audit notes, changed-my-mind candidates, corrections, and stale decision review windows.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        root: { type: 'string', description: 'Optional second-brain root. Defaults to the mounted path.' },
+      },
+    },
+  },
+  async handler(args) {
+    try {
+      const root = rootPath(args.root);
+      ensureFolders(root);
+      const wiki = resolveProjectWikiPath(root, 'Memory Hygiene', 'project-wikis/memory-hygiene.md');
+      fs.writeFileSync(wiki.filePath, memoryHygieneMarkdown(root));
+      appendProvenanceEvent(root, {
+        id: `memory-hygiene-${Date.now()}`,
+        kind: 'memory_hygiene',
+        title: 'Memory hygiene refreshed',
+        outputPaths: [wiki.relativePath],
+      });
+      return ok(`Wrote memory hygiene report.\nwiki: ${wiki.filePath}`);
+    } catch (e) {
+      return err(e instanceof Error ? e.message : String(e));
+    }
+  },
+};
+
+export const projectOntology: McpToolDefinition = {
+  tool: {
+    name: 'distributed_cognition_project_ontology',
+    description:
+      'Write a stable project/theme/workflow ontology page so Mnemon stores concise pivots while Obsidian stores readable synthesis.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        root: { type: 'string', description: 'Optional second-brain root. Defaults to the mounted path.' },
+      },
+    },
+  },
+  async handler(args) {
+    try {
+      const root = rootPath(args.root);
+      ensureFolders(root);
+      const wiki = resolveProjectWikiPath(root, 'Project Ontology', 'project-wikis/project-ontology.md');
+      fs.writeFileSync(wiki.filePath, projectOntologyMarkdown(root));
+      appendProvenanceEvent(root, {
+        id: `ontology-${Date.now()}`,
+        kind: 'project_ontology',
+        title: 'Project ontology refreshed',
+        outputPaths: [wiki.relativePath],
+      });
+      return ok(`Wrote project ontology.\nwiki: ${wiki.filePath}`);
+    } catch (e) {
+      return err(e instanceof Error ? e.message : String(e));
+    }
+  },
+};
+
+export const provenanceLedger: McpToolDefinition = {
+  tool: {
+    name: 'distributed_cognition_provenance_ledger',
+    description:
+      'Write a provenance ledger page from the append-only Distributed Cognition events log.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        root: { type: 'string', description: 'Optional second-brain root. Defaults to the mounted path.' },
+      },
+    },
+  },
+  async handler(args) {
+    try {
+      const root = rootPath(args.root);
+      ensureFolders(root);
+      const wiki = resolveProjectWikiPath(root, 'Provenance Ledger', 'project-wikis/provenance-ledger.md');
+      fs.writeFileSync(wiki.filePath, provenanceMarkdown(root));
+      return ok(`Wrote provenance ledger.\nwiki: ${wiki.filePath}`);
     } catch (e) {
       return err(e instanceof Error ? e.message : String(e));
     }
@@ -5052,6 +5660,10 @@ registerTools([
   formatReply,
   routeRequest,
   queueStatus,
+  attentionCalibration,
+  memoryHygiene,
+  projectOntology,
+  provenanceLedger,
   buildCodexStatus,
   createCodexHandoff,
   createActionRequest,

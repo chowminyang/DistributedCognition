@@ -11,6 +11,10 @@ export type DistributedCapabilityId =
   | 'search_context'
   | 'synthesize_review'
   | 'update_project_wiki'
+  | 'calibrate_attention'
+  | 'refresh_memory_hygiene'
+  | 'refresh_project_ontology'
+  | 'show_provenance'
   | 'report_status'
   | 'web_search'
   | 'queue_codex_handoff'
@@ -117,11 +121,49 @@ export const DISTRIBUTED_CAPABILITIES: Record<DistributedCapabilityId, Distribut
     requiresHostBridge: false,
     risk: 'medium',
   },
+  calibrate_attention: {
+    id: 'calibrate_attention',
+    label: 'Calibrate attention',
+    description: 'Report what DC promoted, ignored, challenged, or kept in Markdown so attention can be tuned.',
+    defaultTools: ['distributed_cognition_attention_calibration'],
+    requiresHostBridge: false,
+    risk: 'low',
+  },
+  refresh_memory_hygiene: {
+    id: 'refresh_memory_hygiene',
+    label: 'Refresh memory hygiene',
+    description: 'Review durable memory audit notes, changed-my-mind candidates, corrections, and stale decisions.',
+    defaultTools: ['distributed_cognition_memory_hygiene', 'distributed_cognition_auto_upgrade_memory'],
+    requiresHostBridge: false,
+    risk: 'medium',
+  },
+  refresh_project_ontology: {
+    id: 'refresh_project_ontology',
+    label: 'Refresh project ontology',
+    description: 'Refresh stable project, theme, and workflow labels for Mnemon and Obsidian synthesis.',
+    defaultTools: ['distributed_cognition_project_ontology'],
+    requiresHostBridge: false,
+    risk: 'low',
+  },
+  show_provenance: {
+    id: 'show_provenance',
+    label: 'Show provenance',
+    description: 'Write or inspect the provenance ledger for source trails behind captures, memories, and handoffs.',
+    defaultTools: ['distributed_cognition_provenance_ledger'],
+    requiresHostBridge: false,
+    risk: 'low',
+  },
   report_status: {
     id: 'report_status',
     label: 'Report status',
     description: 'Report health, queues, project workbench, and recent operations.',
-    defaultTools: ['distributed_cognition_health_check', 'distributed_cognition_queue_status'],
+    defaultTools: [
+      'distributed_cognition_health_check',
+      'distributed_cognition_queue_status',
+      'distributed_cognition_attention_calibration',
+      'distributed_cognition_memory_hygiene',
+      'distributed_cognition_project_ontology',
+    ],
     requiresHostBridge: false,
     risk: 'low',
   },
@@ -226,6 +268,22 @@ export function classifyDistributedCapability(
 
   if (hasAny(lower, [/\b(latest|current|today's|news|web search|search the web|look up|source url|public web)\b/])) {
     return route('web_search', messageType, 'high', ['current-information or public-web signal detected']);
+  }
+
+  if (hasAny(lower, [/\b(attention calibration|promote more|remember fewer|ignore logistics|challenge me more)\b/])) {
+    return route('calibrate_attention', messageType, 'high', ['attention calibration signal detected']);
+  }
+
+  if (hasAny(lower, [/\b(memory hygiene|changed my mind|obsolete memories|superseded memories|memory audit)\b/])) {
+    return route('refresh_memory_hygiene', messageType, 'high', ['memory hygiene signal detected']);
+  }
+
+  if (hasAny(lower, [/\b(project ontology|ontology|concept map|project graph)\b/])) {
+    return route('refresh_project_ontology', messageType, 'high', ['project ontology signal detected']);
+  }
+
+  if (hasAny(lower, [/\b(provenance|why do you think|source trail|audit trail)\b/])) {
+    return route('show_provenance', messageType, 'high', ['provenance or source-trail signal detected']);
   }
 
   if (hasAny(lower, [/\b(health check|are you alive|queue status|what is queued|dashboard|workbench|status)\b/])) {

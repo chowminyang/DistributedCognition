@@ -262,6 +262,15 @@ Every raw and processed capture now receives an `Attention metadata` section:
 
 This is deliberately lightweight. It is not a replacement for judgment. Its purpose is to stop the system from treating every passing reflection as equally important. High-signal items can flow toward Mnemon, project status pages, decision logs, open questions, or Codex handoffs. Low-signal items still remain searchable in Markdown.
 
+The Hermes-inspired additions make this attention layer inspectable:
+
+- `distributed_cognition_attention_calibration` writes `project-wikis/attention-calibration.md`, showing what was promoted, what stayed in Markdown, and where DC may be over- or under-attending.
+- `distributed_cognition_provenance_ledger` writes `project-wikis/provenance-ledger.md` from the append-only `.dc-index/events.jsonl` source trail.
+- `distributed_cognition_memory_hygiene` writes `project-wikis/memory-hygiene.md`, highlighting durable memory audit notes, changed-my-mind candidates, corrections, and decision review windows.
+- `distributed_cognition_project_ontology` writes `project-wikis/project-ontology.md`, keeping stable labels for projects, themes, and workflows.
+
+Processed reflections may also include a `Reflection coaching` section. This is deliberately short: DC should ask one useful follow-up when a reflection is vague, actionable, or potentially durable, not interrogate every note.
+
 ## Capability Routing
 
 Distributed Cognition has a lightweight capability catalogue inspired by Hermes-style agent gateways. It helps the WhatsApp agent decide which safe local path to use next without adding a heavy configuration system.
@@ -274,6 +283,8 @@ The main routes are:
 - search local Dropbox/second-brain context;
 - search public web;
 - report health and queue status;
+- calibrate attention and inspect provenance;
+- refresh memory hygiene and project ontology pages;
 - update Obsidian-friendly project wiki pages;
 - queue local Codex handoffs;
 - queue heavier action requests such as Word, PowerPoint, or web research.
@@ -550,18 +561,27 @@ This writes:
 ```text
 project-wikis/distributed-cognition-dashboard.md
 project-wikis/work-queue.md
+project-wikis/provenance-ledger.md
+project-wikis/attention-calibration.md
+project-wikis/memory-hygiene.md
+project-wikis/project-ontology.md
 .dc-index/work-queue-status.json
 _templates/project-wiki.md
+_templates/home-dashboard.md
 _templates/reflection.md
 _templates/decision.md
 _templates/memory-audit.md
+_templates/attention-calibration.md
+_templates/memory-hygiene.md
+_templates/project-ontology.md
+_templates/provenance-ledger.md
 _templates/codex-handoff.md
 _templates/action-request.md
 _templates/weekly-review.md
 _templates/queue-status.md
 ```
 
-The dashboard is intended for Obsidian. It links system health, context index freshness, Codex Workbench, retrieval evals, queue counts, deadline watch, memory report, work queue, and recent captures. The templates use frontmatter so future wiki pages, reflections, decisions, memory audits, action requests, handoffs, and weekly reviews are easier to scan and query.
+The dashboard is intended for Obsidian. It links system health, context index freshness, Codex Workbench, retrieval evals, queue counts, deadline watch, memory report, work queue, provenance, attention calibration, memory hygiene, project ontology, and recent captures. The templates use frontmatter so future wiki pages, reflections, decisions, memory audits, action requests, handoffs, and weekly reviews are easier to scan and query.
 
 ## Retrieval Evals
 

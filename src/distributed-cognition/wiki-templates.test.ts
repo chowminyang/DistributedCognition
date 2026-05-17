@@ -20,5 +20,9 @@ describe('Distributed Cognition Obsidian templates', () => {
     const templates = obsidianTemplates({ now: fixed });
     expect(templates['memory-audit.md']).toContain('type: "memory_audit"');
     expect(templates['queue-status.md']).toContain('type: "queue_status"');
+    expect(templates['home-dashboard.md']).toContain('Project Ontology');
+    expect(templates['attention-calibration.md']).toContain('type: "attention_calibration"');
+    expect(templates['memory-hygiene.md']).toContain('type: "memory_hygiene"');
+    expect(templates['provenance-ledger.md']).toContain('type: "provenance_ledger"');
   });
 });

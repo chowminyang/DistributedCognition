@@ -7,6 +7,7 @@ import { describe, expect, test } from 'bun:test';
 
 import {
   applyPromotion,
+  attentionCalibration,
   autoUpgradeMemory,
   buildCodexStatus,
   buildContextIndex,
@@ -16,7 +17,10 @@ import {
   createCodexHandoff,
   formatReply,
   healthCheck,
+  memoryHygiene,
   preparePromotion,
+  projectOntology,
+  provenanceLedger,
   readContext,
   readWebPage,
   resolveOpenAIApiKeyForTranscription,
@@ -114,6 +118,41 @@ describe('Distributed Cognition context index', () => {
     const processed = fs.readFileSync(path.join(root, 'daily-reflections', dailyFiles[0]), 'utf-8');
     expect(processed).toContain('## Attention metadata');
     expect(processed).toContain('Durability: useful');
+    expect(processed).toContain('## Reflection coaching');
+    const events = fs.readFileSync(path.join(root, '.dc-index', 'events.jsonl'), 'utf-8');
+    expect(events).toContain('"kind":"capture"');
+    expect(events).toContain('"kind":"coaching_prompt"');
+  });
+
+  test('writes attention, ontology, memory hygiene, and provenance pages', async () => {
+    const root = tempRoot();
+    await captureNote.handler({
+      root,
+      rawText: 'Decision: CORTEX should foreground uncertainty tolerance and tool-mediated judgement.',
+      slug: 'cortex-decision',
+    });
+    fs.mkdirSync(path.join(root, 'approved-updates'), { recursive: true });
+    fs.writeFileSync(path.join(root, 'approved-updates', '17-05-26-0815-memory-cortex.md'), '# Durable Memory Upgrade');
+    fs.writeFileSync(
+      path.join(root, 'pending-review', '17-05-26-0816-changed-my-mind.md'),
+      'I changed my mind; this supersedes the old plan.',
+    );
+
+    expect(toolText(await attentionCalibration.handler({ root }))).toContain('attention calibration');
+    expect(toolText(await projectOntology.handler({ root }))).toContain('project ontology');
+    expect(toolText(await memoryHygiene.handler({ root }))).toContain('memory hygiene');
+    expect(toolText(await provenanceLedger.handler({ root }))).toContain('provenance ledger');
+
+    expect(fs.readFileSync(path.join(root, 'project-wikis', 'attention-calibration.md'), 'utf-8')).toContain(
+      'Calibration Feedback',
+    );
+    expect(fs.readFileSync(path.join(root, 'project-wikis', 'project-ontology.md'), 'utf-8')).toContain('CORTEX');
+    expect(fs.readFileSync(path.join(root, 'project-wikis', 'memory-hygiene.md'), 'utf-8')).toContain(
+      'Changed-My-Mind',
+    );
+    expect(fs.readFileSync(path.join(root, 'project-wikis', 'provenance-ledger.md'), 'utf-8')).toContain(
+      'Captured decision',
+    );
   });
 
   test('resolves OpenAI transcription key from env before mounted second-brain .env fallback', () => {

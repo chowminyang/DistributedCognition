@@ -11,6 +11,7 @@ import {
   renderUnifiedQueueStatusMarkdown,
   writeUnifiedQueueStatus,
 } from './queue-status.js';
+import { readProvenanceEvents } from './provenance.js';
 
 let tmp: string;
 
@@ -69,6 +70,7 @@ describe('Distributed Cognition queue status', () => {
     expect(summary.totals.running).toBe(1);
     expect(summary.totals.queued).toBe(0);
     expect(queueStatusReply(summary)).toContain('1 active item');
+    expect(readProvenanceEvents(tmp).some((event) => event.kind === 'queue_progress')).toBe(true);
   });
 
   it('writes Markdown and JSON status files', () => {

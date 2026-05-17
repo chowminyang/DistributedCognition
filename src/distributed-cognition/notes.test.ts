@@ -16,6 +16,7 @@ import {
   scrubPrivateText,
   writeDistributedNote,
 } from './notes.js';
+import { readProvenanceEvents } from './provenance.js';
 
 let tmp: string;
 
@@ -79,6 +80,12 @@ describe('Distributed Cognition notes', () => {
     expect(processed).toContain('Project signals: education strategy and governance');
     expect(processed).toContain('## Mnemon triage');
     expect(processed).toContain('Recommendation: Markdown only');
+    expect(processed).toContain('## Reflection coaching');
+    expect(result.coachingPrompt).toContain('durable pivot');
+
+    const events = readProvenanceEvents(tmp);
+    expect(events.some((event) => event.kind === 'capture' && event.title === 'Captured reflection')).toBe(true);
+    expect(events.some((event) => event.kind === 'coaching_prompt')).toBe(true);
   });
 
   it('uses a synthesis template for periodic review requests', () => {

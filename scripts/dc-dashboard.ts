@@ -2,6 +2,10 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 
+import { writeAttentionCalibrationReport } from '../src/distributed-cognition/attention-report.js';
+import { writeMemoryHygieneReport } from '../src/distributed-cognition/memory-hygiene.js';
+import { writeProjectOntology } from '../src/distributed-cognition/ontology.js';
+import { appendProvenanceEvent, writeProvenanceMarkdown } from '../src/distributed-cognition/provenance.js';
 import { readUnifiedQueueStatus, writeUnifiedQueueStatus } from '../src/distributed-cognition/queue-status.js';
 import { obsidianTemplates } from '../src/distributed-cognition/wiki-templates.js';
 
@@ -202,6 +206,10 @@ function renderDashboard(root: string): string {
     '- [[project-wikis/mnemon-memory-report|Mnemon Memory Report]]',
     '- [[project-wikis/system-health|System Health]]',
     '- [[project-wikis/retrieval-eval-report|Retrieval Eval Report]]',
+    '- [[project-wikis/provenance-ledger|Provenance Ledger]]',
+    '- [[project-wikis/attention-calibration|Attention Calibration]]',
+    '- [[project-wikis/memory-hygiene|Memory Hygiene]]',
+    '- [[project-wikis/project-ontology|Project Ontology]]',
     '- [[open-questions/deadline-watch|Deadline Watch]]',
     '',
     '## Recent Captures And Reviews',
@@ -226,8 +234,28 @@ function main(): void {
   const wikiDir = path.join(root, 'project-wikis');
   ensureDir(wikiDir);
   writeUnifiedQueueStatus(root);
+  writeProvenanceMarkdown(root);
+  writeAttentionCalibrationReport(root);
+  writeMemoryHygieneReport(root);
+  writeProjectOntology(root);
   const dashboardPath = path.join(wikiDir, 'distributed-cognition-dashboard.md');
   fs.writeFileSync(dashboardPath, renderDashboard(root));
+  appendProvenanceEvent(root, {
+    id: `dashboard-${Date.now()}`,
+    kind: 'dashboard',
+    title: 'Dashboard refreshed',
+    summary: 'Refreshed dashboard, queue status, provenance, attention, memory hygiene, and ontology pages.',
+    sourcePaths: [],
+    outputPaths: [
+      'project-wikis/distributed-cognition-dashboard.md',
+      'project-wikis/work-queue.md',
+      'project-wikis/provenance-ledger.md',
+      'project-wikis/attention-calibration.md',
+      'project-wikis/memory-hygiene.md',
+      'project-wikis/project-ontology.md',
+    ],
+    metadata: {},
+  });
   console.log(`Wrote ${dashboardPath}`);
 }
 

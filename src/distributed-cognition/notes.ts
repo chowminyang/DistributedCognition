@@ -1,6 +1,8 @@
 import fs from 'fs';
 import path from 'path';
 
+import { appendProvenanceEvent } from './provenance.js';
+
 export const SECOND_BRAIN_FOLDERS = [
   'inbox-whatsapp',
   'daily-reflections',
@@ -61,6 +63,7 @@ export interface WriteDistributedNoteResult {
   rawPath: string;
   processedPath: string;
   deadlineWatchPath?: string;
+  coachingPrompt?: string;
 }
 
 export interface TemporalMetadata {
@@ -167,7 +170,7 @@ const PROJECT_SIGNAL_PATTERNS: Array<{ label: string; pattern: RegExp }> = [
   { label: 'education strategy and governance', pattern: /\bgovernance|strategy|transformation office\b/i },
 ];
 
-function projectSignals(text: string): string[] {
+export function detectProjectSignals(text: string): string[] {
   const signals: string[] = [];
   for (const { label, pattern } of PROJECT_SIGNAL_PATTERNS) {
     if (pattern.test(text) && !signals.includes(label)) signals.push(label);
@@ -256,6 +259,7 @@ export function writeDistributedNote(input: WriteDistributedNoteInput): WriteDis
   const filename = formatDistributedFilename(now, input.slug ?? slugSource(body, messageType), timezone);
   const temporalMetadata = extractTemporalMetadata(body, now, timezone, messageType);
   const attentionMetadata = scoreAttention(body, messageType, temporalMetadata);
+  const coachingPrompt = reflectionCoachingPrompt(body, messageType, attentionMetadata);
 
   ensureSecondBrainStructure(input.root);
 
@@ -266,7 +270,7 @@ export function writeDistributedNote(input: WriteDistributedNoteInput): WriteDis
   writeNewMarkdown(rawPath, rawMarkdown({ ...input, messageType, timestamp, temporalMetadata, attentionMetadata }));
   writeNewMarkdown(
     processedPath,
-    processedMarkdown({ ...input, messageType, timestamp, temporalMetadata, attentionMetadata }),
+    processedMarkdown({ ...input, messageType, timestamp, temporalMetadata, attentionMetadata, coachingPrompt }),
   );
 
   const deadlineWatchPath = appendDeadlineWatch(
@@ -274,8 +278,18 @@ export function writeDistributedNote(input: WriteDistributedNoteInput): WriteDis
     temporalMetadata,
     path.join('inbox-whatsapp', path.basename(rawPath)),
   );
+  appendCaptureProvenance(input.root, {
+    timestamp,
+    filename,
+    messageType,
+    rawPath,
+    processedPath,
+    deadlineWatchPath,
+    attentionMetadata,
+    coachingPrompt,
+  });
 
-  return { messageType, timestamp, filename, rawPath, processedPath, deadlineWatchPath };
+  return { messageType, timestamp, filename, rawPath, processedPath, deadlineWatchPath, coachingPrompt };
 }
 
 function requireExistingRoot(root: string): string {
@@ -503,7 +517,7 @@ export function scoreAttention(
     };
   }
 
-  const signals = projectSignals(text);
+  const signals = detectProjectSignals(text);
   const reasons: string[] = [];
   let score = 0;
   if (messageType === 'decision') {
@@ -582,6 +596,88 @@ export function scoreAttention(
   };
 }
 
+export function reflectionCoachingPrompt(
+  text: string,
+  messageType: DistributedMessageType,
+  attentionMetadata = scoreAttention(text, messageType),
+): string | undefined {
+  if (messageType === 'sensitive_data_warning') return 'Please resend a redacted version before I process this.';
+  if (messageType === 'decision') return 'What evidence or change would make you revisit this decision?';
+  if (messageType === 'action_request')
+    return 'What would a good finished output look like, and where should Codex or the action bridge work?';
+  if (messageType === 'forget_or_correction_request')
+    return 'What old belief or memory should this supersede, and what should replace it?';
+  if (attentionMetadata.actionability === 'possible') {
+    return 'Is there a concrete next action here, or should I keep this as thinking material for now?';
+  }
+  if (attentionMetadata.durability === 'useful' && attentionMetadata.importance !== 'high') {
+    return 'Is this a durable pivot I should remember, or just a useful reflection to keep in Markdown?';
+  }
+  if (messageType === 'reflection' && !/[?]/.test(text)) {
+    return 'What is the decision, tension, or open question at the heart of this reflection?';
+  }
+  return undefined;
+}
+
+function appendCaptureProvenance(
+  root: string,
+  input: {
+    timestamp: string;
+    filename: string;
+    messageType: DistributedMessageType;
+    rawPath: string;
+    processedPath: string;
+    deadlineWatchPath?: string;
+    attentionMetadata: AttentionMetadata;
+    coachingPrompt?: string;
+  },
+): void {
+  const realRoot = requireExistingRoot(root);
+  const outputPaths = [input.rawPath, input.processedPath, input.deadlineWatchPath]
+    .filter((value): value is string => Boolean(value))
+    .map((filePath) => path.relative(realRoot, filePath).split(path.sep).join('/'));
+  appendProvenanceEvent(realRoot, {
+    id: input.filename.replace(/\.md$/, ''),
+    kind: 'capture',
+    title: `Captured ${input.messageType}`,
+    summary: `Captured raw and processed Markdown at ${input.timestamp}.`,
+    sourcePaths: [],
+    outputPaths,
+    metadata: {
+      messageType: input.messageType,
+      importance: input.attentionMetadata.importance,
+      durability: input.attentionMetadata.durability,
+      actionability: input.attentionMetadata.actionability,
+      timeSensitivity: input.attentionMetadata.timeSensitivity,
+      projectSignals: input.attentionMetadata.projectSignals,
+    },
+  });
+  appendProvenanceEvent(realRoot, {
+    id: `${input.filename.replace(/\.md$/, '')}-classification`,
+    kind: 'classification',
+    title: `Classified as ${input.messageType}`,
+    summary: input.attentionMetadata.rationale,
+    sourcePaths: outputPaths.slice(0, 1),
+    outputPaths: outputPaths.slice(1, 2),
+    metadata: {
+      messageType: input.messageType,
+      importance: input.attentionMetadata.importance,
+      durability: input.attentionMetadata.durability,
+    },
+  });
+  if (input.coachingPrompt) {
+    appendProvenanceEvent(realRoot, {
+      id: `${input.filename.replace(/\.md$/, '')}-coaching`,
+      kind: 'coaching_prompt',
+      title: 'Reflection coaching prompt',
+      summary: input.coachingPrompt,
+      sourcePaths: outputPaths,
+      outputPaths: [],
+      metadata: { messageType: input.messageType },
+    });
+  }
+}
+
 function ensureCaptureMetadataMarkdown(
   markdown: string,
   temporalMetadata: TemporalMetadata,
@@ -652,6 +748,7 @@ function processedMarkdown(
     timestamp: string;
     temporalMetadata: TemporalMetadata;
     attentionMetadata: AttentionMetadata;
+    coachingPrompt?: string;
   },
 ): string {
   if (typeof input.processedMarkdown === 'string' && input.processedMarkdown.trim()) {
@@ -667,7 +764,11 @@ function processedMarkdown(
 }
 
 function reflectionMarkdown(
-  input: WriteDistributedNoteInput & { messageType: DistributedMessageType; timestamp: string },
+  input: WriteDistributedNoteInput & {
+    messageType: DistributedMessageType;
+    timestamp: string;
+    coachingPrompt?: string;
+  },
 ): string {
   const triage = mnemonTriage(input.transcript ?? input.rawText, input.messageType);
   return [
@@ -707,11 +808,18 @@ function reflectionMarkdown(
     `Recommendation: ${triage.recommendation}`,
     `Reason: ${triage.reason}`,
     '',
+    '## Reflection coaching',
+    input.coachingPrompt ?? 'No follow-up needed.',
+    '',
   ].join('\n');
 }
 
 function decisionMarkdown(
-  input: WriteDistributedNoteInput & { messageType: DistributedMessageType; timestamp: string },
+  input: WriteDistributedNoteInput & {
+    messageType: DistributedMessageType;
+    timestamp: string;
+    coachingPrompt?: string;
+  },
 ): string {
   const triage = mnemonTriage(input.transcript ?? input.rawText, input.messageType);
   return [
@@ -744,6 +852,9 @@ function decisionMarkdown(
     '## Mnemon triage',
     `Recommendation: ${triage.recommendation}`,
     `Reason: ${triage.reason}`,
+    '',
+    '## Reflection coaching',
+    input.coachingPrompt ?? 'No follow-up needed.',
     '',
   ].join('\n');
 }

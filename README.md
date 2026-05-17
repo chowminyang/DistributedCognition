@@ -12,7 +12,7 @@ Key additions in this fork:
 - OpenAI/Codex provider path with lightweight model routing.
 - Distributed Cognition note capture, audio transcription, context indexing, Mnemon promotion, project wiki promotion, deadline-watch tools, and an Obsidian-friendly dashboard.
 - Host-side Codex/action bridges for local project work, web research, Word documents, and PowerPoint generation.
-- Hermes-inspired capability routing, unified work queue status, bridge progress events, and a Mnemon memory report.
+- Hermes-inspired capability routing, unified work queue status, append-only provenance, attention calibration, memory hygiene, project ontology, bridge progress events, and a Mnemon memory report.
 - Optional launchd jobs for periodically running the local bridges on macOS.
 - Public-web search/read tools with private-network and sensitive-content guards.
 - Lightweight retrieval eval reports for checking what the Dropbox-backed context index can and should surface.
@@ -33,8 +33,9 @@ The intended live loop is:
 private WhatsApp text or voice note
   -> raw Markdown capture
   -> processed reflection / decision / note
+  -> provenance + attention scoring + coaching prompt
   -> selective Mnemon durable-memory upgrade
-  -> project wiki, deadline, and open-question updates
+  -> project ontology, wiki, deadline, and open-question updates
   -> optional local Codex handoff
   -> Codex desktop/app-visible local work
 ```
