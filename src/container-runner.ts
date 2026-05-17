@@ -5,9 +5,10 @@
  */
 import { ChildProcess, execSync, spawn } from 'child_process';
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
 
-import { OneCLI } from '@onecli-sh/sdk';
+import { OneCLI, type ContainerConfig as OneCliContainerConfig } from '@onecli-sh/sdk';
 
 import {
   CONTAINER_IMAGE,
@@ -48,6 +49,14 @@ import {
 import type { AgentGroup, Session } from './types.js';
 
 const onecli = new OneCLI({ url: ONECLI_URL, apiKey: ONECLI_API_KEY });
+const DOCKER_ENV_KEY_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
+const DOCKER_ENV_FILE_NAME_RE = /^[A-Za-z0-9_.-]+$/;
+const ONECLI_COMBINED_CA_CONTAINER_PATH = '/tmp/onecli-combined-ca.pem';
+const SYSTEM_CA_PATHS = [
+  '/etc/ssl/cert.pem', // macOS
+  '/etc/ssl/certs/ca-certificates.crt', // Debian / Ubuntu
+  '/etc/pki/tls/certs/ca-bundle.crt', // RHEL / CentOS / Fedora
+];
 
 /** Active containers tracked by session ID. */
 const activeContainers = new Map<string, { process: ChildProcess; containerName: string }>();
@@ -157,7 +166,9 @@ async function spawnContainer(session: Session): Promise<void> {
   // OneCLI agent identifier is always the agent group id — stable across
   // sessions and reversible via getAgentGroup() for approval routing.
   const agentIdentifier = agentGroup.id;
+  const containerEnvDir = path.join(DATA_DIR, 'container-env', agentGroup.id, session.id);
   const args = await buildContainerArgs(
+    containerEnvDir,
     mounts,
     containerName,
     agentGroup,
@@ -417,7 +428,95 @@ function syncSkillSymlinks(claudeDir: string, containerConfig: import('./contain
   }
 }
 
+export function writeDockerEnvFile(baseDir: string, name: string, env: Record<string, string>): string | undefined {
+  if (!DOCKER_ENV_FILE_NAME_RE.test(name)) {
+    throw new Error(`Unsafe Docker env file name: ${name}`);
+  }
+
+  const entries = Object.entries(env);
+  if (entries.length === 0) return undefined;
+
+  const lines = entries.map(([key, value]) => {
+    if (!DOCKER_ENV_KEY_RE.test(key)) {
+      throw new Error(`Unsafe Docker env key: ${key}`);
+    }
+    if (value.includes('\0') || value.includes('\n') || value.includes('\r')) {
+      throw new Error(`Unsafe Docker env value for ${key}`);
+    }
+    return `${key}=${value}`;
+  });
+
+  const envDir = path.join(baseDir, '.container-env');
+  fs.mkdirSync(envDir, { recursive: true, mode: 0o700 });
+  const envFile = path.join(envDir, `${name}.env`);
+  fs.writeFileSync(envFile, `${lines.join('\n')}\n`, { mode: 0o600 });
+  fs.chmodSync(envFile, 0o600);
+  return envFile;
+}
+
+function appendEnvFileArg(args: string[], baseDir: string, name: string, env: Record<string, string>): void {
+  const envFile = writeDockerEnvFile(baseDir, name, env);
+  if (envFile) {
+    args.push('--env-file', envFile);
+  }
+}
+
+function writeOneCliCaCertificate(caCertificate: string): string {
+  const outPath = path.join(os.tmpdir(), 'onecli-proxy-ca.pem');
+  fs.writeFileSync(outPath, caCertificate, { mode: 0o600 });
+  fs.chmodSync(outPath, 0o600);
+  return outPath;
+}
+
+function buildOneCliCombinedCaBundle(caCertificate: string): string | null {
+  for (const sysPath of SYSTEM_CA_PATHS) {
+    try {
+      const sysCa = fs.readFileSync(sysPath, 'utf8');
+      const combined = `${sysCa.trimEnd()}\n${caCertificate.trimEnd()}\n`;
+      const outPath = path.join(os.tmpdir(), 'onecli-combined-ca.pem');
+      fs.writeFileSync(outPath, combined, { mode: 0o600 });
+      fs.chmodSync(outPath, 0o600);
+      return outPath;
+    } catch {
+      continue;
+    }
+  }
+
+  return null;
+}
+
+function applyOneCliConfigToDockerArgs(args: string[], envFileDir: string, config: OneCliContainerConfig): void {
+  appendEnvFileArg(args, envFileDir, 'onecli', config.env);
+
+  const hostCaPath = writeOneCliCaCertificate(config.caCertificate);
+  args.push('-v', `${hostCaPath}:${config.caCertificateContainerPath}:ro`);
+
+  const combinedPath = buildOneCliCombinedCaBundle(config.caCertificate);
+  if (combinedPath) {
+    args.push('-e', `SSL_CERT_FILE=${ONECLI_COMBINED_CA_CONTAINER_PATH}`);
+    args.push('-e', `DENO_CERT=${ONECLI_COMBINED_CA_CONTAINER_PATH}`);
+    args.push('-v', `${combinedPath}:${ONECLI_COMBINED_CA_CONTAINER_PATH}:ro`);
+  }
+}
+
+async function applyOneCliContainerConfigSecure(
+  args: string[],
+  envFileDir: string,
+  agentIdentifier?: string,
+): Promise<boolean> {
+  let config: OneCliContainerConfig;
+  try {
+    config = await onecli.getContainerConfig(agentIdentifier);
+  } catch {
+    return false;
+  }
+
+  applyOneCliConfigToDockerArgs(args, envFileDir, config);
+  return true;
+}
+
 async function buildContainerArgs(
+  envFileDir: string,
   mounts: VolumeMount[],
   containerName: string,
   agentGroup: AgentGroup,
@@ -432,11 +531,11 @@ async function buildContainerArgs(
   // Everything NanoClaw-specific is in container.json (read by runner at startup).
   args.push('-e', `TZ=${TIMEZONE}`);
 
-  // Provider-contributed env vars (e.g. XDG_DATA_HOME, OPENCODE_*, NO_PROXY).
+  // Provider-contributed env vars (e.g. OPENAI_API_KEY, XDG_DATA_HOME,
+  // OPENCODE_*, NO_PROXY) go through a private env-file so secrets never
+  // appear in the host process argv shown by `ps`.
   if (providerContribution.env) {
-    for (const [key, value] of Object.entries(providerContribution.env)) {
-      args.push('-e', `${key}=${value}`);
-    }
+    appendEnvFileArg(args, envFileDir, 'provider', providerContribution.env);
   }
 
   // OneCLI gateway — injects HTTPS_PROXY + certs so container API calls
@@ -447,7 +546,7 @@ async function buildContainerArgs(
   if (agentIdentifier) {
     await onecli.ensureAgent({ name: agentGroup.name, identifier: agentIdentifier });
   }
-  const onecliApplied = await onecli.applyContainerConfig(args, { addHostMapping: false, agent: agentIdentifier });
+  const onecliApplied = await applyOneCliContainerConfigSecure(args, envFileDir, agentIdentifier);
   if (!onecliApplied) {
     throw new Error('OneCLI gateway not applied — refusing to spawn container without credentials');
   }
