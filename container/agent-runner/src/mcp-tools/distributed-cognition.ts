@@ -3368,6 +3368,100 @@ async function transcribeAudioFile(
   return text.trim();
 }
 
+function captureAudioTranscript(inputPath: string, transcript: string, args: Record<string, unknown> = {}): string {
+  const cleanTranscript = transcript.trim();
+  if (!cleanTranscript) throw new Error('Audio transcription returned empty text');
+  const type = classify(cleanTranscript);
+  if (type === 'sensitive_data_warning') {
+    const root = rootPath(args.root);
+    ensureFolders(root);
+    const now = new Date();
+    const ts = timestamp(now);
+    const temporal = extractTemporalMetadata(
+      'Audio transcript withheld because prohibited sensitive content was detected.',
+      now,
+      type,
+    );
+    const attention = scoreAttention(
+      'Audio transcript withheld because prohibited sensitive content was detected.',
+      type,
+      temporal,
+    );
+    const file = filename(now, (args.slug as string | undefined) ?? 'redacted-audio-sensitive-warning');
+    const rawPath = writeNew(
+      resolveNotePath(root, 'inbox-whatsapp', file),
+      rawTemplate(
+        type,
+        ts,
+        'Transcript withheld because prohibited sensitive content was detected. Ask the owner to resend a redacted version before processing.',
+        'whatsapp-audio',
+        temporal,
+        attention,
+        inputPath,
+      ),
+    );
+    const processedPath = writeNew(
+      resolveNotePath(root, 'pending-review', file),
+      ensureCaptureMetadataMarkdown(
+        [
+          `# Sensitive Audio Warning — ${ts}`,
+          '',
+          '## Source',
+          'WhatsApp audio from the owner.',
+          '',
+          '## Raw note status',
+          'Transcript withheld because prohibited sensitive content was detected.',
+          '',
+          '## Suggested next action',
+          'Ask the owner to resend a redacted version before processing.',
+          '',
+        ].join('\n'),
+        temporal,
+        attention,
+      ),
+    );
+    return `Audio transcript appears to contain prohibited sensitive data. Wrote redacted audit markers only.\nraw: ${rawPath}\nprocessed: ${processedPath}`;
+  }
+
+  const root = rootPath(args.root);
+  ensureFolders(root);
+  const now = new Date();
+  const ts = timestamp(now);
+  const temporal = extractTemporalMetadata(cleanTranscript, now, type);
+  const attention = scoreAttention(cleanTranscript, type, temporal);
+  const file = filename(now, (args.slug as string | undefined) ?? cleanTranscript.split(/\s+/).slice(0, 7).join(' '));
+  const rawPath = writeNew(
+    resolveNotePath(root, 'inbox-whatsapp', file),
+    rawTemplate(type, ts, cleanTranscript, 'whatsapp-audio', temporal, attention, inputPath),
+  );
+  const processedMarkdown =
+    typeof args.processedMarkdown === 'string' && args.processedMarkdown.trim()
+      ? ensureCaptureMetadataMarkdown(args.processedMarkdown, temporal, attention)
+      : template(type, ts, cleanTranscript, temporal, attention);
+  const processedPath = writeNew(resolveNotePath(root, processedFolder(type), file), processedMarkdown);
+  const deadlineWatchPath = appendDeadlineWatch(root, temporal, path.join('inbox-whatsapp', path.basename(rawPath)));
+
+  return [
+    `Captured audio as ${type}`,
+    `raw: ${rawPath}`,
+    `processed: ${processedPath}`,
+    deadlineWatchPath ? `deadline watch: ${deadlineWatchPath}` : undefined,
+    '',
+    'Transcript:',
+    cleanTranscript,
+  ]
+    .filter((line) => line !== undefined)
+    .join('\n');
+}
+
+export function captureAudioTranscriptForTest(
+  inputPath: string,
+  transcript: string,
+  args: Record<string, unknown> = {},
+): string {
+  return captureAudioTranscript(inputPath, transcript, args);
+}
+
 export const captureNote: McpToolDefinition = {
   tool: {
     name: 'distributed_cognition_capture_note',
@@ -3447,7 +3541,8 @@ export const captureNote: McpToolDefinition = {
 export const transcribeAudio: McpToolDefinition = {
   tool: {
     name: 'distributed_cognition_transcribe_audio',
-    description: 'Transcribe a WhatsApp audio recording saved under /workspace using OpenAI audio transcription.',
+    description:
+      'Transcribe a WhatsApp audio recording saved under /workspace using OpenAI audio transcription. By default, also writes raw plus processed Markdown capture; set capture=false only for transcript preview.',
     inputSchema: {
       type: 'object' as const,
       properties: {
@@ -3457,17 +3552,44 @@ export const transcribeAudio: McpToolDefinition = {
         },
         prompt: { type: 'string', description: 'Optional transcription prompt.' },
         language: { type: 'string', description: 'Optional ISO language hint.' },
+        capture: {
+          type: 'boolean',
+          description:
+            'Defaults to true. Set false only for preview; normal WhatsApp audio should be captured into second-brain.',
+        },
+        slug: { type: 'string', description: 'Optional short filename slug when capture is true.' },
+        processedMarkdown: {
+          type: 'string',
+          description: 'Optional fully processed Markdown note written when capture is true.',
+        },
+        root: { type: 'string', description: 'Optional second-brain root. Defaults to the mounted path.' },
       },
       required: ['path'],
     },
   },
   async handler(args) {
     try {
-      const text = await transcribeAudioFile(args.path as string, {
+      const inputPath = args.path as string;
+      const text = await transcribeAudioFile(inputPath, {
         prompt: typeof args.prompt === 'string' ? args.prompt : undefined,
         language: typeof args.language === 'string' ? args.language : undefined,
       });
-      return ok(text);
+      if (!text) return err('Audio transcription returned empty text');
+      if (args.capture === false) {
+        if (classify(text) === 'sensitive_data_warning') {
+          return ok(
+            'Transcript appears to contain prohibited sensitive data. No transcript was returned. Use distributed_cognition_capture_audio to write redacted audit markers only.',
+          );
+        }
+        return ok(
+          [
+            'Transcript only; no second-brain files written. For WhatsApp audio reflections, call distributed_cognition_capture_note before replying.',
+            '',
+            text,
+          ].join('\n'),
+        );
+      }
+      return ok(captureAudioTranscript(inputPath, text, args));
     } catch (e) {
       return err(e instanceof Error ? e.message : String(e));
     }
@@ -3505,96 +3627,7 @@ export const captureAudio: McpToolDefinition = {
         prompt: typeof args.prompt === 'string' ? args.prompt : undefined,
         language: typeof args.language === 'string' ? args.language : undefined,
       });
-      if (!transcript) return err('Audio transcription returned empty text');
-      const type = classify(transcript);
-      if (type === 'sensitive_data_warning') {
-        const root = rootPath(args.root);
-        ensureFolders(root);
-        const now = new Date();
-        const ts = timestamp(now);
-        const temporal = extractTemporalMetadata(
-          'Audio transcript withheld because prohibited sensitive content was detected.',
-          now,
-          type,
-        );
-        const attention = scoreAttention(
-          'Audio transcript withheld because prohibited sensitive content was detected.',
-          type,
-          temporal,
-        );
-        const file = filename(now, (args.slug as string | undefined) ?? 'redacted-audio-sensitive-warning');
-        const rawPath = writeNew(
-          resolveNotePath(root, 'inbox-whatsapp', file),
-          rawTemplate(
-            type,
-            ts,
-            'Transcript withheld because prohibited sensitive content was detected. Ask the owner to resend a redacted version before processing.',
-            'whatsapp-audio',
-            temporal,
-            attention,
-            inputPath,
-          ),
-        );
-        const processedPath = writeNew(
-          resolveNotePath(root, 'pending-review', file),
-          ensureCaptureMetadataMarkdown(
-            [
-              `# Sensitive Audio Warning — ${ts}`,
-              '',
-              '## Source',
-              'WhatsApp audio from the owner.',
-              '',
-              '## Raw note status',
-              'Transcript withheld because prohibited sensitive content was detected.',
-              '',
-              '## Suggested next action',
-              'Ask the owner to resend a redacted version before processing.',
-              '',
-            ].join('\n'),
-            temporal,
-            attention,
-          ),
-        );
-        return ok(
-          `Audio transcript appears to contain prohibited sensitive data. Wrote redacted audit markers only.\nraw: ${rawPath}\nprocessed: ${processedPath}`,
-        );
-      }
-
-      const root = rootPath(args.root);
-      ensureFolders(root);
-      const now = new Date();
-      const ts = timestamp(now);
-      const temporal = extractTemporalMetadata(transcript, now, type);
-      const attention = scoreAttention(transcript, type, temporal);
-      const file = filename(now, (args.slug as string | undefined) ?? transcript.split(/\s+/).slice(0, 7).join(' '));
-      const rawPath = writeNew(
-        resolveNotePath(root, 'inbox-whatsapp', file),
-        rawTemplate(type, ts, transcript, 'whatsapp-audio', temporal, attention, inputPath),
-      );
-      const processedMarkdown =
-        typeof args.processedMarkdown === 'string' && args.processedMarkdown.trim()
-          ? ensureCaptureMetadataMarkdown(args.processedMarkdown, temporal, attention)
-          : template(type, ts, transcript, temporal, attention);
-      const processedPath = writeNew(resolveNotePath(root, processedFolder(type), file), processedMarkdown);
-      const deadlineWatchPath = appendDeadlineWatch(
-        root,
-        temporal,
-        path.join('inbox-whatsapp', path.basename(rawPath)),
-      );
-
-      return ok(
-        [
-          `Captured audio as ${type}`,
-          `raw: ${rawPath}`,
-          `processed: ${processedPath}`,
-          deadlineWatchPath ? `deadline watch: ${deadlineWatchPath}` : undefined,
-          '',
-          'Transcript:',
-          transcript,
-        ]
-          .filter((line) => line !== undefined)
-          .join('\n'),
-      );
+      return ok(captureAudioTranscript(inputPath, transcript, args));
     } catch (e) {
       return err(e instanceof Error ? e.message : String(e));
     }

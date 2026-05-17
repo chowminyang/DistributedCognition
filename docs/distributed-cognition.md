@@ -684,7 +684,7 @@ Prefer the `distributed_cognition_capture_audio` MCP tool for normal WhatsApp vo
 
 Audio transcription needs `OPENAI_API_KEY`. The preferred source is the container environment. If that is not present, Distributed Cognition will read only `OPENAI_API_KEY` from `.env` at the mounted second-brain root, for example `/workspace/extra/second-brain/.env`. That file is blocked from context indexing and must not be committed.
 
-Use `distributed_cognition_transcribe_audio` first only when the assistant needs to inspect the transcript before deciding what to write. Then call `distributed_cognition_capture_note` with:
+`distributed_cognition_transcribe_audio` also captures raw plus processed Markdown by default, so it is safe if the agent reaches for the lighter transcription tool first. Set `capture=false` only when the assistant needs a transcript preview before deciding what to write. If `capture=false` is used, then call `distributed_cognition_capture_note` with:
 
 - `source=whatsapp-audio`
 - `audioPath=<original /workspace/inbox/... path>`

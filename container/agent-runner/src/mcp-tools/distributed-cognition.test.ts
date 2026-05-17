@@ -11,6 +11,7 @@ import {
   buildCodexStatus,
   buildContextIndex,
   captureNote,
+  captureAudioTranscriptForTest,
   createActionRequest,
   createCodexHandoff,
   formatReply,
@@ -124,6 +125,52 @@ describe('Distributed Cognition context index', () => {
       'dummy-process-key',
     );
     expect(resolveOpenAIApiKeyForTranscription({}, [envFile])).toBe('dummy-mounted-key');
+  });
+
+  test('captures a transcribed audio note as raw and processed Markdown by default', () => {
+    const root = tempRoot();
+    const result = captureAudioTranscriptForTest(
+      '/workspace/inbox/msg/audio.opus',
+      'Today I realised Distributed Cognition needs to turn audio reflections into processed notes.',
+      { root, slug: 'audio-reflection' },
+    );
+
+    expect(result).toContain('Captured audio as reflection');
+    const rawFiles = fs.readdirSync(path.join(root, 'inbox-whatsapp'));
+    const processedFiles = fs.readdirSync(path.join(root, 'daily-reflections'));
+    expect(rawFiles.some((file) => file.endsWith('audio-reflection.md'))).toBe(true);
+    expect(processedFiles.some((file) => file.endsWith('audio-reflection.md'))).toBe(true);
+
+    const raw = fs.readFileSync(
+      path.join(root, 'inbox-whatsapp', rawFiles.find((file) => file.endsWith('audio-reflection.md'))!),
+      'utf-8',
+    );
+    const processed = fs.readFileSync(
+      path.join(root, 'daily-reflections', processedFiles.find((file) => file.endsWith('audio-reflection.md'))!),
+      'utf-8',
+    );
+    expect(raw).toContain('## Source\nwhatsapp-audio');
+    expect(raw).toContain('## Audio source path\n/workspace/inbox/msg/audio.opus');
+    expect(processed).toContain('## Raw reflection');
+    expect(processed).toContain('Today I realised Distributed Cognition');
+  });
+
+  test('redacts sensitive transcribed audio instead of writing verbatim content', () => {
+    const root = tempRoot();
+    const result = captureAudioTranscriptForTest(
+      '/workspace/inbox/msg/audio.opus',
+      'This audio contains patient identifiable information and should not be stored.',
+      { root, slug: 'audio-sensitive' },
+    );
+
+    expect(result).toContain('Wrote redacted audit markers only');
+    const rawFiles = fs.readdirSync(path.join(root, 'inbox-whatsapp'));
+    const reviewFiles = fs.readdirSync(path.join(root, 'pending-review'));
+    const raw = fs.readFileSync(path.join(root, 'inbox-whatsapp', rawFiles[0]), 'utf-8');
+    const review = fs.readFileSync(path.join(root, 'pending-review', reviewFiles[0]), 'utf-8');
+    expect(raw).not.toContain('patient identifiable information');
+    expect(review).not.toContain('patient identifiable information');
+    expect(raw).toContain('Transcript withheld');
   });
 
   test('appends temporal metadata to custom processed notes and writes deadline watch', async () => {
