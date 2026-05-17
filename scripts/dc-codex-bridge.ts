@@ -665,6 +665,14 @@ function moveRecord(
     status === 'completed' ? dirs.completed : status === 'submitted' ? dirs.submitted : dirs.failed,
     `${record.id}.json`,
   );
+  if (fs.existsSync(destination)) {
+    const existing = JSON.parse(fs.readFileSync(destination, 'utf-8')) as Partial<CodexHandoffRecord>;
+    if (existing.id === record.id && existing.status === status) {
+      if (fs.existsSync(queuedPath)) fs.unlinkSync(queuedPath);
+      return;
+    }
+    throw new Error(`Terminal handoff record already exists with a different status: ${destination}`);
+  }
   fs.writeFileSync(
     destination,
     `${JSON.stringify(
@@ -680,6 +688,15 @@ function moveRecord(
     { flag: 'wx' },
   );
   fs.unlinkSync(queuedPath);
+}
+
+function terminalRecordPath(root: string, record: CodexHandoffRecord): string | undefined {
+  const dirs = handoffDirs(root);
+  for (const dir of [dirs.completed, dirs.submitted]) {
+    const candidate = path.join(dir, `${record.id}.json`);
+    if (fs.existsSync(candidate)) return candidate;
+  }
+  return undefined;
 }
 
 async function processQueue(args: Args, configPath: string): Promise<void> {
@@ -704,6 +721,13 @@ async function processQueue(args: Args, configPath: string): Promise<void> {
     try {
       const { record } = item;
       validateRecord(record);
+      const terminalPath = terminalRecordPath(args.root, record);
+      if (terminalPath) {
+        if (fs.existsSync(item.filePath)) fs.unlinkSync(item.filePath);
+        console.log(`Skipping already processed handoff ${record.id}; terminal record exists.`);
+        skipped += 1;
+        continue;
+      }
       if (record.target === 'queue-only') {
         console.log(`Skipping queue-only handoff ${record.id} for ${record.projectName}.`);
         skipped += 1;

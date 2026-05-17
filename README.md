@@ -44,13 +44,15 @@ For host-side setup after configuring the selected second-brain folder:
 pnpm run dc:ensure-docker-access -- --second-brain-root "<local Distributed-Cognition folder>"
 pnpm run dc:dashboard -- --root "<local Distributed-Cognition folder>"
 pnpm run dc:retrieval-eval -- --root "<local Distributed-Cognition folder>"
+pnpm run dc:memory-bridge -- process
+pnpm run dc:memory-bridge -- process --execute
 pnpm run dc:codex-bridge -- process
 pnpm run dc:codex-bridge -- process --execute
 pnpm run dc:action-bridge -- process
 pnpm run dc:action-bridge -- process --execute
 ```
 
-The bridge commands run on the Mac host, not inside the WhatsApp container. The container may queue work, but local Codex execution remains controlled by the host allowlist and bridge config.
+The bridge commands run on the Mac host, not inside the WhatsApp container. The container may queue work, but Mnemon promotion, local Codex execution, and artifact generation remain controlled by host-side allowlists and bridge config.
 
 ## Upstream NanoClaw
 

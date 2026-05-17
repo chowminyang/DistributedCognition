@@ -198,6 +198,15 @@ Automatic durable-memory upgrade:
 - Every automatic Mnemon write also creates a dated audit note in `approved-updates/` with the memory id, source note links when available, rationale, and safety note.
 - If the candidate is ambiguous, speculative, or low-value, DC should keep it in Markdown only.
 
+Host-side memory bridge:
+
+```bash
+pnpm run dc:memory-bridge -- process
+pnpm run dc:memory-bridge -- process --execute
+```
+
+The dry run reports processed notes that look eligible for Mnemon. The execute run stores only concise `## Durable memory` sections from `processed-notes/` or `daily-reflections/` when `## Mnemon triage` or `## Classification` marks the item as high-signal. It deduplicates by source file and memory content, writes an `approved-updates/` audit note, and blocks raw dumps or prohibited sensitive content. This is a host-side backstop for cases where the WhatsApp agent captured the Markdown correctly but did not call `distributed_cognition_auto_upgrade_memory` itself.
+
 The agent has local tools to search/read text context from the mounted second-brain folder and selected read-only context folders:
 
 ```text
@@ -457,6 +466,7 @@ For always-on Mac use, run the host-side bridges periodically with launchd. Thes
 
 Recommended schedule:
 
+- `dc:memory-bridge`: every 5 minutes, runs `pnpm run dc:memory-bridge -- process --execute`.
 - `dc:codex-bridge`: every 5 minutes, runs `pnpm run dc:codex-bridge -- process --execute`.
 - `dc:action-bridge`: every 5 minutes, runs `pnpm run dc:action-bridge -- process --execute`.
 
@@ -536,6 +546,8 @@ Do not silently jump from raw transcript to Mnemon or permanent wiki content. Ex
 - does not write directly to Mnemon.
 
 Use `distributed_cognition_auto_upgrade_memory` separately when a proposal or note contains a concise, safe, high-signal memory. It writes to Mnemon and creates an `approved-updates/` audit note.
+
+On the Mac host, `pnpm run dc:memory-bridge -- process --execute` provides the same safety idea as a scheduled bridge: it scans eligible processed notes, stores only the extracted durable memory, and leaves the raw note in Markdown.
 
 For Obsidian UX, `project-wikis/` uses stable project filenames like `project-alpha.md` or `assessment-work.md`. Capture notes, promotion proposals, approved-update copies, raw transcripts, decision logs, weekly reviews, and other event notes still use the dated `DD-MM-YY-HHMM-short-slug.md` format.
 
