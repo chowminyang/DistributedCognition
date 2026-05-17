@@ -13,11 +13,14 @@ import {
   captureNote,
   createActionRequest,
   createCodexHandoff,
+  formatReply,
+  healthCheck,
   preparePromotion,
   readContext,
   readWebPage,
   resolveOpenAIApiKeyForTranscription,
   searchContext,
+  updateProjectStatus,
   webSearch,
 } from './distributed-cognition.js';
 
@@ -107,6 +110,9 @@ describe('Distributed Cognition context index', () => {
     expect(toolText(result)).toContain('Captured reflection');
     const dailyFiles = fs.readdirSync(path.join(root, 'daily-reflections'));
     expect(dailyFiles.some((file) => file.endsWith('daily-reflection.md'))).toBe(true);
+    const processed = fs.readFileSync(path.join(root, 'daily-reflections', dailyFiles[0]), 'utf-8');
+    expect(processed).toContain('## Attention metadata');
+    expect(processed).toContain('Durability: useful');
   });
 
   test('resolves OpenAI transcription key from env before mounted second-brain .env fallback', () => {
@@ -137,7 +143,9 @@ describe('Distributed Cognition context index', () => {
     expect(processedFile).toBeTruthy();
     const processed = fs.readFileSync(path.join(root, 'processed-notes', processedFile!), 'utf-8');
     expect(processed).toContain('## Temporal metadata');
+    expect(processed).toContain('## Attention metadata');
     expect(processed).toContain('18-05-26, 17:00');
+    expect(processed).toContain('Time sensitivity: deadline');
 
     const watch = fs.readFileSync(path.join(root, 'open-questions', 'deadline-watch.md'), 'utf-8');
     expect(watch).toContain('# Deadline Watch');
@@ -352,8 +360,77 @@ describe('Distributed Cognition context index', () => {
     expect(wiki).toContain('p(AI)tient');
     expect(wiki).toContain('E3-Navigator Improved');
     expect(wiki).toContain('next, node, react');
+    expect(wiki).toContain('### Codex Handoffs');
+    expect(wiki).toContain('### Action Requests');
     const index = JSON.parse(fs.readFileSync(path.join(root, '.dc-index', 'codex-status.json'), 'utf-8'));
     expect(index.projects).toHaveLength(2);
+    expect(index.handoffSummary.queued).toBe(0);
+  });
+
+  test('updates project status pages and current-projects index safely', async () => {
+    const root = tempRoot();
+    fs.mkdirSync(path.join(root, 'daily-reflections'), { recursive: true });
+    fs.writeFileSync(
+      path.join(root, 'daily-reflections', '17-05-26-0815-patient-reflection.md'),
+      '# Reflection — 17-05-26, 08:15\n\np(AI)tient needs a production readiness map.\n',
+    );
+
+    const result = await updateProjectStatus.handler({
+      root,
+      projectName: 'p(AI)tient',
+      status: 'active',
+      currentState: 'Moving toward production readiness.',
+      decisions: ['Prioritise production readiness before voice.'],
+      openQuestions: ['What is the minimum safe launch surface?'],
+      nextActions: ['Draft production readiness checklist.'],
+      risks: ['Scope creep.'],
+      reviewAfter: '18-05-26, 17:00',
+      sourcePaths: ['daily-reflections/17-05-26-0815-patient-reflection.md'],
+    });
+
+    const text = toolText(result);
+    expect(text).toContain('Updated project status');
+    const wiki = fs.readFileSync(path.join(root, 'project-wikis', 'patient.md'), 'utf-8');
+    expect(wiki).toContain('# Project — p(AI)tient');
+    expect(wiki).toContain('Prioritise production readiness before voice.');
+    expect(wiki).toContain('[[daily-reflections/17-05-26-0815-patient-reflection]]');
+    const current = fs.readFileSync(path.join(root, 'project-wikis', 'current-projects.md'), 'utf-8');
+    expect(current).toContain('[[project-wikis/patient|p(AI)tient]]');
+    const index = JSON.parse(fs.readFileSync(path.join(root, '.dc-index', 'project-status.json'), 'utf-8'));
+    expect(index.projects[0].status).toBe('active');
+
+    const traversal = await updateProjectStatus.handler({
+      root,
+      projectName: 'CORTEX',
+      sourcePaths: ['../outside.md'],
+    });
+    expect(traversal.isError).toBe(true);
+    expect(toolText(traversal)).toContain('Refusing to read outside second-brain root');
+  });
+
+  test('formats DC replies and scrubs obvious private values', async () => {
+    const fakeApiKey = 'sk-' + 'proj-' + 'abcdefghijklmnopqrstuvwxyz1234567890';
+    const result = await formatReply.handler({
+      message: `Distributed Cognition: Use OPENAI_API_KEY=${fakeApiKey} and call +65 8123 4567 from /Users/example/Dropbox.`,
+    });
+    const text = toolText(result);
+    expect(text.startsWith('DC: ')).toBe(true);
+    expect(text).toContain('OPENAI_API_KEY=[REDACTED_SECRET]');
+    expect(text).toContain('[REDACTED_PHONE]');
+    expect(text).toContain('/Users/<username>/Dropbox');
+    expect(text).not.toContain('8123 4567');
+  });
+
+  test('writes a Distributed Cognition health report', async () => {
+    const root = tempRoot();
+    fs.mkdirSync(root, { recursive: true });
+    const result = await healthCheck.handler({ root });
+    const text = toolText(result);
+    expect(text).toContain('Distributed Cognition health:');
+    expect(fs.existsSync(path.join(root, 'project-wikis', 'system-health.md'))).toBe(true);
+    expect(fs.existsSync(path.join(root, '.dc-index', 'system-health.json'))).toBe(true);
+    const report = JSON.parse(fs.readFileSync(path.join(root, '.dc-index', 'system-health.json'), 'utf-8'));
+    expect(report.items.some((item: { label: string }) => item.label === 'second-brain root')).toBe(true);
   });
 
   test('queues a Codex handoff and blocks unsafe project/task inputs', async () => {

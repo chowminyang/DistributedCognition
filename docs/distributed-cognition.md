@@ -14,12 +14,15 @@ Its primary job is not to be a Dropbox Q&A bot. It is a reflective thinking part
 - Searches and reads context from the writable second-brain folder and selected read-only Dropbox context folders.
 - Searches and reads public web pages through bounded public-web tools when freshness or external sources matter.
 - Builds a read-only Codex Workbench status page from mounted local Codex projects and curated Codex memory summaries.
+- Maintains an Obsidian-friendly current-projects layer for project status, decisions, open questions, risks, and next actions.
+- Adds attention metadata to captures so durable pivots, deadlines, decisions, and low-signal notes can be separated.
 - Queues WhatsApp-requested coding tasks for local Codex on the owner's Mac by default.
 - Queues heavier non-code action requests such as long web research, Word documents, and PowerPoint decks for local Codex on the Mac.
 - Uses Mnemon only for curated durable memory, not for every raw capture.
 - Automatically upgrades concise high-signal statements into Mnemon durable memory when safe; no separate manual approval is needed for clear durable memory.
 - Helps clarify, connect, label, and develop ideas with concise thinking moves: framings, implications, tensions, decision leanings, open questions, and next steps.
 - Uses the existing NanoClaw provider configuration, including the OpenAI/Codex path already configured for this checkout, with a lightweight per-turn model router.
+- Formats WhatsApp replies with the short `DC:` tag before sending.
 
 It must not process patient-identifiable data, learner-identifiable data, HR material, exam material, or confidential institutional data.
 
@@ -206,6 +209,9 @@ distributed_cognition_capture_audio
 distributed_cognition_prepare_promotion
 distributed_cognition_apply_promotion
 distributed_cognition_auto_upgrade_memory
+distributed_cognition_update_project_status
+distributed_cognition_health_check
+distributed_cognition_format_reply
 distributed_cognition_build_codex_status
 distributed_cognition_create_codex_handoff
 distributed_cognition_create_action_request
@@ -231,6 +237,19 @@ Supported indexed/readable file types:
 DOCX extraction uses `mammoth`. PPTX/XLSX/PDF extraction uses `officeparser` with OCR and attachment extraction disabled. Audio transcription uses the official `openai` SDK.
 
 `distributed_cognition_capture_note` accepts optional `processedMarkdown`. Use it when Distributed Cognition has already produced an actual processed note, so Dropbox does not fill with placeholder sections.
+
+## Attention Scoring
+
+Every raw and processed capture now receives an `Attention metadata` section:
+
+- `Importance`: low, medium, or high.
+- `Durability`: transient, useful, durable, or blocked.
+- `Actionability`: none, possible, or clear_action.
+- `Time sensitivity`: none, soon, or deadline.
+- `Project signals`: detected domains such as AIME, p(AI)tient, CORTEX, CREATE Hackathon, grants, papers, workshops, assessment, productive struggle, discernment, uncertainty tolerance, wisdom, or governance.
+- `Rationale`: the local heuristic reason for the score.
+
+This is deliberately lightweight. It is not a replacement for judgment. Its purpose is to stop the system from treating every passing reflection as equally important. High-signal items can flow toward Mnemon, project status pages, decision logs, open questions, or Codex handoffs. Low-signal items still remain searchable in Markdown.
 
 ## Direct Web Access
 
@@ -321,6 +340,8 @@ to write:
 project-wikis/codex-workbench.md
 .dc-index/codex-status.json
 ```
+
+The workbench page also includes handoff/action queue counts and recent queue items, so the WhatsApp conversation can tell whether work is merely queued, submitted, completed, or failed before asking the host bridge to run again.
 
 Use:
 
@@ -464,6 +485,26 @@ Do not silently jump from raw transcript to Mnemon or permanent wiki content. Ex
 Use `distributed_cognition_auto_upgrade_memory` separately when a proposal or note contains a concise, safe, high-signal memory. It writes to Mnemon and creates an `approved-updates/` audit note.
 
 For Obsidian UX, `project-wikis/` uses stable project filenames like `project-alpha.md` or `assessment-work.md`. Capture notes, promotion proposals, approved-update copies, raw transcripts, decision logs, weekly reviews, and other event notes still use the dated `DD-MM-YY-HHMM-short-slug.md` format.
+
+## Project Status Layer
+
+Use:
+
+```text
+distributed_cognition_update_project_status
+```
+
+to maintain the current project map without manually editing Markdown. The tool writes:
+
+```text
+project-wikis/<project-slug>.md
+project-wikis/current-projects.md
+.dc-index/project-status.json
+```
+
+It accepts status, current state, next actions, open questions, decisions, risks, review-after timestamps, and source note paths. All writes stay under `project-wikis/` and `.dc-index/`; source paths must be safe relative second-brain Markdown paths.
+
+This is the default promotion target for project state. Use Mnemon for durable keys and pivots; use project-wikis for narrative context, status, and Obsidian browsing; use raw folders for transcript fidelity.
 
 Mnemon, when enabled, is exposed as an MCP server. Recommended use:
 
@@ -637,6 +678,35 @@ Prompt-level boundaries:
 - Do not process prohibited sensitive data.
 - Do not write outside the mounted second-brain folder.
 
+## Reply Tagging
+
+Use:
+
+```text
+distributed_cognition_format_reply
+```
+
+immediately before WhatsApp outbound sending when the model has drafted a reply. It enforces the short `DC:` prefix and scrubs obvious secrets, phone numbers, WhatsApp JIDs, emails, and host-local `/Users/<username>` path fragments from the final operational reply text.
+
+Raw captures are not scrubbed by this formatter because the raw note is supposed to preserve what the owner sent. The formatter is for outbound replies and public-ish operational summaries.
+
+## Health Check
+
+Use:
+
+```text
+distributed_cognition_health_check
+```
+
+to verify the local setup after Docker restarts, Mac sleep/wake, mount changes, or before a Raspberry Pi migration. It writes:
+
+```text
+project-wikis/system-health.md
+.dc-index/system-health.json
+```
+
+The check reports the writable second-brain root, required folder structure, selected read-only context mounts, Codex project/memory mounts, Mnemon database visibility, context-index directory, and queue directories. Missing optional mounts are warnings; missing required second-brain write access is an error.
+
 ## Manual Tests
 
 Unknown sender:
@@ -674,6 +744,14 @@ Context index:
 2. Confirm `.dc-index/context-index.jsonl` appears inside the mounted second-brain folder.
 3. Ask a broad context question, such as what current projects are visible from the mounted folders.
 4. Confirm DC uses indexed hits first, then reads specific source files only when precision is needed.
+
+Attention and project status:
+
+1. Capture a reflection that mentions a project and a dated follow-up.
+2. Confirm the raw and processed notes include `## Attention metadata`.
+3. Confirm a deadline candidate appears in `open-questions/deadline-watch.md`.
+4. Ask DC to refresh a project status page.
+5. Confirm `project-wikis/<project>.md`, `project-wikis/current-projects.md`, and `.dc-index/project-status.json` are updated.
 
 Promotion:
 
@@ -716,6 +794,14 @@ Direct web access:
 5. Confirm `distributed_cognition_read_web_page` returns bounded text from the page.
 6. Ask DC to read `http://127.0.0.1:3000`.
 7. Confirm the tool refuses the private/local URL and does not fetch it.
+
+Reply tag and health:
+
+1. Ask DC to format a reply.
+2. Confirm the returned text starts with `DC:`.
+3. Include a fake API key, phone number, and `/Users/<username>` path in a test reply and confirm they are redacted.
+4. Run `distributed_cognition_health_check`.
+5. Confirm `project-wikis/system-health.md` and `.dc-index/system-health.json` are written.
 
 ## Raspberry Pi Migration
 

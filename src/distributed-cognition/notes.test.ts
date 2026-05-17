@@ -12,6 +12,8 @@ import {
   mnemonTriage,
   normalizeDistributedMessageType,
   resolveSecondBrainPath,
+  scoreAttention,
+  scrubPrivateText,
   writeDistributedNote,
 } from './notes.js';
 
@@ -72,6 +74,9 @@ describe('Distributed Cognition notes', () => {
     expect(processed).toContain('## Raw reflection');
     expect(processed).toContain('## Temporal metadata');
     expect(processed).toContain('Captured at: 16-05-26, 22:45');
+    expect(processed).toContain('## Attention metadata');
+    expect(processed).toContain('Importance: low');
+    expect(processed).toContain('Project signals: education strategy and governance');
     expect(processed).toContain('## Mnemon triage');
     expect(processed).toContain('Recommendation: Markdown only');
   });
@@ -120,6 +125,7 @@ describe('Distributed Cognition notes', () => {
     const processed = fs.readFileSync(result.processedPath, 'utf-8');
     expect(processed).toContain('# Custom Processed Note\n\n## New insight\nSpecific synthesis.');
     expect(processed).toContain('## Temporal metadata');
+    expect(processed).toContain('## Attention metadata');
   });
 
   it('normalizes invalid message type strings back through the classifier', () => {
@@ -157,5 +163,35 @@ describe('Distributed Cognition notes', () => {
   it('triages explicit remember requests as confirmed Mnemon candidates', () => {
     const triage = mnemonTriage('Remember that CORTEX is about tool-mediated judgement.', 'durable_memory_candidate');
     expect(triage.recommendation).toBe('Confirmed Mnemon candidate');
+  });
+
+  it('scores durable dated decisions as high attention', () => {
+    const metadata = extractTemporalMetadata(
+      'Decision: p(AI)tient production readiness is due by 18-05-26, 17:00.',
+      fixed,
+      'Asia/Singapore',
+      'decision',
+    );
+    const attention = scoreAttention(
+      'Decision: p(AI)tient production readiness is due by 18-05-26, 17:00.',
+      'decision',
+      metadata,
+    );
+    expect(attention.importance).toBe('high');
+    expect(attention.durability).toBe('durable');
+    expect(attention.timeSensitivity).toBe('deadline');
+    expect(attention.projectSignals).toContain('p(AI)tient');
+  });
+
+  it('scrubs obvious private values from operational text', () => {
+    const fakeApiKey = 'sk-' + 'proj-' + 'abcdefghijklmnopqrstuvwxyz1234567890';
+    const scrubbed = scrubPrivateText(
+      `OPENAI_API_KEY=${fakeApiKey} phone +65 8123 4567 path /Users/example/Dropbox and jid 6581234567@s.whatsapp.net`,
+    );
+    expect(scrubbed).toContain('OPENAI_API_KEY=[REDACTED_SECRET]');
+    expect(scrubbed).toContain('[REDACTED_PHONE]');
+    expect(scrubbed).toContain('/Users/<username>/Dropbox');
+    expect(scrubbed).toContain('[REDACTED_WHATSAPP_JID]');
+    expect(scrubbed).not.toContain('8123 4567');
   });
 });

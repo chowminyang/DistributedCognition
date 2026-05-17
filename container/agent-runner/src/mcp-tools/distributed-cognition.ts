@@ -64,6 +64,20 @@ interface TemporalMetadata {
   stalenessStatus: string;
 }
 
+type AttentionImportance = 'low' | 'medium' | 'high';
+type AttentionDurability = 'transient' | 'useful' | 'durable' | 'blocked';
+type AttentionActionability = 'none' | 'possible' | 'clear_action';
+type AttentionTimeSensitivity = 'none' | 'soon' | 'deadline';
+
+interface AttentionMetadata {
+  importance: AttentionImportance;
+  durability: AttentionDurability;
+  actionability: AttentionActionability;
+  timeSensitivity: AttentionTimeSensitivity;
+  projectSignals: string[];
+  rationale: string;
+}
+
 const ROOT_CANDIDATES = ['/workspace/extra/second-brain', '/workspace/agent/second-brain'];
 const SOURCE_CONTEXT_ROOTS = [
   { label: 'presentations', path: '/workspace/extra/context-presentations' },
@@ -156,10 +170,14 @@ const CODEX_PROJECTS_ROOT_CANDIDATES = ['/workspace/extra/codex-projects'];
 const CODEX_MEMORY_ROOT_CANDIDATES = ['/workspace/extra/codex-memory'];
 const CODEX_STATUS_VERSION = 1;
 const CODEX_HANDOFF_VERSION = 1;
+const PROJECT_STATUS_VERSION = 1;
+const SYSTEM_HEALTH_VERSION = 1;
 const MAX_CODEX_PROJECTS = 80;
 const MAX_CODEX_TASK_CHARS = 8_000;
 const CODEX_STATUS_INDEX_FILE = 'codex-status.json';
 const CODEX_HANDOFF_DIR = 'codex-handoffs';
+const PROJECT_STATUS_INDEX_FILE = 'project-status.json';
+const SYSTEM_HEALTH_FILE = 'system-health.json';
 const ACTION_REQUEST_VERSION = 1;
 const ACTION_REQUEST_DIR = 'action-requests';
 const MAX_ACTION_BRIEF_CHARS = 12_000;
@@ -178,6 +196,17 @@ type ActionType = (typeof ACTION_TYPES)[number];
 type WikiPromotionSection = (typeof WIKI_PROMOTION_SECTIONS)[number];
 type MemoryLayer = (typeof MEMORY_LAYERS)[number];
 type MemoryEntityType = (typeof MEMORY_ENTITY_TYPES)[number];
+
+const PROJECT_STATUS_VALUES = ['active', 'stale', 'blocked', 'paused', 'watching', 'done'] as const;
+type ProjectLifecycleStatus = (typeof PROJECT_STATUS_VALUES)[number];
+
+interface QueueSummary {
+  queued: number;
+  submitted: number;
+  completed: number;
+  failed: number;
+  recent: Array<{ id: string; title: string; status: string; createdAt?: string; target?: string }>;
+}
 
 interface ContextIndexEntry {
   version: typeof CONTEXT_INDEX_VERSION;
@@ -259,7 +288,44 @@ interface CodexStatusIndex {
   projects: CodexProjectStatus[];
   memoryRoot?: string;
   memorySignals: string[];
+  handoffSummary: QueueSummary;
+  actionSummary: QueueSummary;
   skipped: Array<{ path: string; reason: string }>;
+}
+
+interface ProjectStatusRecord {
+  version: typeof PROJECT_STATUS_VERSION;
+  slug: string;
+  name: string;
+  status: ProjectLifecycleStatus;
+  updatedAt: string;
+  currentState: string;
+  nextActions: string[];
+  openQuestions: string[];
+  decisions: string[];
+  risks: string[];
+  sourcePaths: string[];
+  reviewAfter: string;
+  wikiPath: string;
+}
+
+interface ProjectStatusIndex {
+  version: typeof PROJECT_STATUS_VERSION;
+  updatedAt: string;
+  projects: ProjectStatusRecord[];
+}
+
+interface HealthCheckItem {
+  label: string;
+  status: 'ok' | 'warning' | 'error';
+  detail: string;
+}
+
+interface SystemHealthReport {
+  version: typeof SYSTEM_HEALTH_VERSION;
+  checkedAt: string;
+  overall: 'ok' | 'warning' | 'error';
+  items: HealthCheckItem[];
 }
 
 interface CodexHandoffRecord {
@@ -362,6 +428,167 @@ function truncateText(text: string, maxChars: number): string {
     .trim();
   if (compact.length <= maxChars) return compact;
   return `${compact.slice(0, Math.max(0, maxChars - 1)).trimEnd()}…`;
+}
+
+export function scrubPrivateText(input: string): string {
+  return input
+    .replace(/\b\d{8,15}@s\.whatsapp\.net\b/gi, '[REDACTED_WHATSAPP_JID]')
+    .replace(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi, '[REDACTED_EMAIL]')
+    .replace(/\b(?:sk|sk-proj)-[A-Za-z0-9_-]{12,}\b/g, '[REDACTED_API_KEY]')
+    .replace(/\b(?:OPENAI_API_KEY|API_KEY|ACCESS_TOKEN|AUTH_TOKEN|SECRET|PASSWORD)\s*=\s*['"]?[^'"\s]+/gi, (match) => {
+      const key = match.split('=')[0]?.trim() || 'SECRET';
+      return `${key}=[REDACTED_SECRET]`;
+    })
+    .replace(/\+\d{1,3}(?:[\s-]?\d){6,14}\b/g, '[REDACTED_PHONE]')
+    .replace(/\/Users\/[^/\s)]+/g, '/Users/<username>');
+}
+
+const PROJECT_SIGNAL_PATTERNS: Array<{ label: string; pattern: RegExp }> = [
+  { label: 'AIME', pattern: /\b(?:aime|office of ai-enhanced medical education|ai-enhanced medical education)\b/i },
+  { label: 'p(AI)tient', pattern: /\bp\s*\(\s*ai\s*\)\s*tient\b|\bpai\s*tient\b/i },
+  { label: 'CORTEX', pattern: /\bcortex\b/i },
+  { label: 'CREATE Hackathon', pattern: /\bcreate\s+hackathon\b/i },
+  { label: 'grants', pattern: /\bgrant|funding|proposal\b/i },
+  { label: 'papers and manuscripts', pattern: /\bpaper|manuscript|publication|reviewer|revision\b/i },
+  { label: 'workshops and talks', pattern: /\bworkshop|talk|presentation|deck|lecture\b/i },
+  { label: 'AI-enhanced assessment', pattern: /\bassessment|exam|osce|mcq|psychometric\b/i },
+  { label: 'productive struggle', pattern: /\bproductive struggle\b/i },
+  { label: 'discernment', pattern: /\bdiscernment\b/i },
+  { label: 'uncertainty tolerance', pattern: /\buncertainty tolerance|adaptive expertise\b/i },
+  { label: 'wisdom', pattern: /\bwisdom\b/i },
+  { label: 'education strategy and governance', pattern: /\bgovernance|strategy|transformation office\b/i },
+];
+
+function projectSignals(text: string): string[] {
+  const signals: string[] = [];
+  for (const { label, pattern } of PROJECT_SIGNAL_PATTERNS) {
+    if (pattern.test(text) && !signals.includes(label)) signals.push(label);
+  }
+  return signals;
+}
+
+function attentionMarkdownLines(metadata: AttentionMetadata): string[] {
+  return [
+    '## Attention metadata',
+    `Importance: ${metadata.importance}`,
+    `Durability: ${metadata.durability}`,
+    `Actionability: ${metadata.actionability}`,
+    `Time sensitivity: ${metadata.timeSensitivity}`,
+    `Project signals: ${metadata.projectSignals.length > 0 ? metadata.projectSignals.join('; ') : 'None detected'}`,
+    `Rationale: ${metadata.rationale}`,
+  ];
+}
+
+function ensureAttentionMarkdown(markdown: string, metadata: AttentionMetadata): string {
+  const trimmed = markdown.trimEnd();
+  if (/^## Attention metadata\b/m.test(trimmed)) return `${trimmed}\n`;
+  return `${trimmed}\n\n${attentionMarkdownLines(metadata).join('\n')}\n`;
+}
+
+function hasClearActionSignal(text: string, type: MessageType): boolean {
+  return (
+    type === 'action_request' ||
+    /\b(next action|todo|to do|please|draft|write|prepare|create|make|queue|handoff|follow up|send to codex|research|turn this into)\b/i.test(
+      text,
+    )
+  );
+}
+
+export function scoreAttention(text: string, type: MessageType, temporal?: TemporalMetadata): AttentionMetadata {
+  if (SENSITIVE_RE.test(text) || PROHIBITED_CONTEXT_RE.test(text) || type === 'sensitive_data_warning') {
+    return {
+      importance: 'low',
+      durability: 'blocked',
+      actionability: 'none',
+      timeSensitivity: 'none',
+      projectSignals: [],
+      rationale: 'Blocked from promotion because the content appears to contain prohibited sensitive material.',
+    };
+  }
+
+  const signals = projectSignals(text);
+  const reasons: string[] = [];
+  let score = 0;
+  if (type === 'decision') {
+    score += 3;
+    reasons.push('decision');
+  }
+  if (
+    type === 'durable_memory_candidate' ||
+    /\b(remember|important to remember|standing rule|from now on)\b/i.test(text)
+  ) {
+    score += 3;
+    reasons.push('durable-memory signal');
+  }
+  if (type === 'forget_or_correction_request' || /\b(changed my mind|obsolete|correction)\b/i.test(text)) {
+    score += 2;
+    reasons.push('correction signal');
+  }
+  if (type === 'weekly_synthesis_request') {
+    score += 2;
+    reasons.push('synthesis request');
+  }
+  if (hasClearActionSignal(text, type)) {
+    score += 1;
+    reasons.push('actionable request');
+  }
+  if (
+    (temporal?.deadlineCandidates.length ?? 0) > 0 ||
+    /\b(deadline|due|submit by|decide by|review by)\b/i.test(text)
+  ) {
+    score += 2;
+    reasons.push('deadline or dated follow-up');
+  } else if (
+    (temporal?.mentionedDates.length ?? 0) > 0 ||
+    /\b(upcoming|meeting|milestone|launch|starts?|starting)\b/i.test(text)
+  ) {
+    score += 1;
+    reasons.push('time signal');
+  }
+  if (signals.length > 0) {
+    score += 1;
+    reasons.push(`project signal: ${signals.slice(0, 3).join(', ')}`);
+  }
+
+  const durability: AttentionDurability =
+    type === 'decision' ||
+    type === 'durable_memory_candidate' ||
+    type === 'forget_or_correction_request' ||
+    /\b(always|never|preference|prefer|default|standing rule|from now on|remember that|changed my mind)\b/i.test(text)
+      ? 'durable'
+      : signals.length > 0 || type === 'reflection' || type === 'weekly_synthesis_request'
+        ? 'useful'
+        : 'transient';
+  const actionability: AttentionActionability = hasClearActionSignal(text, type)
+    ? 'clear_action'
+    : /\b(open question|risk|should|need to|follow up)\b/i.test(text) || (temporal?.deadlineCandidates.length ?? 0) > 0
+      ? 'possible'
+      : 'none';
+  const timeSensitivity: AttentionTimeSensitivity =
+    (temporal?.deadlineCandidates.length ?? 0) > 0 || /\b(deadline|due|submit by|decide by|review by)\b/i.test(text)
+      ? 'deadline'
+      : (temporal?.mentionedDates.length ?? 0) > 0 ||
+          /\b(upcoming|meeting|milestone|launch|starts?|starting)\b/i.test(text)
+        ? 'soon'
+        : 'none';
+  const importance: AttentionImportance = score >= 4 ? 'high' : score >= 2 ? 'medium' : 'low';
+
+  return {
+    importance,
+    durability,
+    actionability,
+    timeSensitivity,
+    projectSignals: signals,
+    rationale: reasons.length > 0 ? reasons.join('; ') : 'ordinary capture with no durable or urgent signal detected',
+  };
+}
+
+function ensureCaptureMetadataMarkdown(
+  markdown: string,
+  temporal: TemporalMetadata,
+  attention: AttentionMetadata,
+): string {
+  return ensureAttentionMarkdown(ensureTemporalMarkdown(markdown, temporal), attention);
 }
 
 function decodeHtmlEntities(input: string): string {
@@ -1353,17 +1580,35 @@ function rawTemplate(
   body: string,
   source: string,
   temporal: TemporalMetadata,
+  attention: AttentionMetadata,
   audioPath?: string,
 ): string {
   const lines = [`# Raw WhatsApp Note — ${ts}`, '', '## Source', source, ''];
   if (source === 'whatsapp-audio' && audioPath) {
     lines.push('## Audio source path', audioPath, '');
   }
-  lines.push('## Inferred message type', type, '', ...temporalMarkdownLines(temporal), '', '## Raw note', body, '');
+  lines.push(
+    '## Inferred message type',
+    type,
+    '',
+    ...temporalMarkdownLines(temporal),
+    '',
+    ...attentionMarkdownLines(attention),
+    '',
+    '## Raw note',
+    body,
+    '',
+  );
   return lines.join('\n');
 }
 
-function template(type: MessageType, ts: string, body: string, temporal: TemporalMetadata): string {
+function template(
+  type: MessageType,
+  ts: string,
+  body: string,
+  temporal: TemporalMetadata,
+  attention: AttentionMetadata,
+): string {
   const triage = mnemonTriage(body, type);
   let markdown: string;
   if (type === 'decision') {
@@ -1478,7 +1723,7 @@ function template(type: MessageType, ts: string, body: string, temporal: Tempora
       '',
     ].join('\n');
   }
-  return ensureTemporalMarkdown(markdown, temporal);
+  return ensureCaptureMetadataMarkdown(markdown, temporal, attention);
 }
 
 function mnemonTriage(text: string, type: MessageType): { recommendation: string; reason: string } {
@@ -1847,6 +2092,296 @@ function updateWikiMetadata(markdown: string, ts: string): string {
     return markdown.replace(/^Last reviewed:.*$/m, `Last reviewed: ${ts}`);
   }
   return markdown.replace(/^## Wiki Metadata\s*$/m, `## Wiki Metadata\nLast reviewed: ${ts}`);
+}
+
+function normalizeProjectLifecycleStatus(input: unknown): ProjectLifecycleStatus {
+  if (PROJECT_STATUS_VALUES.includes(input as ProjectLifecycleStatus)) return input as ProjectLifecycleStatus;
+  return 'active';
+}
+
+function projectStatusIndexPaths(root: string): { dir: string; json: string; currentProjects: string } {
+  const realRoot = requireRoot(root);
+  const paths = contextIndexPaths(realRoot);
+  return {
+    dir: paths.dir,
+    json: path.join(paths.dir, PROJECT_STATUS_INDEX_FILE),
+    currentProjects: path.join(realRoot, 'project-wikis', 'current-projects.md'),
+  };
+}
+
+function loadProjectStatusIndex(root: string): ProjectStatusIndex {
+  const paths = projectStatusIndexPaths(root);
+  if (!fs.existsSync(paths.json)) {
+    return { version: PROJECT_STATUS_VERSION, updatedAt: timestamp(new Date(0)), projects: [] };
+  }
+  const parsed = JSON.parse(fs.readFileSync(paths.json, 'utf-8')) as ProjectStatusIndex;
+  if (parsed.version !== PROJECT_STATUS_VERSION) {
+    return { version: PROJECT_STATUS_VERSION, updatedAt: timestamp(new Date(0)), projects: [] };
+  }
+  return parsed;
+}
+
+function scrubbedList(value: unknown): string[] {
+  return asStringList(value).map((item) => scrubPrivateText(item));
+}
+
+function normalizeProjectSources(sourcePaths: unknown): string[] {
+  if (!Array.isArray(sourcePaths)) return [];
+  return sourcePaths.map((item) => {
+    if (typeof item !== 'string' || !item.trim()) throw new Error('sourcePaths must contain relative Markdown paths');
+    const normalized = normalizeSecondBrainRelativePath(item);
+    const folder = firstPathSegment(normalized);
+    if (!SECOND_BRAIN_FOLDERS.includes(folder as SecondBrainFolder)) {
+      throw new Error(`Unsupported project status source folder: ${folder}`);
+    }
+    if (!normalized.endsWith('.md')) throw new Error(`Project status source must be Markdown: ${normalized}`);
+    return scrubPrivateText(normalized);
+  });
+}
+
+function statusListMarkdown(items: string[], empty = 'None recorded'): string {
+  return items.length > 0 ? items.map((item) => `- ${item}`).join('\n') : empty;
+}
+
+function projectStatusMarkdown(record: ProjectStatusRecord): string {
+  const sources =
+    record.sourcePaths.length > 0
+      ? record.sourcePaths.map((source) => `- ${obsidianLink(source)}`).join('\n')
+      : 'None recorded';
+  return [
+    `# Project — ${record.name}`,
+    '',
+    '## Wiki Metadata',
+    `Last reviewed: ${record.updatedAt}`,
+    `Status: ${record.status}`,
+    `Review after: ${record.reviewAfter}`,
+    '',
+    '## Current State',
+    record.currentState,
+    '',
+    '## Decisions',
+    statusListMarkdown(record.decisions),
+    '',
+    '## Open Questions',
+    statusListMarkdown(record.openQuestions),
+    '',
+    '## Risks',
+    statusListMarkdown(record.risks),
+    '',
+    '## Next Actions',
+    statusListMarkdown(record.nextActions),
+    '',
+    '## Sources',
+    sources,
+    '',
+    '## Mnemon Candidates',
+    'Store only concise, high-signal project facts or pivots in Mnemon. Keep raw transcripts as linked source notes.',
+    '',
+    '## Update Log',
+    `- ${record.updatedAt}: Project status refreshed through distributed_cognition_update_project_status.`,
+    '',
+  ].join('\n');
+}
+
+function currentProjectsMarkdown(index: ProjectStatusIndex): string {
+  const activeish = index.projects.filter((project) => project.status !== 'done');
+  const table = index.projects.map((project) =>
+    [
+      obsidianLink(project.wikiPath, project.name),
+      project.status,
+      project.reviewAfter,
+      project.nextActions[0] ?? 'None recorded',
+      project.openQuestions[0] ?? 'None recorded',
+    ].join(' | '),
+  );
+  return [
+    `# Current Projects — ${index.updatedAt}`,
+    '',
+    '## Portfolio Pulse',
+    `Active / watch / blocked / paused / stale projects: ${activeish.length}`,
+    `Last updated: ${index.updatedAt}`,
+    '',
+    '## Project Status Table',
+    'Project | Status | Review after | Next action | Open question',
+    '--- | --- | --- | --- | ---',
+    ...table,
+    '',
+    '## Notes',
+    '- This is a curated working map, not a full transcript dump.',
+    '- Promote only durable pivots, decisions, deadlines, risks, and open questions into project pages.',
+    '- Raw reflections remain linked in inbox-whatsapp/, daily-reflections/, or processed-notes/.',
+    '',
+  ].join('\n');
+}
+
+function upsertProjectStatus(root: string, args: Record<string, unknown>): ProjectStatusRecord {
+  const name = typeof args.projectName === 'string' ? scrubPrivateText(args.projectName.trim()) : '';
+  if (!name) throw new Error('projectName is required');
+  const now = new Date();
+  const updatedAt = timestamp(now);
+  const wiki = resolveProjectWikiPath(root, name);
+  const index = loadProjectStatusIndex(root);
+  const existing = index.projects.find((project) => project.slug === wikiSlug(name));
+  const record: ProjectStatusRecord = {
+    version: PROJECT_STATUS_VERSION,
+    slug: wikiSlug(name),
+    name,
+    status: normalizeProjectLifecycleStatus(args.status ?? existing?.status),
+    updatedAt,
+    currentState:
+      typeof args.currentState === 'string' && args.currentState.trim()
+        ? scrubPrivateText(args.currentState.trim())
+        : existing?.currentState || 'Needs review',
+    nextActions:
+      scrubbedList(args.nextActions).length > 0 ? scrubbedList(args.nextActions) : existing?.nextActions || [],
+    openQuestions:
+      scrubbedList(args.openQuestions).length > 0 ? scrubbedList(args.openQuestions) : existing?.openQuestions || [],
+    decisions: scrubbedList(args.decisions).length > 0 ? scrubbedList(args.decisions) : existing?.decisions || [],
+    risks: scrubbedList(args.risks).length > 0 ? scrubbedList(args.risks) : existing?.risks || [],
+    sourcePaths:
+      normalizeProjectSources(args.sourcePaths).length > 0
+        ? normalizeProjectSources(args.sourcePaths)
+        : existing?.sourcePaths || [],
+    reviewAfter:
+      typeof args.reviewAfter === 'string' && args.reviewAfter.trim()
+        ? scrubPrivateText(args.reviewAfter.trim())
+        : existing?.reviewAfter || 'None scheduled',
+    wikiPath: wiki.relativePath,
+  };
+
+  const nextIndex: ProjectStatusIndex = {
+    version: PROJECT_STATUS_VERSION,
+    updatedAt,
+    projects: [record, ...index.projects.filter((project) => project.slug !== record.slug)].sort((a, b) =>
+      a.name.localeCompare(b.name),
+    ),
+  };
+  const paths = projectStatusIndexPaths(root);
+  fs.mkdirSync(paths.dir, { recursive: true });
+  fs.mkdirSync(path.dirname(paths.currentProjects), { recursive: true });
+  fs.writeFileSync(paths.json, `${JSON.stringify(nextIndex, null, 2)}\n`);
+  fs.writeFileSync(wiki.filePath, projectStatusMarkdown(record));
+  fs.writeFileSync(paths.currentProjects, currentProjectsMarkdown(nextIndex));
+  return record;
+}
+
+function healthStatus(items: HealthCheckItem[]): SystemHealthReport['overall'] {
+  if (items.some((item) => item.status === 'error')) return 'error';
+  if (items.some((item) => item.status === 'warning')) return 'warning';
+  return 'ok';
+}
+
+function pathHealth(
+  label: string,
+  target: string,
+  options: { required?: boolean; writable?: boolean } = {},
+): HealthCheckItem {
+  try {
+    if (!fs.existsSync(target)) {
+      return {
+        label,
+        status: options.required ? 'error' : 'warning',
+        detail: `${scrubPrivateText(target)} is not mounted or does not exist`,
+      };
+    }
+    const stat = fs.statSync(target);
+    if (!stat.isDirectory() && !stat.isFile()) {
+      return { label, status: 'warning', detail: `${scrubPrivateText(target)} exists but is not a file or directory` };
+    }
+    if (options.writable) fs.accessSync(target, fs.constants.W_OK);
+    return {
+      label,
+      status: 'ok',
+      detail: `${scrubPrivateText(target)} is ${stat.isDirectory() ? 'available as a directory' : 'available as a file'}`,
+    };
+  } catch (e) {
+    return {
+      label,
+      status: options.required ? 'error' : 'warning',
+      detail: e instanceof Error ? scrubPrivateText(e.message) : scrubPrivateText(String(e)),
+    };
+  }
+}
+
+function systemHealthMarkdown(report: SystemHealthReport): string {
+  return [
+    `# Distributed Cognition System Health — ${report.checkedAt}`,
+    '',
+    '## Overall',
+    report.overall,
+    '',
+    '## Checks',
+    ...report.items.map((item) => `- ${item.status.toUpperCase()}: ${item.label} — ${item.detail}`),
+    '',
+    '## Interpretation',
+    '- OK means the required mounted folder or queue is visible.',
+    '- Warning means an optional capability is unavailable or has not been initialised.',
+    '- Error means Distributed Cognition should not assume that capability is safe to use.',
+    '',
+  ].join('\n');
+}
+
+function buildSystemHealth(root: string): { report: SystemHealthReport; wikiPath: string; jsonPath: string } {
+  const realRoot = requireRoot(root);
+  ensureFolders(realRoot);
+  const items: HealthCheckItem[] = [
+    pathHealth('second-brain root', realRoot, { required: true, writable: true }),
+    ...SECOND_BRAIN_FOLDERS.map((folder) =>
+      pathHealth(`second-brain/${folder}`, path.join(realRoot, folder), { required: true, writable: true }),
+    ),
+    ...SOURCE_CONTEXT_ROOTS.map((candidate) => pathHealth(`context/${candidate.label}`, candidate.path)),
+    pathHealth('codex projects mount', CODEX_PROJECTS_ROOT_CANDIDATES[0]),
+    pathHealth('codex memory mount', CODEX_MEMORY_ROOT_CANDIDATES[0]),
+  ];
+
+  const mnemon =
+    process.env.MNEMON_DB_PATH?.trim() || MNEMON_DB_CANDIDATES.find((candidate) => fs.existsSync(candidate));
+  items.push(
+    mnemon
+      ? pathHealth('mnemon database', mnemon)
+      : {
+          label: 'mnemon database',
+          status: 'warning',
+          detail: `No Mnemon database detected yet. Default candidate is ${MNEMON_DB_CANDIDATES[0]}.`,
+        },
+  );
+
+  const indexPaths = contextIndexPaths(realRoot);
+  items.push(pathHealth('context index directory', indexPaths.dir));
+  for (const dir of [
+    path.join(indexPaths.dir, CODEX_HANDOFF_DIR, 'queued'),
+    path.join(indexPaths.dir, ACTION_REQUEST_DIR, 'queued'),
+  ]) {
+    items.push(pathHealth(`queue/${path.basename(path.dirname(dir))}/queued`, dir));
+  }
+
+  const checkedAt = timestamp(new Date());
+  const report: SystemHealthReport = {
+    version: SYSTEM_HEALTH_VERSION,
+    checkedAt,
+    overall: healthStatus(items),
+    items,
+  };
+  fs.mkdirSync(indexPaths.dir, { recursive: true });
+  const jsonPath = path.join(indexPaths.dir, SYSTEM_HEALTH_FILE);
+  fs.writeFileSync(jsonPath, `${JSON.stringify(report, null, 2)}\n`);
+  const wiki = resolveProjectWikiPath(realRoot, 'System Health', 'project-wikis/system-health.md');
+  fs.writeFileSync(wiki.filePath, systemHealthMarkdown(report));
+  return { report, wikiPath: wiki.filePath, jsonPath };
+}
+
+function formatDcReply(message: string, options: { includeTimestamp?: boolean; maxChars?: number } = {}): string {
+  const cleaned = scrubPrivateText(message)
+    .replace(/^\s*(?:distributed cognition|dc)\s*:\s*/i, '')
+    .replace(/\s+\n/g, '\n')
+    .trim();
+  const maxChars =
+    typeof options.maxChars === 'number' && Number.isFinite(options.maxChars)
+      ? Math.min(4_000, Math.max(40, Math.floor(options.maxChars)))
+      : 1_200;
+  const body = truncateText(cleaned || 'Noted.', maxChars);
+  const prefix = options.includeTimestamp ? `DC: ${timestamp(new Date())} -` : 'DC:';
+  return `${prefix} ${body}`;
 }
 
 function parseProjectNameFromProposal(markdown: string): string {
@@ -2423,6 +2958,92 @@ function codexStatusIndexPaths(root: string): { dir: string; json: string } {
   return { dir: paths.dir, json: path.join(paths.dir, CODEX_STATUS_INDEX_FILE) };
 }
 
+function readQueueRecords(dir: string, status: string): QueueSummary['recent'] {
+  if (!fs.existsSync(dir)) return [];
+  return fs
+    .readdirSync(dir)
+    .filter((file) => file.endsWith('.json'))
+    .map((file) => {
+      try {
+        const record = JSON.parse(fs.readFileSync(path.join(dir, file), 'utf-8')) as Record<string, unknown>;
+        const id = typeof record.id === 'string' ? record.id : path.basename(file, '.json');
+        const title =
+          typeof record.projectName === 'string'
+            ? `${record.projectName}: ${typeof record.task === 'string' ? record.task : 'Codex handoff'}`
+            : typeof record.title === 'string'
+              ? record.title
+              : typeof record.brief === 'string'
+                ? record.brief
+                : id;
+        return {
+          id: scrubPrivateText(id),
+          title: scrubPrivateText(truncateText(title, 160)),
+          status,
+          createdAt: typeof record.createdAt === 'string' ? record.createdAt : undefined,
+          target: typeof record.target === 'string' ? scrubPrivateText(record.target) : undefined,
+        };
+      } catch {
+        return {
+          id: scrubPrivateText(path.basename(file, '.json')),
+          title: 'Unreadable queue item',
+          status,
+        };
+      }
+    });
+}
+
+function queueSummary(root: string, queueDirName: string): QueueSummary {
+  const realRoot = requireRoot(root);
+  const paths = contextIndexPaths(realRoot);
+  const base = path.join(paths.dir, queueDirName);
+  const dirs = {
+    queued: path.join(base, 'queued'),
+    submitted: path.join(base, 'submitted'),
+    completed: path.join(base, 'completed'),
+    failed: path.join(base, 'failed'),
+  };
+  const records = [
+    ...readQueueRecords(dirs.queued, 'queued'),
+    ...readQueueRecords(dirs.submitted, 'submitted'),
+    ...readQueueRecords(dirs.completed, 'completed'),
+    ...readQueueRecords(dirs.failed, 'failed'),
+  ].sort((a, b) => (b.createdAt ?? '').localeCompare(a.createdAt ?? '') || a.id.localeCompare(b.id));
+  return {
+    queued: fs.existsSync(dirs.queued)
+      ? fs.readdirSync(dirs.queued).filter((file) => file.endsWith('.json')).length
+      : 0,
+    submitted: fs.existsSync(dirs.submitted)
+      ? fs.readdirSync(dirs.submitted).filter((file) => file.endsWith('.json')).length
+      : 0,
+    completed: fs.existsSync(dirs.completed)
+      ? fs.readdirSync(dirs.completed).filter((file) => file.endsWith('.json')).length
+      : 0,
+    failed: fs.existsSync(dirs.failed)
+      ? fs.readdirSync(dirs.failed).filter((file) => file.endsWith('.json')).length
+      : 0,
+    recent: records.slice(0, 5),
+  };
+}
+
+function queueSummaryMarkdown(title: string, summary: QueueSummary): string[] {
+  return [
+    `### ${title}`,
+    `Queued: ${summary.queued}`,
+    `Submitted: ${summary.submitted}`,
+    `Completed: ${summary.completed}`,
+    `Failed: ${summary.failed}`,
+    '',
+    summary.recent.length > 0
+      ? summary.recent
+          .map(
+            (item) =>
+              `- ${item.status}: ${item.title} (${item.id}${item.target ? `; target ${item.target}` : ''}${item.createdAt ? `; ${item.createdAt}` : ''})`,
+          )
+          .join('\n')
+      : 'No queued or recently processed items detected.',
+  ];
+}
+
 function codexStatusMarkdown(index: CodexStatusIndex): string {
   const dirty = index.projects.filter((project) => project.dirtyCount > 0);
   const tableRows = index.projects.map((project) =>
@@ -2460,6 +3081,10 @@ function codexStatusMarkdown(index: CodexStatusIndex): string {
     '',
     '## Handoff Queue',
     'WhatsApp-to-Codex requests are queued under `.dc-index/codex-handoffs/queued/` and mirrored as Markdown notes in `pending-review/`.',
+    '',
+    ...queueSummaryMarkdown('Codex Handoffs', index.handoffSummary),
+    '',
+    ...queueSummaryMarkdown('Action Requests', index.actionSummary),
     '',
     '## Safety Notes',
     '- This page is an index, not a raw transcript dump.',
@@ -2779,6 +3404,7 @@ export const captureNote: McpToolDefinition = {
       const now = new Date();
       const ts = timestamp(now);
       const temporal = extractTemporalMetadata(rawText, now, type);
+      const attention = scoreAttention(rawText, type, temporal);
       const file = filename(now, (args.slug as string | undefined) ?? rawText.split(/\s+/).slice(0, 7).join(' '));
       const rawPath = writeNew(
         resolveNotePath(root, 'inbox-whatsapp', file),
@@ -2788,13 +3414,14 @@ export const captureNote: McpToolDefinition = {
           rawText,
           (args.source as string) || 'whatsapp-text',
           temporal,
+          attention,
           args.audioPath as string | undefined,
         ),
       );
       const processedMarkdown =
         typeof args.processedMarkdown === 'string' && args.processedMarkdown.trim()
-          ? ensureTemporalMarkdown(args.processedMarkdown, temporal)
-          : template(type, ts, rawText, temporal);
+          ? ensureCaptureMetadataMarkdown(args.processedMarkdown, temporal, attention)
+          : template(type, ts, rawText, temporal, attention);
       const processedPath = writeNew(resolveNotePath(root, processedFolder(type), file), processedMarkdown);
       const deadlineWatchPath = appendDeadlineWatch(
         root,
@@ -2890,6 +3517,11 @@ export const captureAudio: McpToolDefinition = {
           now,
           type,
         );
+        const attention = scoreAttention(
+          'Audio transcript withheld because prohibited sensitive content was detected.',
+          type,
+          temporal,
+        );
         const file = filename(now, (args.slug as string | undefined) ?? 'redacted-audio-sensitive-warning');
         const rawPath = writeNew(
           resolveNotePath(root, 'inbox-whatsapp', file),
@@ -2899,12 +3531,13 @@ export const captureAudio: McpToolDefinition = {
             'Transcript withheld because prohibited sensitive content was detected. Ask the owner to resend a redacted version before processing.',
             'whatsapp-audio',
             temporal,
+            attention,
             inputPath,
           ),
         );
         const processedPath = writeNew(
           resolveNotePath(root, 'pending-review', file),
-          ensureTemporalMarkdown(
+          ensureCaptureMetadataMarkdown(
             [
               `# Sensitive Audio Warning — ${ts}`,
               '',
@@ -2919,6 +3552,7 @@ export const captureAudio: McpToolDefinition = {
               '',
             ].join('\n'),
             temporal,
+            attention,
           ),
         );
         return ok(
@@ -2931,15 +3565,16 @@ export const captureAudio: McpToolDefinition = {
       const now = new Date();
       const ts = timestamp(now);
       const temporal = extractTemporalMetadata(transcript, now, type);
+      const attention = scoreAttention(transcript, type, temporal);
       const file = filename(now, (args.slug as string | undefined) ?? transcript.split(/\s+/).slice(0, 7).join(' '));
       const rawPath = writeNew(
         resolveNotePath(root, 'inbox-whatsapp', file),
-        rawTemplate(type, ts, transcript, 'whatsapp-audio', temporal, inputPath),
+        rawTemplate(type, ts, transcript, 'whatsapp-audio', temporal, attention, inputPath),
       );
       const processedMarkdown =
         typeof args.processedMarkdown === 'string' && args.processedMarkdown.trim()
-          ? ensureTemporalMarkdown(args.processedMarkdown, temporal)
-          : template(type, ts, transcript, temporal);
+          ? ensureCaptureMetadataMarkdown(args.processedMarkdown, temporal, attention)
+          : template(type, ts, transcript, temporal, attention);
       const processedPath = writeNew(resolveNotePath(root, processedFolder(type), file), processedMarkdown);
       const deadlineWatchPath = appendDeadlineWatch(
         root,
@@ -3254,6 +3889,119 @@ export const autoUpgradeMemory: McpToolDefinition = {
   },
 };
 
+export const updateProjectStatus: McpToolDefinition = {
+  tool: {
+    name: 'distributed_cognition_update_project_status',
+    description:
+      'Create or refresh a stable Obsidian-style project status page plus project-wikis/current-projects.md. Use for durable pivots, status, deadlines, decisions, open questions, risks, and next actions; do not copy raw transcripts.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        projectName: { type: 'string', description: 'Human project name, e.g. p(AI)tient, CORTEX, or AIME.' },
+        status: { type: 'string', description: 'active, stale, blocked, paused, watching, or done.' },
+        currentState: { type: 'string', description: 'Concise current project state.' },
+        nextActions: { type: 'array', items: { type: 'string' }, description: 'Concrete next actions.' },
+        openQuestions: { type: 'array', items: { type: 'string' }, description: 'Open questions to revisit.' },
+        decisions: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Confirmed decisions or decision leanings.',
+        },
+        risks: { type: 'array', items: { type: 'string' }, description: 'Project risks.' },
+        sourcePaths: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Optional relative second-brain Markdown source notes.',
+        },
+        reviewAfter: { type: 'string', description: 'Optional DD-MM-YY, HH:MM review point.' },
+        root: { type: 'string', description: 'Optional second-brain root. Defaults to the mounted path.' },
+      },
+      required: ['projectName'],
+    },
+  },
+  async handler(args) {
+    try {
+      const root = rootPath(args.root);
+      ensureFolders(root);
+      const record = upsertProjectStatus(root, args);
+      return ok(
+        [
+          'Updated project status.',
+          `project: ${record.name}`,
+          `status: ${record.status}`,
+          `wiki: ${path.join(requireRoot(root), record.wikiPath)}`,
+          `current projects: ${path.join(requireRoot(root), 'project-wikis', 'current-projects.md')}`,
+        ].join('\n'),
+      );
+    } catch (e) {
+      return err(e instanceof Error ? e.message : String(e));
+    }
+  },
+};
+
+export const healthCheck: McpToolDefinition = {
+  tool: {
+    name: 'distributed_cognition_health_check',
+    description:
+      'Check Distributed Cognition mounts, second-brain folders, optional Codex/Mnemon mounts, and queue directories. Writes project-wikis/system-health.md plus .dc-index/system-health.json.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        root: { type: 'string', description: 'Optional second-brain root. Defaults to the mounted path.' },
+      },
+    },
+  },
+  async handler(args) {
+    try {
+      const root = rootPath(args.root);
+      const { report, wikiPath, jsonPath } = buildSystemHealth(root);
+      return ok(
+        [
+          `Distributed Cognition health: ${report.overall}`,
+          `checked: ${report.checkedAt}`,
+          `wiki: ${wikiPath}`,
+          `json: ${jsonPath}`,
+          '',
+          ...report.items.map((item) => `- ${item.status}: ${item.label} — ${item.detail}`),
+        ].join('\n'),
+      );
+    } catch (e) {
+      return err(e instanceof Error ? e.message : String(e));
+    }
+  },
+};
+
+export const formatReply: McpToolDefinition = {
+  tool: {
+    name: 'distributed_cognition_format_reply',
+    description:
+      'Format a WhatsApp reply with the required DC tag and a privacy scrub for public-ish operational strings. Use immediately before sending a WhatsApp reply.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        message: { type: 'string', description: 'Reply body to tag as DC.' },
+        includeTimestamp: { type: 'boolean', description: 'Include DD-MM-YY, HH:MM in the DC prefix.' },
+        maxChars: { type: 'number', description: 'Maximum reply characters after the DC prefix.' },
+      },
+      required: ['message'],
+    },
+  },
+  async handler(args) {
+    try {
+      const message = typeof args.message === 'string' ? args.message : '';
+      if (!message.trim()) return err('message is required');
+      return ok(
+        formatDcReply(message, {
+          includeTimestamp: args.includeTimestamp === true,
+          maxChars: typeof args.maxChars === 'number' ? args.maxChars : undefined,
+        }),
+      );
+    } catch (e) {
+      return err(e instanceof Error ? e.message : String(e));
+    }
+  },
+};
+
 export const buildCodexStatus: McpToolDefinition = {
   tool: {
     name: 'distributed_cognition_build_codex_status',
@@ -3294,6 +4042,8 @@ export const buildCodexStatus: McpToolDefinition = {
       );
       const { projects, skipped } = discoverCodexProjects(projectsRoot, maxProjects);
       const memory = readCodexMemorySignals(args.memoryRoot);
+      const handoffSummary = queueSummary(root, CODEX_HANDOFF_DIR);
+      const actionSummary = queueSummary(root, ACTION_REQUEST_DIR);
       const index: CodexStatusIndex = {
         version: CODEX_STATUS_VERSION,
         generatedAt: timestamp(new Date()),
@@ -3301,6 +4051,8 @@ export const buildCodexStatus: McpToolDefinition = {
         projects,
         memoryRoot: memory.root,
         memorySignals: memory.signals,
+        handoffSummary,
+        actionSummary,
         skipped,
       };
       const written = writeCodexStatusIndex(root, index);
@@ -3898,6 +4650,9 @@ registerTools([
   preparePromotion,
   applyPromotion,
   autoUpgradeMemory,
+  updateProjectStatus,
+  healthCheck,
+  formatReply,
   buildCodexStatus,
   createCodexHandoff,
   createActionRequest,

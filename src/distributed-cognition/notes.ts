@@ -72,6 +72,20 @@ export interface TemporalMetadata {
   stalenessStatus: string;
 }
 
+export type AttentionImportance = 'low' | 'medium' | 'high';
+export type AttentionDurability = 'transient' | 'useful' | 'durable' | 'blocked';
+export type AttentionActionability = 'none' | 'possible' | 'clear_action';
+export type AttentionTimeSensitivity = 'none' | 'soon' | 'deadline';
+
+export interface AttentionMetadata {
+  importance: AttentionImportance;
+  durability: AttentionDurability;
+  actionability: AttentionActionability;
+  timeSensitivity: AttentionTimeSensitivity;
+  projectSignals: string[];
+  rationale: string;
+}
+
 const DEFAULT_TIMEZONE = 'Asia/Singapore';
 const SENSITIVE_RE =
   /\b(patient-identifiable|patient identifiable|learner-identifiable|learner identifiable|hr material|exam material|confidential institutional|nric|medical record number|mrn)\b/i;
@@ -122,6 +136,43 @@ export function safeSlug(input: string): string {
     .slice(0, 60)
     .replace(/-$/g, '');
   return slug || 'note';
+}
+
+export function scrubPrivateText(input: string): string {
+  return input
+    .replace(/\b\d{8,15}@s\.whatsapp\.net\b/gi, '[REDACTED_WHATSAPP_JID]')
+    .replace(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi, '[REDACTED_EMAIL]')
+    .replace(/\b(?:sk|sk-proj)-[A-Za-z0-9_-]{12,}\b/g, '[REDACTED_API_KEY]')
+    .replace(/\b(?:OPENAI_API_KEY|API_KEY|ACCESS_TOKEN|AUTH_TOKEN|SECRET|PASSWORD)\s*=\s*['"]?[^'"\s]+/gi, (match) => {
+      const key = match.split('=')[0]?.trim() || 'SECRET';
+      return `${key}=[REDACTED_SECRET]`;
+    })
+    .replace(/\+\d{1,3}(?:[\s-]?\d){6,14}\b/g, '[REDACTED_PHONE]')
+    .replace(/\/Users\/[^/\s)]+/g, '/Users/<username>');
+}
+
+const PROJECT_SIGNAL_PATTERNS: Array<{ label: string; pattern: RegExp }> = [
+  { label: 'AIME', pattern: /\b(?:aime|office of ai-enhanced medical education|ai-enhanced medical education)\b/i },
+  { label: 'p(AI)tient', pattern: /\bp\s*\(\s*ai\s*\)\s*tient\b|\bpai\s*tient\b/i },
+  { label: 'CORTEX', pattern: /\bcortex\b/i },
+  { label: 'CREATE Hackathon', pattern: /\bcreate\s+hackathon\b/i },
+  { label: 'grants', pattern: /\bgrant|funding|proposal\b/i },
+  { label: 'papers and manuscripts', pattern: /\bpaper|manuscript|publication|reviewer|revision\b/i },
+  { label: 'workshops and talks', pattern: /\bworkshop|talk|presentation|deck|lecture\b/i },
+  { label: 'AI-enhanced assessment', pattern: /\bassessment|exam|osce|mcq|psychometric\b/i },
+  { label: 'productive struggle', pattern: /\bproductive struggle\b/i },
+  { label: 'discernment', pattern: /\bdiscernment\b/i },
+  { label: 'uncertainty tolerance', pattern: /\buncertainty tolerance|adaptive expertise\b/i },
+  { label: 'wisdom', pattern: /\bwisdom\b/i },
+  { label: 'education strategy and governance', pattern: /\bgovernance|strategy|transformation office\b/i },
+];
+
+function projectSignals(text: string): string[] {
+  const signals: string[] = [];
+  for (const { label, pattern } of PROJECT_SIGNAL_PATTERNS) {
+    if (pattern.test(text) && !signals.includes(label)) signals.push(label);
+  }
+  return signals;
 }
 
 export function classifyDistributedMessage(text: string): DistributedMessageType {
@@ -204,6 +255,7 @@ export function writeDistributedNote(input: WriteDistributedNoteInput): WriteDis
   const timestamp = formatDistributedTimestamp(now, timezone);
   const filename = formatDistributedFilename(now, input.slug ?? slugSource(body, messageType), timezone);
   const temporalMetadata = extractTemporalMetadata(body, now, timezone, messageType);
+  const attentionMetadata = scoreAttention(body, messageType, temporalMetadata);
 
   ensureSecondBrainStructure(input.root);
 
@@ -211,8 +263,11 @@ export function writeDistributedNote(input: WriteDistributedNoteInput): WriteDis
   const processedFolder = processedFolderFor(messageType);
   const processedPath = resolveSecondBrainPath(input.root, processedFolder, filename);
 
-  writeNewMarkdown(rawPath, rawMarkdown({ ...input, messageType, timestamp, temporalMetadata }));
-  writeNewMarkdown(processedPath, processedMarkdown({ ...input, messageType, timestamp, temporalMetadata }));
+  writeNewMarkdown(rawPath, rawMarkdown({ ...input, messageType, timestamp, temporalMetadata, attentionMetadata }));
+  writeNewMarkdown(
+    processedPath,
+    processedMarkdown({ ...input, messageType, timestamp, temporalMetadata, attentionMetadata }),
+  );
 
   const deadlineWatchPath = appendDeadlineWatch(
     input.root,
@@ -247,7 +302,7 @@ function writeNewMarkdown(filePath: string, content: string): void {
         if ((inner as NodeJS.ErrnoException).code !== 'EEXIST') throw inner;
       }
     }
-    throw new Error(`Could not create a unique note path for ${filePath}`);
+    throw new Error(`Could not create a unique note path for ${filePath}`, { cause: err });
   }
 }
 
@@ -405,6 +460,136 @@ function formatTemporalList(values: string[]): string {
   return values.length > 0 ? values.join('; ') : 'None detected';
 }
 
+function attentionMarkdownLines(metadata: AttentionMetadata): string[] {
+  return [
+    '## Attention metadata',
+    `Importance: ${metadata.importance}`,
+    `Durability: ${metadata.durability}`,
+    `Actionability: ${metadata.actionability}`,
+    `Time sensitivity: ${metadata.timeSensitivity}`,
+    `Project signals: ${metadata.projectSignals.length > 0 ? metadata.projectSignals.join('; ') : 'None detected'}`,
+    `Rationale: ${metadata.rationale}`,
+  ];
+}
+
+function ensureAttentionMarkdown(markdown: string, metadata: AttentionMetadata): string {
+  const trimmed = markdown.trimEnd();
+  if (/^## Attention metadata\b/m.test(trimmed)) return `${trimmed}\n`;
+  return `${trimmed}\n\n${attentionMarkdownLines(metadata).join('\n')}\n`;
+}
+
+function hasClearActionSignal(text: string, messageType: DistributedMessageType): boolean {
+  return (
+    messageType === 'action_request' ||
+    /\b(next action|todo|to do|please|draft|write|prepare|create|make|queue|handoff|follow up|send to codex|research|turn this into)\b/i.test(
+      text,
+    )
+  );
+}
+
+export function scoreAttention(
+  text: string,
+  messageType: DistributedMessageType,
+  temporalMetadata?: TemporalMetadata,
+): AttentionMetadata {
+  if (SENSITIVE_RE.test(text) || messageType === 'sensitive_data_warning') {
+    return {
+      importance: 'low',
+      durability: 'blocked',
+      actionability: 'none',
+      timeSensitivity: 'none',
+      projectSignals: [],
+      rationale: 'Blocked from promotion because the content appears to contain prohibited sensitive material.',
+    };
+  }
+
+  const signals = projectSignals(text);
+  const reasons: string[] = [];
+  let score = 0;
+  if (messageType === 'decision') {
+    score += 3;
+    reasons.push('decision');
+  }
+  if (
+    messageType === 'durable_memory_candidate' ||
+    /\b(remember|important to remember|standing rule|from now on)\b/i.test(text)
+  ) {
+    score += 3;
+    reasons.push('durable-memory signal');
+  }
+  if (messageType === 'forget_or_correction_request' || /\b(changed my mind|obsolete|correction)\b/i.test(text)) {
+    score += 2;
+    reasons.push('correction signal');
+  }
+  if (messageType === 'weekly_synthesis_request') {
+    score += 2;
+    reasons.push('synthesis request');
+  }
+  if (hasClearActionSignal(text, messageType)) {
+    score += 1;
+    reasons.push('actionable request');
+  }
+  if (
+    (temporalMetadata?.deadlineCandidates.length ?? 0) > 0 ||
+    /\b(deadline|due|submit by|decide by|review by)\b/i.test(text)
+  ) {
+    score += 2;
+    reasons.push('deadline or dated follow-up');
+  } else if (
+    (temporalMetadata?.mentionedDates.length ?? 0) > 0 ||
+    /\b(upcoming|meeting|milestone|launch|starts?|starting)\b/i.test(text)
+  ) {
+    score += 1;
+    reasons.push('time signal');
+  }
+  if (signals.length > 0) {
+    score += 1;
+    reasons.push(`project signal: ${signals.slice(0, 3).join(', ')}`);
+  }
+
+  const durability: AttentionDurability =
+    messageType === 'decision' ||
+    messageType === 'durable_memory_candidate' ||
+    messageType === 'forget_or_correction_request' ||
+    /\b(always|never|preference|prefer|default|standing rule|from now on|remember that|changed my mind)\b/i.test(text)
+      ? 'durable'
+      : signals.length > 0 || messageType === 'reflection' || messageType === 'weekly_synthesis_request'
+        ? 'useful'
+        : 'transient';
+  const actionability: AttentionActionability = hasClearActionSignal(text, messageType)
+    ? 'clear_action'
+    : /\b(open question|risk|should|need to|follow up)\b/i.test(text) ||
+        (temporalMetadata?.deadlineCandidates.length ?? 0) > 0
+      ? 'possible'
+      : 'none';
+  const timeSensitivity: AttentionTimeSensitivity =
+    (temporalMetadata?.deadlineCandidates.length ?? 0) > 0 ||
+    /\b(deadline|due|submit by|decide by|review by)\b/i.test(text)
+      ? 'deadline'
+      : (temporalMetadata?.mentionedDates.length ?? 0) > 0 ||
+          /\b(upcoming|meeting|milestone|launch|starts?|starting)\b/i.test(text)
+        ? 'soon'
+        : 'none';
+  const importance: AttentionImportance = score >= 4 ? 'high' : score >= 2 ? 'medium' : 'low';
+
+  return {
+    importance,
+    durability,
+    actionability,
+    timeSensitivity,
+    projectSignals: signals,
+    rationale: reasons.length > 0 ? reasons.join('; ') : 'ordinary capture with no durable or urgent signal detected',
+  };
+}
+
+function ensureCaptureMetadataMarkdown(
+  markdown: string,
+  temporalMetadata: TemporalMetadata,
+  attentionMetadata: AttentionMetadata,
+): string {
+  return ensureAttentionMarkdown(ensureTemporalMarkdown(markdown, temporalMetadata), attentionMetadata);
+}
+
 function appendDeadlineWatch(root: string, metadata: TemporalMetadata, sourceRelativePath: string): string | undefined {
   if (metadata.deadlineCandidates.length === 0) return undefined;
   const realRoot = requireExistingRoot(root);
@@ -437,6 +622,7 @@ function rawMarkdown(
     messageType: DistributedMessageType;
     timestamp: string;
     temporalMetadata: TemporalMetadata;
+    attentionMetadata: AttentionMetadata;
   },
 ): string {
   const source = input.source ?? 'whatsapp-text';
@@ -451,6 +637,8 @@ function rawMarkdown(
     '',
     ...temporalMarkdownLines(input.temporalMetadata),
     '',
+    ...attentionMarkdownLines(input.attentionMetadata),
+    '',
     '## Raw note',
     body,
     '',
@@ -463,10 +651,11 @@ function processedMarkdown(
     messageType: DistributedMessageType;
     timestamp: string;
     temporalMetadata: TemporalMetadata;
+    attentionMetadata: AttentionMetadata;
   },
 ): string {
   if (typeof input.processedMarkdown === 'string' && input.processedMarkdown.trim()) {
-    return ensureTemporalMarkdown(input.processedMarkdown, input.temporalMetadata);
+    return ensureCaptureMetadataMarkdown(input.processedMarkdown, input.temporalMetadata, input.attentionMetadata);
   }
   const markdown =
     input.messageType === 'decision'
@@ -474,7 +663,7 @@ function processedMarkdown(
       : input.messageType === 'weekly_synthesis_request'
         ? synthesisMarkdown(input)
         : reflectionMarkdown(input);
-  return ensureTemporalMarkdown(markdown, input.temporalMetadata);
+  return ensureCaptureMetadataMarkdown(markdown, input.temporalMetadata, input.attentionMetadata);
 }
 
 function reflectionMarkdown(
