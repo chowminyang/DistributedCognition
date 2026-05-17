@@ -5,6 +5,7 @@ import { spawnSync } from 'child_process';
 import { createRequire } from 'module';
 
 import { Document, HeadingLevel, Packer, Paragraph, TextRun } from 'docx';
+import { appendProgressEvent, type DistributedQueueStatus } from '../src/distributed-cognition/queue-status.js';
 
 const DEFAULT_SECOND_BRAIN_ROOT = path.join(os.homedir(), 'Library/CloudStorage/Dropbox/Distributed-Cognition');
 const CONFIG_VERSION = 1;
@@ -413,6 +414,9 @@ function codexPrompt(record: ActionRequestRecord): string {
   return [
     'Task requested via Distributed Cognition WhatsApp.',
     '',
+    'Role:',
+    'You are a local Codex agent executing a heavier action request for Distributed Cognition. Convert the owner request into a concrete local artifact or research output while keeping all outputs inside the configured folder.',
+    '',
     `Action type: ${record.actionType}`,
     `Title: ${record.title}`,
     `Queued at: ${record.createdAt}`,
@@ -426,6 +430,12 @@ function codexPrompt(record: ActionRequestRecord): string {
     'Requested local output:',
     requestedOutput,
     '',
+    'Execution style:',
+    '- Inspect any supplied source notes or draft content before writing.',
+    '- Keep the output practical, polished, and locally saved.',
+    '- Cite source URLs with access dates for web research.',
+    '- For documents and decks, create the actual file rather than only describing it.',
+    '',
     'Boundaries:',
     "- This is local Codex work on the owner's Mac, not Codex Cloud.",
     '- Do not print, request, or commit secrets.',
@@ -434,6 +444,26 @@ function codexPrompt(record: ActionRequestRecord): string {
     '- Keep generated files inside the Distributed Cognition folder, preferably under action-outputs/.',
     '- Report created output paths, verification, and residual risks in the final response.',
   ].join('\n');
+}
+
+function progressTitle(record: ActionRequestRecord): string {
+  return `${record.actionType}: ${record.title}`;
+}
+
+function recordProgress(
+  root: string,
+  record: ActionRequestRecord,
+  status: DistributedQueueStatus,
+  detail: string,
+): void {
+  appendProgressEvent(root, {
+    kind: 'action_request',
+    id: record.id,
+    status,
+    title: progressTitle(record),
+    target: record.target,
+    detail,
+  });
 }
 
 function codexLocalWorkingRoot(root: string, config: ActionBridgeConfig): string {
@@ -596,22 +626,26 @@ async function processQueue(args: Args, configPath: string): Promise<void> {
       validateRecord(record);
       const action = config.actions[record.actionType];
       if (!action || !action.enabled) {
+        recordProgress(args.root, record, 'blocked', 'Action type is not enabled in host config.');
         console.log(`Action type ${record.actionType} is not enabled; leaving ${record.id} queued.`);
         skipped += 1;
         continue;
       }
       if (record.target && record.target !== action.target) {
+        recordProgress(args.root, record, 'blocked', 'Requested target did not match host action allowlist.');
         console.log(`Rejected ${record.id}: requested target does not match host allowlist for ${record.actionType}.`);
         skipped += 1;
         continue;
       }
       if (!args.execute) {
+        recordProgress(args.root, record, 'dry_run', 'Dry-run only; action not executed.');
         console.log(`Dry-run: would execute ${record.id} (${record.actionType}) via ${action.target}.`);
         skipped += 1;
         continue;
       }
 
       if (action.target === 'codex-local') {
+        recordProgress(args.root, record, 'running', 'Local Codex action execution started on this Mac.');
         const local = runLocalCodexAction(args.root, config, record);
         if (!local.ok) {
           moveRecord(args.root, item.filePath, record, 'failed', {
@@ -626,6 +660,7 @@ async function processQueue(args: Args, configPath: string): Promise<void> {
             local.lastMessagePath ? `- Last message: ${local.lastMessagePath}` : '- Last message: not written',
             '- See `.dc-index/action-requests/failed/` for stdout/stderr.',
           ]);
+          recordProgress(args.root, record, 'failed', 'Local Codex action execution failed.');
           console.log(`Failed local Codex action ${record.id}.`);
           failed += 1;
           continue;
@@ -642,30 +677,35 @@ async function processQueue(args: Args, configPath: string): Promise<void> {
           local.lastMessagePath ? `- Last message: ${local.lastMessagePath}` : '- Last message: not written',
           `- Output folder: ${config.outputRoot || 'action-outputs'}`,
         ]);
+        recordProgress(args.root, record, 'completed', 'Local Codex action execution completed.');
         console.log(`Completed local Codex action ${record.id}.`);
         completed += 1;
         continue;
       }
 
       if (action.target === 'local' && record.actionType === 'word_document') {
+        recordProgress(args.root, record, 'running', 'Local DOCX generation started.');
         const artifact = await createDocx(args.root, config, record);
         moveRecord(args.root, item.filePath, record, 'completed', { outputPath: artifact.outputRelativePath });
         updateNote(args.root, record, 'completed', [
           `- Completed at: ${sgtTimestamp()}`,
           `- Output: ${artifact.outputRelativePath}`,
         ]);
+        recordProgress(args.root, record, 'completed', `Created DOCX at ${artifact.outputRelativePath}.`);
         console.log(`Created DOCX for ${record.id}: ${artifact.outputPath}`);
         completed += 1;
         continue;
       }
 
       if (action.target === 'local' && record.actionType === 'powerpoint') {
+        recordProgress(args.root, record, 'running', 'Local PPTX generation started.');
         const artifact = await createPptx(args.root, config, record);
         moveRecord(args.root, item.filePath, record, 'completed', { outputPath: artifact.outputRelativePath });
         updateNote(args.root, record, 'completed', [
           `- Completed at: ${sgtTimestamp()}`,
           `- Output: ${artifact.outputRelativePath}`,
         ]);
+        recordProgress(args.root, record, 'completed', `Created PPTX at ${artifact.outputRelativePath}.`);
         console.log(`Created PPTX for ${record.id}: ${artifact.outputPath}`);
         completed += 1;
         continue;
@@ -673,10 +713,12 @@ async function processQueue(args: Args, configPath: string): Promise<void> {
 
       if (action.target === 'codex-cloud') {
         if (!action.cloudEnv) {
+          recordProgress(args.root, record, 'blocked', 'Missing Codex Cloud environment mapping.');
           console.log(`Missing cloudEnv for ${record.actionType}; leaving ${record.id} queued.`);
           skipped += 1;
           continue;
         }
+        recordProgress(args.root, record, 'running', 'Codex Cloud action submission started.');
         const submitted = submitCodexAction(record, action.cloudEnv);
         if (!submitted.ok) {
           moveRecord(args.root, item.filePath, record, 'failed', {
@@ -689,6 +731,7 @@ async function processQueue(args: Args, configPath: string): Promise<void> {
             `- Exit status: ${submitted.status ?? 'unknown'}`,
             '- See `.dc-index/action-requests/failed/` for stdout/stderr.',
           ]);
+          recordProgress(args.root, record, 'failed', 'Codex Cloud action submission failed.');
           console.log(`Failed to submit ${record.id} to Codex Cloud.`);
           failed += 1;
           continue;
@@ -704,11 +747,13 @@ async function processQueue(args: Args, configPath: string): Promise<void> {
           `- Codex task: ${submitted.cloudUrl}`,
           submitted.cloudTaskId ? `- Task id: ${submitted.cloudTaskId}` : '- Task id: not parsed',
         ]);
+        recordProgress(args.root, record, 'submitted', 'Submitted action to Codex Cloud.');
         console.log(`Submitted ${record.id} to Codex Cloud: ${submitted.cloudUrl}`);
         completed += 1;
         continue;
       }
 
+      recordProgress(args.root, record, 'skipped', `No local executor for ${record.actionType}/${action.target}.`);
       console.log(`No local executor for ${record.id} (${record.actionType}/${action.target}); leaving queued.`);
       skipped += 1;
     } catch (e) {

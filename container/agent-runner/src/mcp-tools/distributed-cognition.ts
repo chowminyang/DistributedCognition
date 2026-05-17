@@ -2056,8 +2056,32 @@ function replaceWikiSection(markdown: string, heading: WikiPromotionSection, bod
   return updated.replace(pattern, replacement).trimEnd() + '\n';
 }
 
+function frontmatterBlock(fields: Record<string, string | string[]>): string[] {
+  const lines = ['---'];
+  for (const [key, value] of Object.entries(fields)) {
+    if (Array.isArray(value)) {
+      lines.push(`${key}:`);
+      for (const item of value) lines.push(`  - ${item}`);
+    } else {
+      lines.push(`${key}: ${JSON.stringify(value)}`);
+    }
+  }
+  lines.push('---');
+  return lines;
+}
+
 function wikiTemplate(projectName: string, ts: string): string {
   return [
+    ...frontmatterBlock({
+      type: 'project_wiki',
+      project: projectName,
+      status: 'active',
+      last_reviewed: ts,
+      review_after: 'None scheduled',
+      mnemon_importance: 'medium',
+      tags: ['distributed-cognition/project'],
+    }),
+    '',
     `# ${projectName}`,
     '',
     '## Wiki Metadata',
@@ -2149,6 +2173,16 @@ function projectStatusMarkdown(record: ProjectStatusRecord): string {
       ? record.sourcePaths.map((source) => `- ${obsidianLink(source)}`).join('\n')
       : 'None recorded';
   return [
+    ...frontmatterBlock({
+      type: 'project_status',
+      project: record.name,
+      status: record.status,
+      last_reviewed: record.updatedAt,
+      review_after: record.reviewAfter,
+      mnemon_importance: 'medium',
+      tags: ['distributed-cognition/project'],
+    }),
+    '',
     `# Project — ${record.name}`,
     '',
     '## Wiki Metadata',
@@ -2195,6 +2229,12 @@ function currentProjectsMarkdown(index: ProjectStatusIndex): string {
     ].join(' | '),
   );
   return [
+    ...frontmatterBlock({
+      type: 'portfolio_status',
+      generated: index.updatedAt,
+      tags: ['distributed-cognition/portfolio'],
+    }),
+    '',
     `# Current Projects — ${index.updatedAt}`,
     '',
     '## Portfolio Pulse',
@@ -2305,6 +2345,13 @@ function pathHealth(
 
 function systemHealthMarkdown(report: SystemHealthReport): string {
   return [
+    ...frontmatterBlock({
+      type: 'system_health',
+      generated: report.checkedAt,
+      status: report.overall,
+      tags: ['distributed-cognition/health'],
+    }),
+    '',
     `# Distributed Cognition System Health — ${report.checkedAt}`,
     '',
     '## Overall',
@@ -2382,6 +2429,142 @@ function formatDcReply(message: string, options: { includeTimestamp?: boolean; m
   const body = truncateText(cleaned || 'Noted.', maxChars);
   const prefix = options.includeTimestamp ? `DC: ${timestamp(new Date())} -` : 'DC:';
   return `${prefix} ${body}`;
+}
+
+function capabilityRoute(
+  text: string,
+  hasAudioAttachment = false,
+): {
+  capability: string;
+  messageType: MessageType;
+  confidence: string;
+  tools: string[];
+  reason: string;
+  hostBridge?: string;
+} {
+  const messageType = classify(text);
+  const lower = text.toLowerCase();
+  if (messageType === 'sensitive_data_warning') {
+    return {
+      capability: 'refuse_sensitive_data',
+      messageType,
+      confidence: 'high',
+      tools: ['distributed_cognition_format_reply'],
+      reason: 'message classified as sensitive_data_warning',
+    };
+  }
+  if (hasAudioAttachment || /\b(audio|voice note|voice recording|opus|ogg|m4a)\b/i.test(lower)) {
+    return {
+      capability: 'process_audio',
+      messageType,
+      confidence: 'high',
+      tools: ['distributed_cognition_capture_audio'],
+      reason: 'audio or voice-note signal detected',
+    };
+  }
+  if (/\b(codex|repo|repository|codebase|implement|fix|debug|run tests|handoff|send this to codex)\b/i.test(lower)) {
+    return {
+      capability: 'queue_codex_handoff',
+      messageType,
+      confidence: 'high',
+      tools: ['distributed_cognition_build_codex_status', 'distributed_cognition_create_codex_handoff'],
+      reason: 'local Codex work signal detected',
+      hostBridge: 'codex',
+    };
+  }
+  if (
+    /\b(powerpoint|pptx|slide deck|slides|word document|docx|long research|research task|deck|presentation)\b/i.test(
+      lower,
+    )
+  ) {
+    return {
+      capability: 'queue_action_request',
+      messageType,
+      confidence: 'high',
+      tools: ['distributed_cognition_create_action_request'],
+      reason: 'artifact or long-running action signal detected',
+      hostBridge: 'action',
+    };
+  }
+  if (/\b(latest|current|news|web search|search the web|look up|source url|public web)\b/i.test(lower)) {
+    return {
+      capability: 'web_search',
+      messageType,
+      confidence: 'high',
+      tools: ['distributed_cognition_web_search', 'distributed_cognition_read_web_page'],
+      reason: 'current-information or public-web signal detected',
+    };
+  }
+  if (/\b(health check|are you alive|queue status|what is queued|dashboard|workbench|status)\b/i.test(lower)) {
+    return {
+      capability: 'report_status',
+      messageType,
+      confidence: 'high',
+      tools: ['distributed_cognition_health_check', 'distributed_cognition_queue_status'],
+      reason: 'status or queue visibility signal detected',
+    };
+  }
+  if (messageType === 'weekly_synthesis_request') {
+    return {
+      capability: 'synthesize_review',
+      messageType,
+      confidence: 'high',
+      tools: ['distributed_cognition_search_context', 'distributed_cognition_update_project_status'],
+      reason: 'synthesis request detected',
+    };
+  }
+  if (messageType === 'durable_memory_candidate') {
+    return {
+      capability: 'promote_durable_memory',
+      messageType,
+      confidence: 'high',
+      tools: ['distributed_cognition_auto_upgrade_memory'],
+      reason: 'durable-memory candidate detected',
+    };
+  }
+  if (messageType === 'forget_or_correction_request') {
+    return {
+      capability: 'correct_or_forget_memory',
+      messageType,
+      confidence: 'high',
+      tools: ['distributed_cognition_capture_note', 'distributed_cognition_auto_upgrade_memory'],
+      reason: 'forget or correction request detected',
+    };
+  }
+  if (/\b(search|find|dropbox|context folder|second brain|mnemon|what do you know)\b/i.test(lower)) {
+    return {
+      capability: 'search_context',
+      messageType,
+      confidence: 'medium',
+      tools: ['distributed_cognition_search_context', 'distributed_cognition_read_context'],
+      reason: 'local-context retrieval signal detected',
+    };
+  }
+  if (messageType === 'decision') {
+    return {
+      capability: 'capture_decision',
+      messageType,
+      confidence: 'high',
+      tools: ['distributed_cognition_capture_note', 'distributed_cognition_auto_upgrade_memory'],
+      reason: 'decision message type',
+    };
+  }
+  if (messageType === 'question') {
+    return {
+      capability: 'answer_question',
+      messageType,
+      confidence: 'medium',
+      tools: ['distributed_cognition_search_context', 'distributed_cognition_read_context'],
+      reason: 'question message type',
+    };
+  }
+  return {
+    capability: messageType === 'reflection' ? 'capture_reflection' : 'capture_general_note',
+    messageType,
+    confidence: 'medium',
+    tools: ['distributed_cognition_capture_note'],
+    reason: messageType === 'reflection' ? 'reflection message type' : 'default general note capture',
+  };
 }
 
 function parseProjectNameFromProposal(markdown: string): string {
@@ -3044,6 +3227,86 @@ function queueSummaryMarkdown(title: string, summary: QueueSummary): string[] {
   ];
 }
 
+function operationLogPath(root: string): string {
+  return path.join(contextIndexPaths(root).dir, 'operations-log.jsonl');
+}
+
+function appendOperationEvent(
+  root: string,
+  event: {
+    kind: 'codex_handoff' | 'action_request';
+    id: string;
+    status: 'queued' | 'running' | 'submitted' | 'completed' | 'failed' | 'skipped' | 'dry_run' | 'blocked';
+    title: string;
+    detail?: string;
+    target?: string;
+  },
+): void {
+  const realRoot = requireRoot(root);
+  const paths = contextIndexPaths(realRoot);
+  fs.mkdirSync(paths.dir, { recursive: true });
+  fs.appendFileSync(
+    operationLogPath(realRoot),
+    `${JSON.stringify({
+      version: 1,
+      timestamp: timestamp(new Date()),
+      id: scrubPrivateText(event.id),
+      kind: event.kind,
+      status: event.status,
+      title: scrubPrivateText(event.title),
+      detail: event.detail ? scrubPrivateText(event.detail) : undefined,
+      target: event.target ? scrubPrivateText(event.target) : undefined,
+    })}\n`,
+  );
+}
+
+function readOperationEvents(root: string, limit = 12): string[] {
+  const filePath = operationLogPath(root);
+  if (!fs.existsSync(filePath)) return [];
+  return fs
+    .readFileSync(filePath, 'utf-8')
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .slice(-limit)
+    .reverse()
+    .map((line) => {
+      try {
+        const event = JSON.parse(line) as {
+          timestamp?: string;
+          status?: string;
+          kind?: string;
+          id?: string;
+          detail?: string;
+        };
+        return `- ${event.timestamp ?? 'unknown'}: ${event.status ?? 'unknown'} ${event.kind ?? 'work'} ${event.id ?? 'unknown'}${event.detail ? ` - ${event.detail}` : ''}`;
+      } catch {
+        return '- Unreadable progress event';
+      }
+    });
+}
+
+function unifiedQueueStatusMarkdown(root: string): string {
+  const handoffs = queueSummary(root, CODEX_HANDOFF_DIR);
+  const actions = queueSummary(root, ACTION_REQUEST_DIR);
+  const active = handoffs.queued + handoffs.submitted + actions.queued + actions.submitted;
+  return [
+    `# Distributed Cognition Work Queue — ${timestamp(new Date())}`,
+    '',
+    '## Summary',
+    `- Active work items: ${active}`,
+    `- Failed work items: ${handoffs.failed + actions.failed}`,
+    '',
+    ...queueSummaryMarkdown('Codex Handoffs', handoffs),
+    '',
+    ...queueSummaryMarkdown('Action Requests', actions),
+    '',
+    '## Recent Progress Events',
+    ...(readOperationEvents(root).length > 0 ? readOperationEvents(root) : ['No progress events recorded yet.']),
+    '',
+  ].join('\n');
+}
+
 function codexStatusMarkdown(index: CodexStatusIndex): string {
   const dirty = index.projects.filter((project) => project.dirtyCount > 0);
   const tableRows = index.projects.map((project) =>
@@ -3057,6 +3320,12 @@ function codexStatusMarkdown(index: CodexStatusIndex): string {
     ].join(' | '),
   );
   return [
+    ...frontmatterBlock({
+      type: 'codex_workbench',
+      generated: index.generatedAt,
+      tags: ['distributed-cognition/codex'],
+    }),
+    '',
     `# Codex Workbench — ${index.generatedAt}`,
     '',
     '## Status',
@@ -3172,6 +3441,14 @@ function writeCodexHandoff(
   fs.mkdirSync(dirs.failed, { recursive: true });
   const queuePath = path.join(dirs.queued, `${record.id}.json`);
   fs.writeFileSync(queuePath, `${JSON.stringify(record, null, 2)}\n`, { flag: 'wx' });
+  appendOperationEvent(root, {
+    kind: 'codex_handoff',
+    id: record.id,
+    status: 'queued',
+    title: `${record.projectName}: ${record.task}`,
+    target: record.target,
+    detail: 'Queued by WhatsApp Distributed Cognition.',
+  });
   return { notePath, queuePath };
 }
 
@@ -3181,6 +3458,15 @@ function codexHandoffMarkdown(record: CodexHandoffRecord, project: CodexProjectS
       ? record.sourceNotePaths.map((source) => `- ${source}`).join('\n')
       : '- Current WhatsApp conversation / no source note supplied.';
   return [
+    ...frontmatterBlock({
+      type: 'codex_handoff',
+      created: record.createdAt,
+      status: record.status,
+      target: record.target,
+      project: project.name,
+      tags: ['distributed-cognition/codex-handoff'],
+    }),
+    '',
     `# Codex Handoff — ${project.name} — ${record.createdAt}`,
     '',
     '## Status',
@@ -3248,6 +3534,15 @@ function actionRequestMarkdown(record: ActionRequestRecord): string {
       ? record.sourceNotePaths.map((source) => `- ${source}`).join('\n')
       : '- Current WhatsApp conversation / no source note supplied.';
   return [
+    ...frontmatterBlock({
+      type: 'action_request',
+      created: record.createdAt,
+      status: record.status,
+      target: record.target ?? 'host bridge default',
+      action_type: record.actionType,
+      tags: ['distributed-cognition/action'],
+    }),
+    '',
     `# Action Request — ${record.title} — ${record.createdAt}`,
     '',
     '## Status',
@@ -3294,6 +3589,14 @@ function writeActionRequest(
   fs.mkdirSync(dirs.failed, { recursive: true });
   const queuePath = path.join(dirs.queued, `${record.id}.json`);
   fs.writeFileSync(queuePath, `${JSON.stringify(record, null, 2)}\n`, { flag: 'wx' });
+  appendOperationEvent(root, {
+    kind: 'action_request',
+    id: record.id,
+    status: 'queued',
+    title: `${record.actionType}: ${record.title}`,
+    target: record.target,
+    detail: 'Queued by WhatsApp Distributed Cognition.',
+  });
   return { notePath, queuePath };
 }
 
@@ -4035,6 +4338,67 @@ export const formatReply: McpToolDefinition = {
   },
 };
 
+export const routeRequest: McpToolDefinition = {
+  tool: {
+    name: 'distributed_cognition_route_request',
+    description:
+      'Classify an owner WhatsApp message into the next Distributed Cognition capability: capture, memory, context search, web search, queue status, Codex handoff, or action request.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        message: { type: 'string', description: 'Owner message text to route.' },
+        hasAudioAttachment: { type: 'boolean', description: 'Set true when the message includes an audio attachment.' },
+      },
+      required: ['message'],
+    },
+  },
+  async handler(args) {
+    try {
+      const message = typeof args.message === 'string' ? args.message : '';
+      if (!message.trim()) return err('message is required');
+      const route = capabilityRoute(message, args.hasAudioAttachment === true);
+      return ok(
+        [
+          `capability: ${route.capability}`,
+          `messageType: ${route.messageType}`,
+          `confidence: ${route.confidence}`,
+          route.hostBridge ? `hostBridge: ${route.hostBridge}` : 'hostBridge: none',
+          `reason: ${route.reason}`,
+          `suggestedTools: ${route.tools.join(', ')}`,
+        ].join('\n'),
+      );
+    } catch (e) {
+      return err(e instanceof Error ? e.message : String(e));
+    }
+  },
+};
+
+export const queueStatus: McpToolDefinition = {
+  tool: {
+    name: 'distributed_cognition_queue_status',
+    description:
+      'Report the unified Distributed Cognition work queue across Codex handoffs and action requests. Writes project-wikis/work-queue.md.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        root: { type: 'string', description: 'Optional second-brain root. Defaults to the mounted path.' },
+      },
+    },
+  },
+  async handler(args) {
+    try {
+      const root = rootPath(args.root);
+      ensureFolders(root);
+      const markdown = unifiedQueueStatusMarkdown(root);
+      const wiki = resolveProjectWikiPath(root, 'Work Queue', 'project-wikis/work-queue.md');
+      fs.writeFileSync(wiki.filePath, markdown);
+      return ok([markdown, `wiki: ${wiki.filePath}`].join('\n'));
+    } catch (e) {
+      return err(e instanceof Error ? e.message : String(e));
+    }
+  },
+};
+
 export const buildCodexStatus: McpToolDefinition = {
   tool: {
     name: 'distributed_cognition_build_codex_status',
@@ -4686,6 +5050,8 @@ registerTools([
   updateProjectStatus,
   healthCheck,
   formatReply,
+  routeRequest,
+  queueStatus,
   buildCodexStatus,
   createCodexHandoff,
   createActionRequest,

@@ -26,6 +26,7 @@
     "dc:dashboard": "tsx scripts/dc-dashboard.ts",
     "dc:ensure-docker-access": "tsx scripts/dc-ensure-docker-access.ts",
     "dc:memory-bridge": "tsx scripts/dc-memory-bridge.ts",
+    "dc:memory-report": "tsx scripts/dc-memory-report.ts",
     "dc:retrieval-eval": "tsx scripts/dc-retrieval-eval.ts",
     "auth": "tsx src/whatsapp-auth.ts",
     "lint": "eslint src/",

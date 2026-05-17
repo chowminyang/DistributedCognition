@@ -221,6 +221,8 @@ distributed_cognition_auto_upgrade_memory
 distributed_cognition_update_project_status
 distributed_cognition_health_check
 distributed_cognition_format_reply
+distributed_cognition_route_request
+distributed_cognition_queue_status
 distributed_cognition_build_codex_status
 distributed_cognition_create_codex_handoff
 distributed_cognition_create_action_request
@@ -259,6 +261,30 @@ Every raw and processed capture now receives an `Attention metadata` section:
 - `Rationale`: the local heuristic reason for the score.
 
 This is deliberately lightweight. It is not a replacement for judgment. Its purpose is to stop the system from treating every passing reflection as equally important. High-signal items can flow toward Mnemon, project status pages, decision logs, open questions, or Codex handoffs. Low-signal items still remain searchable in Markdown.
+
+## Capability Routing
+
+Distributed Cognition has a lightweight capability catalogue inspired by Hermes-style agent gateways. It helps the WhatsApp agent decide which safe local path to use next without adding a heavy configuration system.
+
+The main routes are:
+
+- capture reflections, decisions, and notes;
+- process audio;
+- promote concise durable memory into Mnemon;
+- search local Dropbox/second-brain context;
+- search public web;
+- report health and queue status;
+- update Obsidian-friendly project wiki pages;
+- queue local Codex handoffs;
+- queue heavier action requests such as Word, PowerPoint, or web research.
+
+Use:
+
+```text
+distributed_cognition_route_request
+```
+
+This routing layer does not override hard safety boundaries. Sender allowlist, outbound WhatsApp restriction, folder boundaries, sensitive-data blocking, and host-side Codex/action allowlists remain code-level constraints.
 
 ## Direct Web Access
 
@@ -381,6 +407,25 @@ pnpm run dc:codex-bridge -- process
 pnpm run dc:codex-bridge -- process --execute
 ```
 
+Bridge progress is recorded in:
+
+```text
+.dc-index/operations-log.jsonl
+```
+
+The unified work queue can be reported from WhatsApp with:
+
+```text
+distributed_cognition_queue_status
+```
+
+and is written to:
+
+```text
+project-wikis/work-queue.md
+.dc-index/work-queue-status.json
+```
+
 On first run, the bridge creates:
 
 ```text
@@ -451,6 +496,8 @@ Local Codex action outputs should be written under:
 action-outputs/
 ```
 
+The action bridge also writes progress events into `.dc-index/operations-log.jsonl`, so WhatsApp can report whether a heavier task is queued, running, completed, failed, blocked, or only dry-run checked.
+
 Safety boundary:
 
 - WhatsApp can queue actions, but the host bridge decides what action types are enabled.
@@ -459,6 +506,22 @@ Safety boundary:
 - Web research and complex artifact generation run through local Codex on the Mac by default, not Codex Cloud.
 - Codex Cloud action execution is non-default and requires explicit host-side config.
 - Actions involving emails, calendar invites, WhatsApp messages to others, purchases, submissions, or external communication require explicit confirmation and are not included in this bridge.
+
+## Mnemon Memory Report
+
+Use the memory report when you want to inspect what actually entered Mnemon and why:
+
+```bash
+pnpm run dc:memory-report
+```
+
+It writes:
+
+```text
+project-wikis/mnemon-memory-report.md
+```
+
+The report focuses on Distributed Cognition memories, grouped by memory layer and entity type, with source notes where available. It is meant to make the attention filter inspectable: keys, pivots, decisions, preferences, corrections, and stable project constraints should stand out; raw transcripts and ordinary meeting clutter should not appear there.
 
 ## macOS Bridge Automation
 
@@ -486,14 +549,19 @@ This writes:
 
 ```text
 project-wikis/distributed-cognition-dashboard.md
+project-wikis/work-queue.md
+.dc-index/work-queue-status.json
 _templates/project-wiki.md
 _templates/reflection.md
 _templates/decision.md
+_templates/memory-audit.md
 _templates/codex-handoff.md
+_templates/action-request.md
 _templates/weekly-review.md
+_templates/queue-status.md
 ```
 
-The dashboard is intended for Obsidian. It links system health, context index freshness, Codex Workbench, retrieval evals, queue counts, deadline watch, and recent captures. The templates use frontmatter so future wiki pages, reflections, decisions, handoffs, and weekly reviews are easier to scan and query.
+The dashboard is intended for Obsidian. It links system health, context index freshness, Codex Workbench, retrieval evals, queue counts, deadline watch, memory report, work queue, and recent captures. The templates use frontmatter so future wiki pages, reflections, decisions, memory audits, action requests, handoffs, and weekly reviews are easier to scan and query.
 
 ## Retrieval Evals
 

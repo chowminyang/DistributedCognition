@@ -2,6 +2,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { spawnSync } from 'child_process';
+import { appendProgressEvent, type DistributedQueueStatus } from '../src/distributed-cognition/queue-status.js';
 import {
   attachCodexAutoApproval,
   killCodexAppServer,
@@ -312,6 +313,9 @@ function cloudPrompt(record: CodexHandoffRecord, projectPath: string): string {
   return [
     'Task requested via Distributed Cognition WhatsApp.',
     '',
+    'Role:',
+    'You are a Codex agent receiving a delegated brief from Distributed Cognition. Treat the handoff as a scoped implementation plan, verify it against the repo, then work only within the requested project.',
+    '',
     `Project: ${record.projectName}`,
     `Local project reference path on submitting Mac: ${projectPath}`,
     `Queued at: ${record.createdAt}`,
@@ -326,6 +330,12 @@ function cloudPrompt(record: CodexHandoffRecord, projectPath: string): string {
     'Proposed plan from Distributed Cognition:',
     record.planMarkdown?.trim() ||
       'No explicit plan supplied. Inspect the repo, make a short plan, then proceed with scoped implementation.',
+    '',
+    'Expected execution style:',
+    '- Inspect the relevant files and existing conventions first.',
+    '- Preserve unrelated user changes.',
+    '- Keep changes tightly scoped to the task.',
+    '- Prefer the project test/build commands already present in the repo.',
     '',
     'Acceptance criteria:',
     record.acceptanceCriteria?.length
@@ -347,6 +357,9 @@ function localCodexPrompt(record: CodexHandoffRecord, projectPath: string): stri
   return [
     'Task requested via Distributed Cognition WhatsApp.',
     '',
+    'Role:',
+    'You are a local Codex agent receiving a delegated task from Distributed Cognition. Treat the handoff as a planning brief, then verify it against the repository before editing.',
+    '',
     `Project: ${record.projectName}`,
     `Local project path: ${projectPath}`,
     `Queued at: ${record.createdAt}`,
@@ -362,6 +375,12 @@ function localCodexPrompt(record: CodexHandoffRecord, projectPath: string): stri
     record.planMarkdown?.trim() ||
       'No explicit plan supplied. Inspect the repo, make a short plan, then proceed with scoped implementation.',
     '',
+    'Expected execution style:',
+    '- First inspect the relevant files and existing conventions.',
+    '- Keep changes tightly scoped to the task.',
+    '- Prefer the project test/build commands already present in the repo.',
+    '- If the task is ambiguous, make the smallest useful progress and state the assumption.',
+    '',
     'Acceptance criteria:',
     record.acceptanceCriteria?.length
       ? record.acceptanceCriteria.map((criterion) => `- ${criterion}`).join('\n')
@@ -376,6 +395,26 @@ function localCodexPrompt(record: CodexHandoffRecord, projectPath: string): stri
     '- Verify the change with the project-appropriate tests or checks when feasible.',
     '- Report changed files, verification, and residual risk in the final response.',
   ].join('\n');
+}
+
+function progressTitle(record: CodexHandoffRecord): string {
+  return `${record.projectName}: ${record.task}`;
+}
+
+function recordProgress(
+  root: string,
+  record: CodexHandoffRecord,
+  status: DistributedQueueStatus,
+  detail: string,
+): void {
+  appendProgressEvent(root, {
+    kind: 'codex_handoff',
+    id: record.id,
+    status,
+    title: progressTitle(record),
+    target: record.target,
+    detail,
+  });
 }
 
 function writeLastMessage(root: string, record: CodexHandoffRecord, text: string): string {
@@ -724,11 +763,13 @@ async function processQueue(args: Args, configPath: string): Promise<void> {
       const terminalPath = terminalRecordPath(args.root, record);
       if (terminalPath) {
         if (fs.existsSync(item.filePath)) fs.unlinkSync(item.filePath);
+        recordProgress(args.root, record, 'skipped', 'Terminal record already exists.');
         console.log(`Skipping already processed handoff ${record.id}; terminal record exists.`);
         skipped += 1;
         continue;
       }
       if (record.target === 'queue-only') {
+        recordProgress(args.root, record, 'skipped', 'Queue-only handoff left for manual review.');
         console.log(`Skipping queue-only handoff ${record.id} for ${record.projectName}.`);
         skipped += 1;
         continue;
@@ -736,6 +777,7 @@ async function processQueue(args: Args, configPath: string): Promise<void> {
 
       const projectConfig = resolveProjectConfig(config, record);
       if (!projectConfig || projectConfig.enabled === false) {
+        recordProgress(args.root, record, 'blocked', 'Missing enabled project mapping.');
         console.log(`Missing enabled project mapping for ${record.projectName}; leaving ${record.id} queued.`);
         skipped += 1;
         continue;
@@ -745,15 +787,18 @@ async function processQueue(args: Args, configPath: string): Promise<void> {
       const projectPath = safeJoin(projectsRoot, projectConfig.relativePath);
       if (record.target === 'codex-local') {
         if (projectConfig.localEnabled === false || config.localCodex?.enabled === false) {
+          recordProgress(args.root, record, 'blocked', 'Local Codex not enabled for this mapping.');
           console.log(`Local Codex is not enabled for ${record.projectName}; leaving ${record.id} queued.`);
           skipped += 1;
           continue;
         }
         if (!args.execute) {
+          recordProgress(args.root, record, 'dry_run', 'Dry-run only; local Codex not started.');
           console.log(`Dry-run: would execute ${record.id} (${record.projectName}) with local Codex.`);
           skipped += 1;
           continue;
         }
+        recordProgress(args.root, record, 'running', 'Local Codex execution started on this Mac.');
         const result = await runLocalCodex(args.root, record, projectPath, config);
         if (!result.ok) {
           moveRecord(args.root, item.filePath, record, 'failed', {
@@ -768,6 +813,7 @@ async function processQueue(args: Args, configPath: string): Promise<void> {
             result.lastMessagePath ? `- Last message: ${result.lastMessagePath}` : '- Last message: not written',
             '- See the failed JSON record under `.dc-index/codex-handoffs/failed/` for stdout/stderr.',
           ]);
+          recordProgress(args.root, record, 'failed', 'Local Codex execution failed.');
           console.log(`Failed local Codex handoff ${record.id} for ${record.projectName}.`);
           failed += 1;
           continue;
@@ -788,6 +834,7 @@ async function processQueue(args: Args, configPath: string): Promise<void> {
           result.threadId ? `- Codex thread: ${result.threadId}` : '- Codex thread: not reported',
           result.lastMessagePath ? `- Last message: ${result.lastMessagePath}` : '- Last message: not written',
         ]);
+        recordProgress(args.root, record, 'completed', 'Local Codex execution completed.');
         console.log(`Completed local Codex handoff ${record.id} for ${record.projectName}.`);
         processed += 1;
         continue;
@@ -795,11 +842,13 @@ async function processQueue(args: Args, configPath: string): Promise<void> {
 
       const cloudEnv = projectConfig.cloudEnv;
       if (!cloudEnv) {
+        recordProgress(args.root, record, 'blocked', 'Missing Codex Cloud environment mapping.');
         console.log(`Missing cloudEnv for ${record.projectName} in ${configPath}; leaving ${record.id} queued.`);
         skipped += 1;
         continue;
       }
       if (record.cloudEnv && record.cloudEnv !== cloudEnv) {
+        recordProgress(args.root, record, 'blocked', 'Requested Codex Cloud environment did not match host allowlist.');
         console.log(
           `Rejected ${record.id}: requested cloudEnv does not match host allowlist for ${record.projectName}.`,
         );
@@ -808,11 +857,13 @@ async function processQueue(args: Args, configPath: string): Promise<void> {
       }
       const branch = record.branch || projectConfig.branch || config.defaultBranch || undefined;
       if (!args.submit) {
+        recordProgress(args.root, record, 'dry_run', 'Dry-run only; Codex Cloud not submitted.');
         console.log(`Dry-run: would submit ${record.id} (${record.projectName}) to Codex Cloud env ${cloudEnv}.`);
         skipped += 1;
         continue;
       }
 
+      recordProgress(args.root, record, 'running', 'Codex Cloud submission started.');
       const result = submitToCodexCloud(record, projectPath, cloudEnv, branch);
       if (!result.ok) {
         moveRecord(args.root, item.filePath, record, 'failed', {
@@ -825,6 +876,7 @@ async function processQueue(args: Args, configPath: string): Promise<void> {
           `- Exit status: ${result.status ?? 'unknown'}`,
           '- See the failed JSON record under `.dc-index/codex-handoffs/failed/` for stdout/stderr.',
         ]);
+        recordProgress(args.root, record, 'failed', 'Codex Cloud submission failed.');
         console.log(`Failed to submit ${record.id} for ${record.projectName}.`);
         failed += 1;
         continue;
@@ -842,6 +894,7 @@ async function processQueue(args: Args, configPath: string): Promise<void> {
         `- Codex task: ${result.cloudUrl}`,
         result.cloudTaskId ? `- Task id: ${result.cloudTaskId}` : '- Task id: not parsed',
       ]);
+      recordProgress(args.root, record, 'submitted', 'Submitted to Codex Cloud.');
       console.log(`Submitted ${record.id} for ${record.projectName}: ${result.cloudUrl}`);
       processed += 1;
     } catch (e) {

@@ -2,6 +2,9 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 
+import { readUnifiedQueueStatus, writeUnifiedQueueStatus } from '../src/distributed-cognition/queue-status.js';
+import { obsidianTemplates } from '../src/distributed-cognition/wiki-templates.js';
+
 const DEFAULT_ROOT_CANDIDATES = [
   path.join(os.homedir(), 'Library/CloudStorage/Dropbox/Distributed-Cognition'),
   path.join(os.homedir(), 'Dropbox/Distributed-Cognition'),
@@ -141,13 +144,7 @@ function renderQueue(label: string, counts: QueueSummary | undefined, fallback: 
 function ensureTemplates(root: string): void {
   const dir = path.join(root, '_templates');
   ensureDir(dir);
-  const templates: Record<string, string> = {
-    'project-wiki.md': `---\ntype: project_wiki\nproject: \"{{project}}\"\nstatus: \"active\"\nlast_reviewed: \"${sgtTimestamp()}\"\ntags:\n  - distributed-cognition/project\n---\n\n# {{project}}\n\n## Current State\n\n## Decisions\n\n## Open Questions\n\n## Risks\n\n## Next Actions\n\n## Source Notes\n`,
-    'reflection.md': `---\ntype: reflection\ncreated: \"${sgtTimestamp()}\"\nmessage_type: reflection\ntags:\n  - distributed-cognition/reflection\n---\n\n# Reflection - ${sgtTimestamp()}\n\n## Raw Reflection\n\n## New Insight\n\n## Decision Made Or Leaning\n\n## Open Questions\n\n## Suggested Next Actions\n\n## Long-Term Memory Candidate\n`,
-    'decision.md': `---\ntype: decision\ncreated: \"${sgtTimestamp()}\"\ndecision_type: \"leaning\"\ntags:\n  - distributed-cognition/decision\n---\n\n# Decision - ${sgtTimestamp()}\n\n## Raw Decision Statement\n\n## Decision Type\n\n## Rationale\n\n## Implications\n\n## Risks\n\n## What Would Change This Decision\n\n## Add To Decision Log?\n`,
-    'codex-handoff.md': `---\ntype: codex_handoff\ncreated: \"${sgtTimestamp()}\"\ntarget: codex-local\nstatus: queued\ntags:\n  - distributed-cognition/codex-handoff\n---\n\n# Codex Handoff - {{project}} - ${sgtTimestamp()}\n\n## Task\n\n## Proposed Plan\n\n## Acceptance Criteria\n\n## Source Notes\n\n## Safety Boundaries\n`,
-    'weekly-review.md': `---\ntype: weekly_review\ncreated: \"${sgtTimestamp()}\"\ntags:\n  - distributed-cognition/weekly-review\n---\n\n# Weekly Review - ${sgtTimestamp()}\n\n## Stored Facts\n\n## Extracted Facts\n\n## Inferred Themes\n\n## Decisions\n\n## Open Questions\n\n## Suggested Actions\n`,
-  };
+  const templates = obsidianTemplates();
   for (const [name, content] of Object.entries(templates)) {
     const target = path.join(dir, name);
     if (!fs.existsSync(target)) fs.writeFileSync(target, content);
@@ -162,6 +159,7 @@ function renderDashboard(root: string): string {
   const indexedCount = Array.isArray(manifest?.entries) ? manifest.entries.length : (manifest?.entries ?? 0);
   const handoffs = queueCounts(root, 'codex-handoffs');
   const actions = queueCounts(root, 'action-requests');
+  const unifiedQueue = readUnifiedQueueStatus(root, { recentLimit: 6 });
   const healthItems = health?.items ?? [];
   const healthWarnings = healthItems.filter((item) => item.status === 'warning').length;
   const healthErrors = healthItems.filter((item) => item.status === 'error').length;
@@ -193,9 +191,15 @@ function renderDashboard(root: string): string {
     '## Queues',
     ...renderQueue('Codex handoffs', codex?.handoffSummary, handoffs),
     ...renderQueue('Action requests', codex?.actionSummary, actions),
+    `- Unified active work: ${unifiedQueue.totals.queued + unifiedQueue.totals.running + unifiedQueue.totals.submitted}`,
+    unifiedQueue.recent.length > 0
+      ? `- Most recent work item: ${unifiedQueue.recent[0].status} ${unifiedQueue.recent[0].id}`
+      : '- Most recent work item: none',
     '',
     '## Working Areas',
     '- [[project-wikis/codex-workbench|Codex Workbench]]',
+    '- [[project-wikis/work-queue|Work Queue]]',
+    '- [[project-wikis/mnemon-memory-report|Mnemon Memory Report]]',
     '- [[project-wikis/system-health|System Health]]',
     '- [[project-wikis/retrieval-eval-report|Retrieval Eval Report]]',
     '- [[open-questions/deadline-watch|Deadline Watch]]',
@@ -221,6 +225,7 @@ function main(): void {
   ensureTemplates(root);
   const wikiDir = path.join(root, 'project-wikis');
   ensureDir(wikiDir);
+  writeUnifiedQueueStatus(root);
   const dashboardPath = path.join(wikiDir, 'distributed-cognition-dashboard.md');
   fs.writeFileSync(dashboardPath, renderDashboard(root));
   console.log(`Wrote ${dashboardPath}`);
