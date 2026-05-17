@@ -277,6 +277,36 @@ Current intended mounts:
 /Users/<username>/.codex/memories
 ```
 
+Mount the Codex projects parent folder, not individual project folders. New project folders created later under `/Users/<username>/Documents/Codex` will then become visible inside Docker automatically at `/workspace/extra/codex-projects/<folder-name>`. Rebuild the Codex status index after adding a project so DC notices it.
+
+The host-side NanoClaw mount allowlist must permit the same parent folder read-only, and each Distributed Cognition agent group must include the mount in `additional_mounts`. Use `ncl groups config add-mount` for every Distributed Cognition group that may answer WhatsApp:
+
+```bash
+pnpm run dc:ensure-docker-access
+```
+
+That helper configures the selected second-brain folder, the Codex projects parent folder, and Codex memory summaries for all agent groups named `Distributed Cognition`. To do the same thing manually:
+
+```bash
+pnpm ncl groups config add-mount \
+  --id <distributed-cognition-group-id> \
+  --host-path /Users/<username>/Documents/Codex \
+  --container-path codex-projects \
+  --readonly true
+
+pnpm ncl groups config add-mount \
+  --id <distributed-cognition-group-id> \
+  --host-path /Users/<username>/.codex/memories \
+  --container-path codex-memory \
+  --readonly true
+```
+
+Restart the group containers after changing mounts:
+
+```bash
+pnpm ncl groups restart --id <distributed-cognition-group-id>
+```
+
 Do not mount the whole home directory or the whole `.codex` directory. The project mount is for status/context only; the WhatsApp container should not edit those repos directly.
 
 Use:

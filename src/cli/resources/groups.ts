@@ -11,6 +11,12 @@ import {
 import type { ContainerConfigRow } from '../../types.js';
 import { registerResource } from '../crud.js';
 
+interface AdditionalMount {
+  hostPath: string;
+  containerPath: string;
+  readonly?: boolean;
+}
+
 /** Deserialize JSON columns for display. */
 function presentConfig(row: ContainerConfigRow): Record<string, unknown> {
   return {
@@ -29,6 +35,23 @@ function presentConfig(row: ContainerConfigRow): Record<string, unknown> {
     cli_scope: row.cli_scope,
     updated_at: row.updated_at,
   };
+}
+
+function parseReadonly(value: unknown): boolean {
+  if (value === undefined) return true;
+  if (typeof value === 'boolean') return value;
+  const text = String(value).trim().toLowerCase();
+  if (['1', 'true', 'yes', 'y', 'readonly', 'read-only', 'ro'].includes(text)) return true;
+  if (['0', 'false', 'no', 'n', 'rw', 'readwrite', 'read-write'].includes(text)) return false;
+  throw new Error('--readonly must be true/false or ro/rw');
+}
+
+function validateMountArgs(hostPath: string, containerPath: string): void {
+  if (!hostPath) throw new Error('--host-path is required');
+  if (!containerPath) throw new Error('--container-path is required');
+  if (containerPath.startsWith('/') || containerPath.includes('..') || containerPath.includes(':')) {
+    throw new Error('--container-path must be a relative name under /workspace/extra and must not contain ".." or ":"');
+  }
 }
 
 registerResource({
@@ -161,6 +184,66 @@ registerResource({
 
         const updated = getContainerConfig(id)!;
         return presentConfig(updated);
+      },
+    },
+    'config add-mount': {
+      access: 'approval',
+      description:
+        'Add or replace an additional Docker mount for a group. Requires `ncl groups restart` to take effect. ' +
+        'Use --id <group-id> --host-path <absolute-or-tilde-path> --container-path <name-under-workspace-extra> [--readonly true|false].',
+      handler: async (args) => {
+        const id = args.id as string;
+        if (!id) throw new Error('--id is required');
+        const hostPath = (args.host_path ?? args.hostPath) as string;
+        const containerPath = (args.container_path ?? args.containerPath) as string;
+        validateMountArgs(hostPath, containerPath);
+        const readonly = parseReadonly(args.readonly);
+
+        const row = getContainerConfig(id);
+        if (!row) throw new Error(`No container config for group: ${id}`);
+
+        const mounts = JSON.parse(row.additional_mounts) as AdditionalMount[];
+        const nextMount: AdditionalMount = { hostPath, containerPath, readonly };
+        const next = [
+          ...mounts.filter((mount) => mount.containerPath !== containerPath && mount.hostPath !== hostPath),
+          nextMount,
+        ];
+        updateContainerConfigJson(id, 'additional_mounts', next);
+
+        return {
+          added: nextMount,
+          additional_mounts: next,
+          note: 'Restart the group containers for the mount to take effect.',
+        };
+      },
+    },
+    'config remove-mount': {
+      access: 'approval',
+      description:
+        'Remove an additional Docker mount by --container-path or --host-path. Requires `ncl groups restart` to take effect.',
+      handler: async (args) => {
+        const id = args.id as string;
+        if (!id) throw new Error('--id is required');
+        const containerPath = (args.container_path ?? args.containerPath) as string | undefined;
+        const hostPath = (args.host_path ?? args.hostPath) as string | undefined;
+        if (!containerPath && !hostPath) throw new Error('Provide --container-path or --host-path');
+
+        const row = getContainerConfig(id);
+        if (!row) throw new Error(`No container config for group: ${id}`);
+
+        const mounts = JSON.parse(row.additional_mounts) as AdditionalMount[];
+        const next = mounts.filter(
+          (mount) =>
+            (containerPath ? mount.containerPath !== containerPath : true) &&
+            (hostPath ? mount.hostPath !== hostPath : true),
+        );
+        updateContainerConfigJson(id, 'additional_mounts', next);
+
+        return {
+          removed: mounts.length - next.length,
+          additional_mounts: next,
+          note: 'Restart the group containers for the mount removal to take effect.',
+        };
       },
     },
     'config add-mcp-server': {
