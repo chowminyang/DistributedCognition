@@ -13,6 +13,7 @@ import {
   stripInternalTags,
   type RoutingContext,
 } from './formatter.js';
+import { selectModelRoute, type ModelRoute } from './model-router.js';
 import type { AgentProvider, AgentQuery, ProviderEvent } from './providers/types.js';
 
 const POLL_INTERVAL_MS = 1000;
@@ -38,6 +39,9 @@ export interface PollLoopConfig {
   systemContext?: {
     instructions?: string;
   };
+  model?: string;
+  effort?: string;
+  env?: Record<string, string | undefined>;
 }
 
 /**
@@ -163,15 +167,31 @@ export async function runPollLoop(config: PollLoopConfig): Promise<void> {
 
     // Format messages: passthrough commands get raw text (only if the
     // provider natively handles slash commands), others get XML.
-    const prompt = formatMessagesWithCommands(keep, config.provider.supportsNativeSlashCommands);
+    const modelRoute = selectModelRoute(keep, {
+      providerName: config.providerName,
+      defaultModel: config.model,
+      defaultEffort: config.effort,
+      env: config.env,
+    });
+    const prompt = withModelRouteContext(
+      formatMessagesWithCommands(keep, config.provider.supportsNativeSlashCommands),
+      modelRoute,
+    );
 
     log(`Processing ${keep.length} message(s), kinds: ${[...new Set(keep.map((m) => m.kind))].join(',')}`);
+    if (modelRoute.model || modelRoute.effort) {
+      log(
+        `Model route: ${modelRoute.profile}/${modelRoute.tier} model=${modelRoute.model ?? '(provider default)'} effort=${modelRoute.effort ?? '(provider default)'} reason=${modelRoute.reason}`,
+      );
+    }
 
     const query = config.provider.query({
       prompt,
       continuation,
       cwd: config.cwd,
       systemContext: config.systemContext,
+      model: modelRoute.model,
+      effort: modelRoute.effort,
     });
 
     // Process the query while concurrently polling for new messages
@@ -251,6 +271,22 @@ function formatMessagesWithCommands(messages: MessageInRow[], nativeSlashCommand
   }
 
   return parts.join('\n\n');
+}
+
+function withModelRouteContext(prompt: string, route: ModelRoute): string {
+  const attrs = [
+    `profile="${escapeAttr(route.profile)}"`,
+    `tier="${escapeAttr(route.tier)}"`,
+    route.model ? `model="${escapeAttr(route.model)}"` : '',
+    route.effort ? `effort="${escapeAttr(route.effort)}"` : '',
+    `reason="${escapeAttr(route.reason)}"`,
+  ].filter(Boolean);
+
+  return `<runtime_model_route ${attrs.join(' ')} />\n${prompt}`;
+}
+
+function escapeAttr(value: string): string {
+  return value.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
 interface QueryResult {

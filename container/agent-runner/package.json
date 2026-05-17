@@ -12,6 +12,11 @@
     "@anthropic-ai/claude-agent-sdk": "^0.2.128",
     "@modelcontextprotocol/sdk": "^1.12.1",
     "cron-parser": "^5.0.0",
+    "fast-glob": "^3.3.3",
+    "js-tiktoken": "^1.0.21",
+    "mammoth": "^1.12.0",
+    "officeparser": "^7.0.3",
+    "openai": "^6.38.0",
     "zod": "^4.0.0"
   },
   "devDependencies": {

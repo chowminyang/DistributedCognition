@@ -10,6 +10,16 @@ dist/
 store/
 data/
 logs/
+output/
+*.log
+*.db
+*.sqlite
+*.sqlite3
+*.opus
+/Distributed-Cognition/
+/second-brain/
+/action-outputs/
+/.dc-index/
 
 # Groups - per-installation state, not tracked
 groups/*

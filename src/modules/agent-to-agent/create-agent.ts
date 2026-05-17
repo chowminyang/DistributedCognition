@@ -9,6 +9,7 @@ import path from 'path';
 
 import { GROUPS_DIR } from '../../config.js';
 import { createAgentGroup, getAgentGroup, getAgentGroupByFolder } from '../../db/agent-groups.js';
+import { updateContainerConfigScalars } from '../../db/container-configs.js';
 import { getSession } from '../../db/sessions.js';
 import { wakeContainer } from '../../container-runner.js';
 import { initGroupFilesystem } from '../../group-init.js';
@@ -78,11 +79,12 @@ export async function handleCreateAgent(content: Record<string, unknown>, sessio
     id: agentGroupId,
     name,
     folder,
-    agent_provider: null,
+    agent_provider: 'codex',
     created_at: now,
   };
   createAgentGroup(newGroup);
   initGroupFilesystem(newGroup, { instructions: instructions ?? undefined });
+  updateContainerConfigScalars(agentGroupId, { provider: 'codex' });
 
   // Insert bidirectional destination rows (= ACL grants).
   // Creator refers to child by the name it chose; child refers to creator as "parent".

@@ -62,6 +62,27 @@ const activeContainers = new Map<string, { process: ChildProcess; containerName:
  */
 const wakePromises = new Map<string, Promise<boolean>>();
 
+function shellQuote(value: string): string {
+  return `'${value.replace(/'/g, "'\\''")}'`;
+}
+
+function npmPackageName(spec: string): string {
+  const trimmed = spec.trim();
+  if (trimmed.startsWith('@')) {
+    const [scope, rest = ''] = trimmed.split('/');
+    return rest ? `${scope}/${rest.split('@')[0]}` : trimmed;
+  }
+  return trimmed.split('@')[0];
+}
+
+function npmBuildScriptAllowlist(packages: string[]): string[] {
+  const names = new Set(packages.map(npmPackageName).filter(Boolean));
+  if (names.has('mnemon-mcp')) {
+    names.add('better-sqlite3');
+  }
+  return [...names];
+}
+
 export function getActiveContainerCount(): number {
   return activeContainers.size;
 }
@@ -486,8 +507,12 @@ export async function buildAgentGroupImage(agentGroupId: string): Promise<void> 
     // to /root/.npmrc (base image sets it up for agent-browser) so packages
     // with postinstall — e.g. playwright, puppeteer, native addons — don't
     // install silently broken.
-    const allowlist = npmPackages.map((p) => `echo 'only-built-dependencies[]=${p}' >> /root/.npmrc`).join(' && ');
-    dockerfile += `RUN ${allowlist} && pnpm install -g ${npmPackages.join(' ')}\n`;
+    // Allowlist entries are package names, not versioned specs. Mnemon uses
+    // better-sqlite3 underneath, so its native binding must be allowed too.
+    const allowlist = npmBuildScriptAllowlist(npmPackages)
+      .map((p) => `echo ${shellQuote(`only-built-dependencies[]=${p}`)} >> /root/.npmrc`)
+      .join(' && ');
+    dockerfile += `RUN ${allowlist} && pnpm install -g ${npmPackages.map(shellQuote).join(' ')}\n`;
   }
   dockerfile += 'USER node\n';
 

@@ -100,6 +100,9 @@ async function main(): Promise<void> {
     providerName,
     cwd: CWD,
     systemContext: { instructions },
+    model: config.model,
+    effort: config.effort,
+    env: process.env,
   });
 }
 

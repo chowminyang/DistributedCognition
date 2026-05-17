@@ -1,0 +1,114 @@
+{
+  "summary": {
+    "visibleElements": 42,
+    "textElements": 21,
+    "connectors": 9,
+    "colors": 12,
+    "bounds": {
+      "minX": 70,
+      "minY": 40,
+      "maxX": 1500,
+      "maxY": 902,
+      "width": 1430,
+      "height": 862
+    }
+  },
+  "issues": [
+    {
+      "severity": "warning",
+      "message": "Elements human-box and human-title overlap substantially."
+    },
+    {
+      "severity": "warning",
+      "message": "Elements human-box and human-body overlap substantially."
+    },
+    {
+      "severity": "warning",
+      "message": "Elements human-box and human-note overlap substantially."
+    },
+    {
+      "severity": "warning",
+      "message": "Elements capture-box and capture-title overlap substantially."
+    },
+    {
+      "severity": "warning",
+      "message": "Elements capture-box and cap-voice overlap substantially."
+    },
+    {
+      "severity": "warning",
+      "message": "Elements capture-box and cap-voice-text overlap substantially."
+    },
+    {
+      "severity": "warning",
+      "message": "Elements capture-box and cap-text overlap substantially."
+    },
+    {
+      "severity": "warning",
+      "message": "Elements capture-box and cap-text-text overlap substantially."
+    },
+    {
+      "severity": "warning",
+      "message": "Elements capture-box and cap-meeting overlap substantially."
+    },
+    {
+      "severity": "warning",
+      "message": "Elements capture-box and cap-meeting-text overlap substantially."
+    },
+    {
+      "severity": "warning",
+      "message": "Elements capture-box and cap-questions overlap substantially."
+    },
+    {
+      "severity": "warning",
+      "message": "Elements capture-box and cap-questions-text overlap substantially."
+    },
+    {
+      "severity": "warning",
+      "message": "Elements engine-box and engine-title overlap substantially."
+    },
+    {
+      "severity": "warning",
+      "message": "Elements engine-box and engine-subtitle overlap substantially."
+    },
+    {
+      "severity": "warning",
+      "message": "Elements engine-box and engine-list overlap substantially."
+    },
+    {
+      "severity": "warning",
+      "message": "Elements engine-box and engine-result overlap substantially."
+    },
+    {
+      "severity": "warning",
+      "message": "Elements memory-box and memory-title overlap substantially."
+    },
+    {
+      "severity": "warning",
+      "message": "Elements memory-box and memory-list overlap substantially."
+    },
+    {
+      "severity": "warning",
+      "message": "Elements agents-box and agents-title overlap substantially."
+    },
+    {
+      "severity": "warning",
+      "message": "Elements agents-box and agents-list overlap substantially."
+    },
+    {
+      "severity": "warning",
+      "message": "Elements monitor-box and monitor-title overlap substantially."
+    },
+    {
+      "severity": "warning",
+      "message": "Elements handoff-box and handoff-text overlap substantially."
+    },
+    {
+      "severity": "warning",
+      "message": "Elements bottom-box and bottom-text overlap substantially."
+    }
+  ],
+  "suggestions": [
+    "Reduce the palette; use fewer semantic colors."
+  ],
+  "passed": true
+}

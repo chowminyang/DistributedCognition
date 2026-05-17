@@ -1,10 +1,21 @@
-<p align="center">
-  <img src="assets/nanoclaw-logo.png" alt="NanoClaw" width="400">
-</p>
+# DistributedCognition
 
-<p align="center">
-  An AI assistant that runs agents securely in their own containers. Lightweight, built to be easily understood and completely customized for your needs.
-</p>
+DistributedCognition is a local-first, WhatsApp-based reflective capture and project-memory assistant built on [NanoClaw](https://github.com/nanocoai/nanoclaw).
+
+It is designed as a second mind for capturing voice notes, reflections, decisions, open questions, and project context, then turning the high-signal parts into structured Markdown, curated Mnemon memory, and local Codex handoffs. The default architecture keeps storage on the local computer, mounts only explicitly selected folders into Docker, and routes larger work to local agents rather than giving the WhatsApp-facing assistant broad host access.
+
+Key additions in this fork:
+
+- WhatsApp/Baileys private-mode allowlist and safe outbound sending.
+- OpenAI/Codex provider path with lightweight model routing.
+- Distributed Cognition note capture, audio transcription, context indexing, Mnemon promotion, project wiki promotion, and deadline-watch tools.
+- Host-side Codex/action bridges for local project work, web research, Word documents, and PowerPoint generation.
+- Public-web search/read tools with private-network and sensitive-content guards.
+- Documentation for local Dropbox-style mounts and future Raspberry Pi deployment.
+
+See [docs/distributed-cognition.md](docs/distributed-cognition.md) for the Distributed Cognition setup and safety model.
+
+## Upstream NanoClaw
 
 <p align="center">
   <a href="https://nanoclaw.dev">nanoclaw.dev</a>&nbsp; • &nbsp;
@@ -50,7 +61,7 @@ Run the script directly, not from inside a Claude session — the deterministic 
 
 **What it does:** merges `.env`, seeds the v2 DB from `registered_groups`, copies group folders + session data + scheduled tasks, installs the channel adapters you select, copies channel auth state (including Baileys keystore + LID mappings for WhatsApp), builds the agent container.
 
-**What it doesn't:** flip the system service. Pick *"switch to v2"* at the prompt, or do it manually after testing — your v1 install is left untouched.
+**What it doesn't:** flip the system service. Pick _"switch to v2"_ at the prompt, or do it manually after testing — your v1 install is left untouched.
 
 See [docs/v1-to-v2-changes.md](docs/v1-to-v2-changes.md) for what's different and [docs/migration-dev.md](docs/migration-dev.md) for development notes.
 
@@ -93,6 +104,7 @@ Talk to your assistant with the trigger word (default: `@Andy`):
 ```
 
 From a channel you own or administer, you can manage groups and tasks:
+
 ```
 @Andy list all scheduled tasks across groups
 @Andy pause the Monday briefing task
@@ -125,6 +137,7 @@ This keeps trunk as pure registry and infra, and every fork stays lean — users
 Skills we'd like to see:
 
 **Communication Channels**
+
 - `/add-signal` — Add Signal as a channel
 
 ## Requirements
@@ -147,6 +160,7 @@ Two SQLite files per session, each with exactly one writer — no cross-mount co
 For the full architecture writeup see [docs/architecture.md](docs/architecture.md); for the three-level isolation model see [docs/isolation-model.md](docs/isolation-model.md).
 
 Key files:
+
 - `src/index.ts` — entry point: DB init, channel adapters, delivery polls, sweep
 - `src/router.ts` — inbound routing: messaging group → agent group → session → `inbound.db`
 - `src/delivery.ts` — polls `outbound.db`, delivers via adapter, handles system actions

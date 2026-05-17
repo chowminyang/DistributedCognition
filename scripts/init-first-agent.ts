@@ -34,7 +34,7 @@ import net from 'net';
 import path from 'path';
 
 import { DATA_DIR } from '../src/config.js';
-import { createAgentGroup, getAgentGroupByFolder } from '../src/db/agent-groups.js';
+import { createAgentGroup, getAgentGroupByFolder, updateAgentGroup } from '../src/db/agent-groups.js';
 import { initDb } from '../src/db/connection.js';
 import {
   createMessagingGroup,
@@ -196,7 +196,7 @@ async function main(): Promise<void> {
       id: agId,
       name: args.agentName,
       folder,
-      agent_provider: null,
+      agent_provider: 'codex',
       created_at: now,
     });
     ag = getAgentGroupByFolder(folder)!;
@@ -210,6 +210,8 @@ async function main(): Promise<void> {
       `You are ${args.agentName}, a personal NanoClaw agent for ${args.displayName}. ` +
       'When the user first reaches out (or you receive a system welcome prompt), introduce yourself briefly and invite them to chat. Keep replies concise.',
   });
+  updateAgentGroup(ag.id, { agent_provider: 'codex' });
+  updateContainerConfigScalars(ag.id, { provider: 'codex' });
 
   // 2b. Assign the user a role for this agent group. The caller picks via
   // --role; the channel drivers default to 'owner' for the self-host case.

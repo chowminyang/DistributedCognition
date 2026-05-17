@@ -41,6 +41,12 @@ export interface QueryInput {
   /** Initial prompt (already formatted by agent-runner). */
   prompt: string;
 
+  /** Optional per-query model override selected by the runner. */
+  model?: string;
+
+  /** Optional per-query reasoning effort override selected by the runner. */
+  effort?: string;
+
   /**
    * Opaque continuation token from a previous query. The provider decides
    * what this means (session ID, thread ID, nothing at all).
