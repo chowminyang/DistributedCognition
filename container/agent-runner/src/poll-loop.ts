@@ -42,6 +42,7 @@ export interface PollLoopConfig {
   model?: string;
   effort?: string;
   env?: Record<string, string | undefined>;
+  abortSignal?: AbortSignal;
 }
 
 /**
@@ -72,7 +73,7 @@ export async function runPollLoop(config: PollLoopConfig): Promise<void> {
 
   let pollCount = 0;
   let isFirstPoll = true;
-  while (true) {
+  while (!config.abortSignal?.aborted) {
     // Skip system messages — they're responses for MCP tools (e.g., ask_user_question)
     const messages = getPendingMessages(isFirstPoll).filter((m) => m.kind !== 'system');
     isFirstPoll = false;
@@ -201,7 +202,7 @@ export async function runPollLoop(config: PollLoopConfig): Promise<void> {
     // can stamp it on outbound rows — needed for a2a return-path routing.
     setCurrentInReplyTo(routing.inReplyTo);
     try {
-      const result = await processQuery(query, routing, processingIds, config.providerName);
+      const result = await processQuery(query, routing, processingIds, config.providerName, config.abortSignal);
       if (result.continuation && result.continuation !== continuation) {
         continuation = result.continuation;
         setContinuation(config.providerName, continuation);
@@ -298,10 +299,12 @@ async function processQuery(
   routing: RoutingContext,
   initialBatchIds: string[],
   providerName: string,
+  abortSignal?: AbortSignal,
 ): Promise<QueryResult> {
   let queryContinuation: string | undefined;
   let done = false;
   let unwrappedNudged = false;
+  let abortedBySignal = false;
 
   // Concurrent polling: push follow-ups into the active query as they arrive.
   // We do NOT force-end the stream on silence — keeping the query open avoids
@@ -391,10 +394,28 @@ async function processQuery(
     })();
   }, ACTIVE_POLL_INTERVAL_MS);
 
+  const onAbort = (): void => {
+    abortedBySignal = true;
+    done = true;
+    query.abort();
+  };
+
+  if (abortSignal?.aborted) {
+    onAbort();
+  } else {
+    abortSignal?.addEventListener('abort', onAbort, { once: true });
+  }
+
   try {
     for await (const event of query.events) {
+      if (abortedBySignal) break;
       handleEvent(event, routing);
       touchHeartbeat();
+
+      if (event.type === 'error') {
+        if (event.retryable) continue;
+        throw new Error(event.message);
+      }
 
       if (event.type === 'init') {
         queryContinuation = event.continuation;
@@ -432,6 +453,7 @@ async function processQuery(
   } finally {
     done = true;
     clearInterval(pollHandle);
+    abortSignal?.removeEventListener('abort', onAbort);
   }
 
   return { continuation: queryContinuation };

@@ -304,9 +304,7 @@ async function runPollLoopWithTimeout(provider: MockProvider, signal: AbortSigna
       provider,
       providerName: 'mock',
       cwd: '/tmp',
-    }),
-    new Promise<void>((_, reject) => {
-      signal.addEventListener('abort', () => reject(new Error('aborted')));
+      abortSignal: signal,
     }),
     new Promise<void>((_, reject) => setTimeout(() => reject(new Error('timeout')), timeoutMs)),
   ]);
@@ -343,6 +341,61 @@ describe('poll loop — provider error recovery', () => {
     // Input message should be marked completed despite the error
     const pending = getPendingMessages();
     expect(pending).toHaveLength(0);
+
+    await loopPromise.catch(() => {});
+  });
+
+  it('writes error to outbound when provider emits a non-retryable error event', async () => {
+    insertMessage('m1', { sender: 'Alice', text: 'trigger event error' }, { platformId: 'chan-1', channelType: 'discord' });
+
+    const provider = new ErrorEventProvider({ message: 'Turn timed out after 300000ms', retryable: false });
+    const controller = new AbortController();
+    const loopPromise = runPollLoopWithTimeout(provider as unknown as MockProvider, controller.signal, 2000);
+
+    await waitFor(() => getUndeliveredMessages().length > 0, 2000);
+    controller.abort();
+
+    const out = getUndeliveredMessages();
+    expect(out).toHaveLength(1);
+    expect(JSON.parse(out[0].content).text).toContain('Error: Turn timed out after 300000ms');
+
+    await loopPromise.catch(() => {});
+  });
+
+  it('keeps processing when provider emits a retryable error event before a result', async () => {
+    insertMessage('m1', { sender: 'Alice', text: 'temporary retry' }, { platformId: 'chan-1', channelType: 'discord' });
+
+    const provider = new ErrorEventProvider({ message: 'API retry', retryable: true });
+    const controller = new AbortController();
+    const loopPromise = runPollLoopWithTimeout(provider as unknown as MockProvider, controller.signal, 2000);
+
+    await waitFor(() => getUndeliveredMessages().length > 0, 2000);
+    controller.abort();
+
+    const out = getUndeliveredMessages();
+    expect(out).toHaveLength(1);
+    expect(JSON.parse(out[0].content).text).toBe('recovered');
+
+    await loopPromise.catch(() => {});
+  });
+
+  it('surfaces a provider error from a pushed follow-up turn instead of silently completing it', async () => {
+    insertMessage('m1', { sender: 'Alice', text: 'first' }, { platformId: 'chan-1', channelType: 'discord' });
+
+    const provider = new FollowUpErrorEventProvider();
+    const controller = new AbortController();
+    const loopPromise = runPollLoopWithTimeout(provider as unknown as MockProvider, controller.signal, 3000);
+
+    await waitFor(() => getUndeliveredMessages().length === 1, 2000);
+    insertMessage('m2', { sender: 'Alice', text: 'follow-up' }, { platformId: 'chan-1', channelType: 'discord' });
+
+    await waitFor(() => getUndeliveredMessages().length === 2, 3000);
+    controller.abort();
+
+    const out = getUndeliveredMessages();
+    expect(JSON.parse(out[0].content).text).toBe('initial ok');
+    expect(JSON.parse(out[1].content).text).toContain('Error: follow-up turn timed out');
+    expect(getPendingMessages()).toHaveLength(0);
 
     await loopPromise.catch(() => {});
   });
@@ -458,6 +511,80 @@ class InvalidSessionProvider {
       events: (async function* () {
         yield { type: 'init' as const, continuation: 'doomed-session' };
         throw new Error('session not found');
+      })(),
+    };
+  }
+}
+
+class ErrorEventProvider {
+  readonly supportsNativeSlashCommands = false;
+
+  constructor(private readonly event: { message: string; retryable: boolean }) {}
+
+  isSessionInvalid(): boolean {
+    return false;
+  }
+
+  query(_input: { prompt: string; cwd: string }) {
+    const event = this.event;
+    return {
+      push() {},
+      end() {},
+      abort() {},
+      events: (async function* () {
+        yield { type: 'init' as const, continuation: 'event-error-session' };
+        yield { type: 'error' as const, message: event.message, retryable: event.retryable };
+        if (event.retryable) {
+          yield { type: 'result' as const, text: '<message to="discord-test">recovered</message>' };
+        }
+      })(),
+    };
+  }
+}
+
+class FollowUpErrorEventProvider {
+  readonly supportsNativeSlashCommands = false;
+
+  isSessionInvalid(): boolean {
+    return false;
+  }
+
+  query(_input: { prompt: string; cwd: string }) {
+    const pending: string[] = [];
+    let waiting: (() => void) | null = null;
+    let ended = false;
+    let aborted = false;
+
+    return {
+      push(message: string) {
+        pending.push(message);
+        waiting?.();
+      },
+      end() {
+        ended = true;
+        waiting?.();
+      },
+      abort() {
+        aborted = true;
+        waiting?.();
+      },
+      events: (async function* () {
+        yield { type: 'init' as const, continuation: 'follow-up-error-session' };
+        yield { type: 'result' as const, text: '<message to="discord-test">initial ok</message>' };
+
+        while (!ended && !aborted) {
+          if (pending.length === 0) {
+            await new Promise<void>((resolve) => {
+              waiting = resolve;
+            });
+            waiting = null;
+          }
+          if (pending.length > 0) {
+            pending.shift();
+            yield { type: 'error' as const, message: 'follow-up turn timed out', retryable: false };
+            return;
+          }
+        }
       })(),
     };
   }
