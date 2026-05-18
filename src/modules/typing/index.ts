@@ -20,8 +20,21 @@
 import fs from 'fs';
 
 import { heartbeatPath } from '../../session-manager.js';
+import { log } from '../../log.js';
 
 const TYPING_REFRESH_MS = 4000;
+const VISIBLE_WORK_STATUS_DELAY_MS = Math.max(
+  0,
+  parseInt(process.env.NANOCLAW_VISIBLE_WORK_STATUS_DELAY_MS || '7000', 10) || 0,
+);
+const VISIBLE_WORK_STATUS_CHANNELS = new Set(
+  (process.env.NANOCLAW_VISIBLE_WORK_STATUS_CHANNELS || 'whatsapp')
+    .split(',')
+    .map((channel) => channel.trim())
+    .filter(Boolean),
+);
+const VISIBLE_WORK_STATUS_TEXT =
+  process.env.NANOCLAW_VISIBLE_WORK_STATUS_TEXT || "Working on this. I'll reply here when it's ready.";
 /**
  * Grace window from startTypingRefresh: fire typing unconditionally
  * for this long regardless of heartbeat state. Covers container
@@ -46,6 +59,13 @@ const POST_DELIVERY_PAUSE_MS = 10000;
 
 interface TypingAdapter {
   setTyping?(channelType: string, platformId: string, threadId: string | null): Promise<void>;
+  deliver?(
+    channelType: string,
+    platformId: string,
+    threadId: string | null,
+    kind: string,
+    content: string,
+  ): Promise<string | undefined>;
 }
 
 interface TypingTarget {
@@ -54,6 +74,8 @@ interface TypingTarget {
   platformId: string;
   threadId: string | null;
   interval: NodeJS.Timeout;
+  visibleStatusTimer: NodeJS.Timeout | null;
+  visibleStatusSent: boolean;
   startedAt: number;
   pausedUntil: number; // epoch ms; 0 = not paused
 }
@@ -78,6 +100,56 @@ async function triggerTyping(channelType: string, platformId: string, threadId: 
   } catch {
     // Typing is best-effort — don't let it fail delivery or routing.
   }
+}
+
+function shouldSendVisibleWorkStatus(channelType: string): boolean {
+  return VISIBLE_WORK_STATUS_DELAY_MS > 0 && VISIBLE_WORK_STATUS_CHANNELS.has(channelType);
+}
+
+function clearVisibleWorkStatusTimer(entry: TypingTarget): void {
+  if (!entry.visibleStatusTimer) return;
+  clearTimeout(entry.visibleStatusTimer);
+  entry.visibleStatusTimer = null;
+}
+
+function scheduleVisibleWorkStatus(sessionId: string, entry: TypingTarget): void {
+  clearVisibleWorkStatusTimer(entry);
+  entry.visibleStatusSent = false;
+
+  if (!shouldSendVisibleWorkStatus(entry.channelType)) return;
+
+  const timer = setTimeout(() => {
+    const current = typingRefreshers.get(sessionId);
+    if (!current || current !== entry || current.visibleStatusSent) return;
+
+    current.visibleStatusTimer = null;
+    current.visibleStatusSent = true;
+
+    adapter
+      ?.deliver?.(
+        current.channelType,
+        current.platformId,
+        current.threadId,
+        'chat',
+        JSON.stringify({ text: VISIBLE_WORK_STATUS_TEXT }),
+      )
+      .then(() => {
+        current.pausedUntil = Date.now() + POST_DELIVERY_PAUSE_MS;
+        log.debug('Visible work-status message delivered', {
+          sessionId,
+          channelType: current.channelType,
+        });
+      })
+      .catch((err) => {
+        log.debug('Visible work-status message failed', {
+          sessionId,
+          channelType: current.channelType,
+          err,
+        });
+      });
+  }, VISIBLE_WORK_STATUS_DELAY_MS);
+  timer.unref();
+  entry.visibleStatusTimer = timer;
 }
 
 function isHeartbeatFresh(agentGroupId: string, sessionId: string): boolean {
@@ -105,8 +177,12 @@ export function startTypingRefresh(
     // post-delivery pause: a new inbound means the user expects
     // typing to show immediately.
     triggerTyping(channelType, platformId, threadId).catch(() => {});
+    existing.channelType = channelType;
+    existing.platformId = platformId;
+    existing.threadId = threadId;
     existing.startedAt = Date.now();
     existing.pausedUntil = 0;
+    scheduleVisibleWorkStatus(sessionId, existing);
     return;
   }
 
@@ -140,9 +216,13 @@ export function startTypingRefresh(
     platformId,
     threadId,
     interval,
+    visibleStatusTimer: null,
+    visibleStatusSent: false,
     startedAt,
     pausedUntil: 0,
   });
+  const entry = typingRefreshers.get(sessionId);
+  if (entry) scheduleVisibleWorkStatus(sessionId, entry);
 }
 
 /**
@@ -154,6 +234,7 @@ export function startTypingRefresh(
 export function pauseTypingRefreshAfterDelivery(sessionId: string): void {
   const entry = typingRefreshers.get(sessionId);
   if (!entry) return;
+  clearVisibleWorkStatusTimer(entry);
   entry.pausedUntil = Date.now() + POST_DELIVERY_PAUSE_MS;
 }
 
@@ -161,5 +242,6 @@ export function stopTypingRefresh(sessionId: string): void {
   const entry = typingRefreshers.get(sessionId);
   if (!entry) return;
   clearInterval(entry.interval);
+  clearVisibleWorkStatusTimer(entry);
   typingRefreshers.delete(sessionId);
 }
