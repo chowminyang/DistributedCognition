@@ -564,6 +564,7 @@ fi
   printf -- '- `ssh-preflight.txt`\n'
   printf -- '- `rehearsal.txt`\n'
   printf -- '- `rehearsal/operator-env.sh`\n'
+  printf -- '- `rehearsal/operator-env-check.txt`\n'
   printf -- '- `rehearsal/summary.md`\n\n'
 
   printf '## What This Means\n\n'

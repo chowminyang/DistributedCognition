@@ -118,6 +118,17 @@ also points to this exact `operator-env.sh`, so the Mac Codex cutover thread can
 source one shared non-secret control-plane file before it starts operating over
 SSH.
 
+Before opening SSH, validate the filled or sourced operator environment:
+
+```bash
+pnpm run pi:operator-env-check -- --operator-env "<path to operator-env.sh>" --strict
+```
+
+This does not source the file or open SSH. It checks that required non-secret
+Pi values are present, no placeholders remain, the Pi host is not localhost,
+Pi paths are absolute, bridge modes are valid, and the expected commit looks
+like a git SHA.
+
 For a broader one-command readiness snapshot on the Mac, run:
 
 ```bash
@@ -139,7 +150,7 @@ live; a warning that the Mac host is running is expected before final export.
 The readiness output also prints `operator_env=.../rehearsal/operator-env.sh`.
 If Pi values are missing, use that generated file as the non-secret fillable
 template: uncomment and set the missing `NANOCLAW_PI_*` lines, source it from
-the Mac Codex shell, then rerun readiness.
+the Mac Codex shell, run `pi:operator-env-check`, then rerun readiness.
 
 When you are ready to capture the final state, stop the Mac launchd jobs first so SQLite, WhatsApp auth, bridge queues, and delivery ledgers are quiet:
 
@@ -426,8 +437,11 @@ export NANOCLAW_PI_SECOND_BRAIN_ROOT=/home/pi/Distributed-Cognition
 export NANOCLAW_PI_CODEX_PROJECTS_ROOT=/home/pi/Codex
 export NANOCLAW_PI_RCLONE_REMOTE=dropbox:
 export NANOCLAW_PI_SSH_CONNECT_TIMEOUT=10
+export NANOCLAW_PI_BRIDGE_EXECUTE_MODE=memory
+export NANOCLAW_PI_EXPECTED_BRIDGE_EXECUTE_MODE=memory
 export NANOCLAW_PI_EXPECTED_COMMIT="$(git rev-parse HEAD)"
 
+pnpm run pi:operator-env-check -- --strict
 pnpm run pi:ssh-preflight
 ```
 

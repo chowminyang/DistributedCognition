@@ -72,6 +72,7 @@ helper_scripts=(
   scripts/pi-cutover-plan.sh
   scripts/pi-discover.sh
   scripts/pi-mac-readiness.sh
+  scripts/pi-operator-env-check.sh
   scripts/pi-rehearse-cutover.sh
   scripts/pi-ssh-admin.sh
   scripts/pi-ssh-bootstrap.sh
@@ -107,6 +108,71 @@ assert_contains "$TMP_DIR/pi-import-help.out" "Restores a NanoClaw Raspberry Pi 
 pnpm run pi:discover -- --help >"$TMP_DIR/pi-discover-help.out"
 assert_contains "$TMP_DIR/pi-discover-help.out" "non-mutating local-network discovery" "pi discovery help documents purpose"
 assert_contains "$TMP_DIR/pi-discover-help.out" "No SSH is opened" "pi discovery help documents no SSH"
+
+pnpm run pi:operator-env-check -- --help >"$TMP_DIR/pi-operator-env-check-help.out"
+assert_contains "$TMP_DIR/pi-operator-env-check-help.out" "Validates the non-secret Raspberry Pi operator environment" "pi operator env check help documents purpose"
+assert_contains "$TMP_DIR/pi-operator-env-check-help.out" "does not source files, open SSH" "pi operator env check help documents no sourcing or SSH"
+
+operator_env_root="$TMP_DIR/operator-env-root"
+mkdir -p "$operator_env_root"
+cat >"$TMP_DIR/operator-env-complete.sh" <<OPERATOR_ENV_COMPLETE
+# Distributed Cognition Pi Operator Environment
+export DC_SECOND_BRAIN_ROOT=$operator_env_root
+export NANOCLAW_PI_HOST=nanoclaw-pi.local
+export NANOCLAW_PI_USER=pi
+export NANOCLAW_PI_PROJECT_ROOT=/home/pi/NanoClaw
+export NANOCLAW_PI_SECOND_BRAIN_ROOT=/home/pi/Distributed-Cognition
+export NANOCLAW_PI_CODEX_PROJECTS_ROOT=/home/pi/Codex
+export NANOCLAW_PI_RCLONE_REMOTE=dropbox:
+export NANOCLAW_PI_SSH_CONNECT_TIMEOUT=10
+export NANOCLAW_PI_BRIDGE_EXECUTE_MODE=memory
+export NANOCLAW_PI_EXPECTED_BRIDGE_EXECUTE_MODE=memory
+export NANOCLAW_PI_EXPECTED_COMMIT=abcdef1234567890
+export NANOCLAW_PI_REPO_URL=https://github.com/chowminyang/DistributedCognition.git
+export NANOCLAW_PI_BRANCH=main
+export NANOCLAW_PI_MIGRATION_DATE=02-06-26
+OPERATOR_ENV_COMPLETE
+pnpm run pi:operator-env-check -- \
+  --operator-env "$TMP_DIR/operator-env-complete.sh" \
+  --strict \
+  >"$TMP_DIR/pi-operator-env-check-ready.out"
+assert_contains "$TMP_DIR/pi-operator-env-check-ready.out" "PI_OPERATOR_ENV_CHECK=ready" "pi operator env check accepts complete values"
+assert_contains "$TMP_DIR/pi-operator-env-check-ready.out" "No SSH was opened" "pi operator env check is non-mutating"
+assert_contains "$TMP_DIR/pi-operator-env-check-ready.out" "pi_target=pi@nanoclaw-pi.local" "pi operator env check parses the operator env file"
+
+cat >"$TMP_DIR/operator-env-missing.sh" <<'OPERATOR_ENV_MISSING'
+# Distributed Cognition Pi Operator Environment
+# Missing: Pi host or IP
+# export NANOCLAW_PI_HOST=<set-this>
+export NANOCLAW_PI_USER=pi
+OPERATOR_ENV_MISSING
+set +e
+pnpm run pi:operator-env-check -- --operator-env "$TMP_DIR/operator-env-missing.sh" --strict >"$TMP_DIR/pi-operator-env-check-missing.out" 2>"$TMP_DIR/pi-operator-env-check-missing.err"
+operator_env_missing_code="$?"
+pnpm run pi:operator-env-check -- \
+  --local-root "$operator_env_root" \
+  --pi-host localhost \
+  --pi-user pi \
+  --pi-path /home/pi/NanoClaw \
+  --pi-second-brain-root /home/pi/Distributed-Cognition \
+  --pi-codex-projects-root /home/pi/Codex \
+  --pi-rclone-remote dropbox: \
+  --ssh-timeout 10 \
+  --bridge-execute-mode memory \
+  --expected-bridge-execute-mode memory \
+  --expected-commit abcdef1234567890 \
+  --repo-url https://github.com/chowminyang/DistributedCognition.git \
+  --branch main \
+  --migration-date 02-06-26 \
+  >"$TMP_DIR/pi-operator-env-check-localhost.out" 2>"$TMP_DIR/pi-operator-env-check-localhost.err"
+operator_env_localhost_code="$?"
+set -e
+assert_exit_code 1 "$operator_env_missing_code" "strict pi operator env check fails when values are missing"
+assert_exit_code 1 "$operator_env_localhost_code" "pi operator env check fails when Pi host is localhost"
+assert_contains "$TMP_DIR/pi-operator-env-check-missing.out" "PI_OPERATOR_ENV_CHECK=missing_values" "pi operator env check reports missing values"
+assert_contains "$TMP_DIR/pi-operator-env-check-missing.out" "operator env still has unresolved line" "pi operator env check reports unresolved operator env lines"
+assert_contains "$TMP_DIR/pi-operator-env-check-localhost.out" "PI_OPERATOR_ENV_CHECK=fail" "pi operator env check reports failure status"
+assert_contains "$TMP_DIR/pi-operator-env-check-localhost.out" "target the Mac rather than the Pi" "pi operator env check refuses localhost"
 
 fake_discovery_bin="$TMP_DIR/fake-discovery-bin"
 mkdir -p "$fake_discovery_bin"
@@ -346,6 +412,7 @@ env \
 assert_contains "$TMP_DIR/cutover-env.out" "CUTOVER_PLAN=ready" "cutover plan accepts environment defaults"
 
 rehearsal_dir="$TMP_DIR/rehearsal"
+mkdir -p "$TMP_DIR/Distributed-Cognition"
 pnpm run pi:rehearse-cutover -- \
   --local-root "$TMP_DIR/Distributed-Cognition" \
   --out-dir "$TMP_DIR/export" \
@@ -363,6 +430,7 @@ assert_contains "$TMP_DIR/rehearsal.out" "PI_CUTOVER_REHEARSAL=ready" "cutover r
 assert_contains "$TMP_DIR/rehearsal.out" "No SSH was opened" "cutover rehearsal is non-mutating"
 [ -f "$rehearsal_dir/summary.md" ] || fail "cutover rehearsal writes summary"
 [ -f "$rehearsal_dir/operator-env.sh" ] || fail "cutover rehearsal writes operator env"
+[ -f "$rehearsal_dir/operator-env-check.txt" ] || fail "cutover rehearsal writes operator env check"
 [ -f "$rehearsal_dir/codex-goal.md" ] || fail "cutover rehearsal writes codex goal"
 [ -f "$rehearsal_dir/cutover-plan.txt" ] || fail "cutover rehearsal writes cutover plan"
 [ -f "$rehearsal_dir/ssh-bootstrap-dry-run.txt" ] || fail "cutover rehearsal writes ssh bootstrap dry-run"
@@ -379,6 +447,7 @@ assert_contains "$rehearsal_dir/operator-env.sh" "export NANOCLAW_PI_EXPECTED_BR
 assert_contains "$rehearsal_dir/operator-env.sh" "export NANOCLAW_PI_EXPECTED_COMMIT=" "cutover rehearsal operator env includes expected Pi commit"
 assert_not_contains "$rehearsal_dir/operator-env.sh" "OPENAI_API_KEY" "cutover rehearsal operator env excludes API keys"
 assert_not_contains "$rehearsal_dir/operator-env.sh" "WHATSAPP_" "cutover rehearsal operator env excludes WhatsApp env vars"
+assert_contains "$rehearsal_dir/operator-env-check.txt" "PI_OPERATOR_ENV_CHECK=ready" "cutover rehearsal validates complete operator env"
 assert_contains "$rehearsal_dir/cutover-plan.txt" "CUTOVER_PLAN=ready" "cutover rehearsal includes ready cutover plan"
 assert_contains "$rehearsal_dir/ssh-bootstrap-dry-run.txt" "PI_SSH_BOOTSTRAP=dry_run" "cutover rehearsal includes bootstrap dry-run"
 assert_contains "$rehearsal_dir/ssh-restore-state-dry-run.txt" "PI_SSH_RESTORE_STATE=dry_run" "cutover rehearsal includes state restore dry-run"
@@ -386,6 +455,8 @@ assert_contains "$rehearsal_dir/ssh-start-runtime-dry-run.txt" "PI_SSH_START_RUN
 assert_contains "$rehearsal_dir/ssh-start-runtime-dry-run.txt" "--bridge-execute-mode memory" "cutover rehearsal runtime dry-run uses memory bridge mode"
 assert_contains "$rehearsal_dir/summary.md" "No SSH was opened" "cutover rehearsal summary states no SSH"
 assert_contains "$rehearsal_dir/summary.md" "operator-env.sh" "cutover rehearsal summary lists operator env artifact"
+assert_contains "$rehearsal_dir/summary.md" "operator-env-check.txt" "cutover rehearsal summary lists operator env check artifact"
+assert_contains "$rehearsal_dir/summary.md" "pi:operator-env-check" "cutover rehearsal summary includes operator env check command"
 assert_contains "$rehearsal_dir/summary.md" "Pi bridge execute mode: \`memory\`" "cutover rehearsal summary records bridge mode"
 assert_contains "$rehearsal_dir/summary.md" "Expected Pi commit" "cutover rehearsal summary records expected Pi commit"
 assert_contains "$rehearsal_dir/summary.md" "ssh-restore-state-dry-run.txt" "cutover rehearsal summary lists state restore artifact"
@@ -431,6 +502,7 @@ assert_contains "$TMP_DIR/readiness.out" "No SSH was opened" "mac readiness is n
 [ -f "$readiness_dir/pi-discovery.txt" ] || fail "mac readiness writes pi discovery artifact"
 [ -f "$readiness_dir/ssh-preflight.txt" ] || fail "mac readiness writes ssh preflight artifact"
 [ -f "$readiness_dir/rehearsal/operator-env.sh" ] || fail "mac readiness writes nested operator env"
+[ -f "$readiness_dir/rehearsal/operator-env-check.txt" ] || fail "mac readiness writes nested operator env check"
 [ -f "$readiness_dir/rehearsal/summary.md" ] || fail "mac readiness writes nested rehearsal summary"
 assert_contains "$readiness_dir/public-readiness.txt" "Skipped" "mac readiness can skip public readiness"
 assert_contains "$readiness_dir/health.json" "Skipped" "mac readiness can skip health"
@@ -441,8 +513,10 @@ assert_contains "$readiness_dir/summary.md" "git-revision-check.txt" "mac readin
 assert_contains "$readiness_dir/summary.md" "pi-discovery.txt" "mac readiness summary lists pi discovery artifact"
 assert_contains "$readiness_dir/summary.md" "ssh-preflight.txt" "mac readiness summary lists ssh preflight artifact"
 assert_contains "$readiness_dir/summary.md" "rehearsal/operator-env.sh" "mac readiness summary lists nested operator env"
+assert_contains "$readiness_dir/summary.md" "rehearsal/operator-env-check.txt" "mac readiness summary lists nested operator env check"
 assert_contains "$readiness_dir/summary.md" "Expected Pi commit" "mac readiness summary records expected Pi commit"
 assert_contains "$readiness_dir/rehearsal/codex-goal.md" "Pi operator env file: $readiness_dir/rehearsal/operator-env.sh" "mac readiness nested goal names operator env"
+assert_contains "$readiness_dir/rehearsal/codex-goal.md" "pi:operator-env-check" "mac readiness nested goal validates operator env"
 assert_contains "$readiness_dir/rehearsal/operator-env.sh" "export NANOCLAW_PI_BRIDGE_EXECUTE_MODE=memory" "mac readiness nested rehearsal carries bridge memory mode"
 assert_contains "$readiness_dir/rehearsal/operator-env.sh" "export NANOCLAW_PI_EXPECTED_BRIDGE_EXECUTE_MODE=memory" "mac readiness nested rehearsal carries expected bridge timer mode"
 assert_contains "$readiness_dir/rehearsal/operator-env.sh" "export NANOCLAW_PI_EXPECTED_COMMIT=" "mac readiness nested rehearsal carries expected commit"
@@ -489,6 +563,7 @@ assert_contains "$TMP_DIR/readiness-missing.out" "PI_MAC_READINESS=missing_value
 assert_contains "$TMP_DIR/readiness-missing.out" "operator_env=$TMP_DIR/readiness-missing/rehearsal/operator-env.sh" "strict mac readiness prints fillable operator env path"
 assert_contains "$TMP_DIR/readiness-missing.out" "No SSH was opened" "strict mac readiness remains non-mutating"
 [ -f "$TMP_DIR/readiness-missing/rehearsal/operator-env.sh" ] || fail "strict mac readiness writes missing-value operator env"
+[ -f "$TMP_DIR/readiness-missing/rehearsal/operator-env-check.txt" ] || fail "strict mac readiness writes missing-value operator env check"
 [ -f "$TMP_DIR/readiness-missing/pi-discovery.txt" ] || fail "strict mac readiness writes pi discovery artifact"
 assert_contains "$TMP_DIR/readiness-missing/summary.md" "Fillable Operator Environment" "strict mac readiness explains fillable operator env"
 assert_contains "$TMP_DIR/readiness-missing/summary.md" "Check \`pi-discovery.txt\` for passive local-network hints" "strict mac readiness points to pi discovery"
@@ -497,6 +572,7 @@ assert_contains "$TMP_DIR/readiness-missing/pi-discovery.txt" "No SSH was opened
 assert_contains "$TMP_DIR/readiness-missing/rehearsal/operator-env.sh" "# Missing: Pi host or IP" "strict mac readiness operator env marks missing Pi host"
 assert_contains "$TMP_DIR/readiness-missing/rehearsal/operator-env.sh" "# Missing: Pi Codex projects folder" "strict mac readiness operator env marks missing Pi Codex projects root"
 assert_contains "$TMP_DIR/readiness-missing/rehearsal/operator-env.sh" "export NANOCLAW_PI_EXPECTED_COMMIT=" "strict mac readiness operator env still records expected commit"
+assert_contains "$TMP_DIR/readiness-missing/rehearsal/operator-env-check.txt" "PI_OPERATOR_ENV_CHECK=missing_values" "strict mac readiness nested operator env check reports missing values"
 
 pnpm run pi:mac-readiness -- --help >"$TMP_DIR/readiness-help.out"
 assert_contains "$TMP_DIR/readiness-help.out" "--include-ssh-preflight" "mac readiness help documents optional SSH preflight"

@@ -39,6 +39,7 @@
     "pi:codex-goal": "bash scripts/pi-codex-goal.sh",
     "pi:cutover-plan": "bash scripts/pi-cutover-plan.sh",
     "pi:discover": "bash scripts/pi-discover.sh",
+    "pi:operator-env-check": "bash scripts/pi-operator-env-check.sh",
     "pi:rehearse-cutover": "bash scripts/pi-rehearse-cutover.sh",
     "pi:verify-cutover": "bash scripts/pi-verify-cutover.sh",
     "pi:install-bridge-timers": "bash scripts/pi-install-bridge-timers.sh",

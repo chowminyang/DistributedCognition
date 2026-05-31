@@ -187,9 +187,10 @@ pnpm run pi:rehearse-cutover -- \
 
 This creates `output/pi-cutover-rehearsal/DD-MM-YY-HHMM/` with the Codex
 `/goal`, a non-secret `operator-env.sh` file to source in the Mac Codex
-thread, cutover checklist, SSH bootstrap dry run, SSH state-restore dry run,
-SSH runtime-start dry run, and a summary. It does not open SSH, stop the Mac
-host, export state, import state, or touch WhatsApp. The generated operator
+thread, an `operator-env-check.txt` validation artifact, cutover checklist,
+SSH bootstrap dry run, SSH state-restore dry run, SSH runtime-start dry run,
+and a summary. It does not open SSH, stop the Mac host, export state, import
+state, or touch WhatsApp. The generated operator
 environment also sets `NANOCLAW_PI_SSH_CONNECT_TIMEOUT=10` so SSH helpers fail
 quickly if the Pi hostname or IP is stale,
 `NANOCLAW_PI_BRIDGE_EXECUTE_MODE=memory` so the Pi rehearses Mnemon promotion
@@ -200,6 +201,15 @@ the installed systemd bridge timers match that mode, and
 checkout matches the rehearsed Mac commit. The generated `/goal` also names the
 exact `operator-env.sh` path, so the Mac Codex cutover thread can source the
 same non-secret values before controlling the Pi over SSH.
+
+After filling or sourcing the operator environment, run:
+
+```bash
+pnpm run pi:operator-env-check -- --operator-env "<path to operator-env.sh>" --strict
+```
+
+Do not let the Mac Codex cutover thread open SSH until this reports
+`PI_OPERATOR_ENV_CHECK=ready`.
 
 To produce a broader Mac-side readiness bundle before Tuesday:
 
@@ -220,7 +230,8 @@ non-mutating: it does not SSH, stop the Mac host, export state, or touch
 WhatsApp auth. The readiness output also points to
 `rehearsal/operator-env.sh`, a fillable non-secret environment file. If Pi
 values are still missing, uncomment and set the missing `NANOCLAW_PI_*` lines
-there, source it from the Mac Codex shell, then rerun readiness.
+there, source it from the Mac Codex shell, run `pi:operator-env-check`, then
+rerun readiness.
 
 If the Pi host or IP is not known yet, run a passive discovery pass from the Mac:
 

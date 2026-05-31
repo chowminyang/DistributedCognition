@@ -300,6 +300,7 @@ write_summary() {
 
     printf '## Artifacts\n\n'
     printf -- '- `operator-env.sh`\n'
+    printf -- '- `operator-env-check.txt`\n'
     printf -- '- `codex-goal.md`\n'
     printf -- '- `cutover-plan.txt`\n'
     printf -- '- `ssh-bootstrap-dry-run.txt`\n'
@@ -311,6 +312,7 @@ write_summary() {
     printf 'Load the non-secret operator environment:\n\n'
     printf '```bash\n'
     printf 'source %s\n' "$(quote_arg "$REHEARSAL_DIR/operator-env.sh")"
+    printf 'pnpm run pi:operator-env-check -- --operator-env %s --strict\n' "$(quote_arg "$REHEARSAL_DIR/operator-env.sh")"
     printf '```\n\n'
     printf 'Review the generated `/goal` prompt:\n\n'
     printf '```bash\n'
@@ -473,6 +475,23 @@ if [ -z "$EXPECTED_COMMIT" ] && git rev-parse --is-inside-work-tree >/dev/null 2
 fi
 
 write_operator_env "$REHEARSAL_DIR/operator-env.sh"
+
+operator_env_check_cmd=(pnpm run pi:operator-env-check -- --operator-env "$REHEARSAL_DIR/operator-env.sh")
+[ -n "$LOCAL_SECOND_BRAIN_ROOT" ] && operator_env_check_cmd+=(--local-root "$LOCAL_SECOND_BRAIN_ROOT")
+[ -n "$PI_HOST" ] && operator_env_check_cmd+=(--pi-host "$PI_HOST")
+[ -n "$PI_USER" ] && operator_env_check_cmd+=(--pi-user "$PI_USER")
+[ -n "$PI_PROJECT_ROOT" ] && operator_env_check_cmd+=(--pi-path "$PI_PROJECT_ROOT")
+[ -n "$PI_SECOND_BRAIN_ROOT" ] && operator_env_check_cmd+=(--pi-second-brain-root "$PI_SECOND_BRAIN_ROOT")
+[ -n "$PI_CODEX_PROJECTS_ROOT" ] && operator_env_check_cmd+=(--pi-codex-projects-root "$PI_CODEX_PROJECTS_ROOT")
+[ -n "$PI_RCLONE_REMOTE" ] && operator_env_check_cmd+=(--pi-rclone-remote "$PI_RCLONE_REMOTE")
+[ -n "$PI_UNIT_NAME" ] && operator_env_check_cmd+=(--pi-unit-name "$PI_UNIT_NAME")
+[ -n "$PI_SSH_CONNECT_TIMEOUT" ] && operator_env_check_cmd+=(--ssh-timeout "$PI_SSH_CONNECT_TIMEOUT")
+[ -n "$PI_BRIDGE_EXECUTE_MODE" ] && operator_env_check_cmd+=(--bridge-execute-mode "$PI_BRIDGE_EXECUTE_MODE" --expected-bridge-execute-mode "$PI_BRIDGE_EXECUTE_MODE")
+[ -n "$EXPECTED_COMMIT" ] && operator_env_check_cmd+=(--expected-commit "$EXPECTED_COMMIT")
+[ -n "$REPO_URL" ] && operator_env_check_cmd+=(--repo-url "$REPO_URL")
+[ -n "$BRANCH" ] && operator_env_check_cmd+=(--branch "$BRANCH")
+[ -n "$MIGRATION_DATE" ] && operator_env_check_cmd+=(--migration-date "$MIGRATION_DATE")
+run_capture "$REHEARSAL_DIR/operator-env-check.txt" "Pi Operator Environment Check" "${operator_env_check_cmd[@]}"
 
 goal_cmd=(pnpm run pi:codex-goal --)
 [ -n "$LOCAL_SECOND_BRAIN_ROOT" ] && goal_cmd+=(--local-root "$LOCAL_SECOND_BRAIN_ROOT")

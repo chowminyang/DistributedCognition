@@ -224,6 +224,8 @@ Work plan:
    source "${OPERATOR_ENV_DISPLAY}"
    Then set the expected Pi runtime version from the current Mac checkout if it was not already set:
    export NANOCLAW_PI_EXPECTED_COMMIT="\${NANOCLAW_PI_EXPECTED_COMMIT:-\$EXPECTED_COMMIT}"
+   Validate the non-secret operator environment before opening SSH:
+   pnpm run pi:operator-env-check -- --operator-env "${OPERATOR_ENV_DISPLAY}" --strict
    If no operator env file is available, ask me for any missing Pi values before continuing and set the non-secret Pi control-plane environment manually, replacing any placeholder values first:
    export NANOCLAW_PI_HOST="${PI_HOST_DISPLAY}"
    export NANOCLAW_PI_USER="${PI_USER_DISPLAY}"
@@ -233,6 +235,7 @@ Work plan:
    export NANOCLAW_PI_RCLONE_REMOTE="${PI_RCLONE_REMOTE}"
    export NANOCLAW_PI_EXPECTED_COMMIT="\$EXPECTED_COMMIT"
    Do not run commands with unresolved <placeholder> values.
+   Run `pnpm run pi:operator-env-check -- --strict` and do not continue until it reports `PI_OPERATOR_ENV_CHECK=ready`.
 3. Generate and show the read-only cutover plan:
    pnpm run pi:cutover-plan -- \\
      --local-root "${MAC_SECOND_BRAIN_DISPLAY}" \\
