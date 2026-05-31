@@ -234,6 +234,7 @@ Work plan:
    pnpm run pi:export -- --out-dir "${OUT_DIR}"
 8. Restore the final state bundle from the Mac control plane using the dry-run helper first:
    STATE_BUNDLE="\$(ls -t "${OUT_DIR}"/nanoclaw-pi-state-*.tar.gz | head -n 1)"
+   pnpm run pi:inspect-state-bundle -- --bundle "\$STATE_BUNDLE"
    pnpm run pi:ssh-restore-state -- --host "${PI_HOST_DISPLAY}" --user "${PI_USER_DISPLAY}" --path "${PI_PROJECT_DISPLAY}" --bundle "\$STATE_BUNDLE" --force --cleanup-remote
    If the dry run is correct, rerun the same command with --execute. This must verify sha256 on the Pi before importing.
 9. Configure rclone sync, update Docker mount access, install/start systemd, install/start Pi bridge timers, and run health using the dry-run helper first:
@@ -277,6 +278,7 @@ Completion evidence required:
 - Pi SSH bootstrap succeeds or gives clear remaining actions.
 - Pi preflight succeeds, or every warning is explicitly accounted for.
 - Final exported state bundle sha256 verifies before import.
+- Final exported state bundle passes pnpm run pi:inspect-state-bundle.
 - Pi systemd service is enabled and active.
 - Pi bridge timers are installed and visible from pnpm run pi:ssh-admin -- status.
 - Mac NanoClaw host remains stopped after cutover.

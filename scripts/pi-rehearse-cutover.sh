@@ -487,8 +487,25 @@ fi
 
 placeholder_bundle="$REHEARSAL_DIR/nanoclaw-pi-state-rehearsal-placeholder.tar.gz"
 placeholder_checksum="$placeholder_bundle.sha256"
-printf 'placeholder bundle for dry-run only\n' >"$placeholder_bundle"
-printf 'placeholder checksum for dry-run only  %s\n' "$(basename "$placeholder_bundle")" >"$placeholder_checksum"
+placeholder_src="$REHEARSAL_DIR/placeholder-state-src"
+mkdir -p "$placeholder_src/state/data" "$placeholder_src/state/store/auth" "$placeholder_src/state/groups/dc" "$placeholder_src/home-config/nanoclaw"
+cat >"$placeholder_src/state/.env" <<'EOF'
+DISTRIBUTED_COGNITION_WHATSAPP_JID=0000000000@s.whatsapp.net
+OPENAI_API_KEY=placeholder-not-a-secret
+EOF
+printf 'placeholder sqlite state\n' >"$placeholder_src/state/data/v2.db"
+printf '{"placeholder":true}\n' >"$placeholder_src/state/store/auth/creds.json"
+printf '# Placeholder Distributed Cognition instructions\n' >"$placeholder_src/state/groups/dc/CLAUDE.md"
+printf '{"roots":[]}\n' >"$placeholder_src/home-config/nanoclaw/mount-allowlist.json"
+printf '{"senders":[]}\n' >"$placeholder_src/home-config/nanoclaw/sender-allowlist.json"
+printf 'placeholder rehearsal bundle only\n' >"$placeholder_src/MANIFEST.txt"
+tar -C "$placeholder_src" -czf "$placeholder_bundle" .
+rm -rf "$placeholder_src"
+if command -v shasum >/dev/null 2>&1; then
+  (cd "$REHEARSAL_DIR" && shasum -a 256 "$(basename "$placeholder_bundle")" >"$(basename "$placeholder_checksum")")
+else
+  (cd "$REHEARSAL_DIR" && sha256sum "$(basename "$placeholder_bundle")" >"$(basename "$placeholder_checksum")")
+fi
 
 if [ "${#bootstrap_missing[@]}" -eq 0 ]; then
   restore_cmd=(

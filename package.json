@@ -43,6 +43,7 @@
     "pi:install-bridge-timers": "bash scripts/pi-install-bridge-timers.sh",
     "pi:install-systemd": "bash scripts/pi-install-systemd.sh",
     "pi:install-dropbox-sync": "bash scripts/pi-install-dropbox-sync.sh",
+    "pi:inspect-state-bundle": "bash scripts/pi-inspect-state-bundle.sh",
     "pi:ssh-admin": "bash scripts/pi-ssh-admin.sh",
     "pi:ssh-bootstrap": "bash scripts/pi-ssh-bootstrap.sh",
     "pi:ssh-preflight": "bash scripts/pi-ssh-preflight.sh",

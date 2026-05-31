@@ -112,6 +112,8 @@ control plane with a dry run first:
 ```bash
 STATE_BUNDLE="$(ls -t "$HOME/Desktop/dc-pi-migration"/nanoclaw-pi-state-*.tar.gz | head -n 1)"
 
+pnpm run pi:inspect-state-bundle -- --bundle "$STATE_BUNDLE"
+
 pnpm run pi:ssh-restore-state -- \
   --host "<pi-host-or-ip>" \
   --user "<pi-ssh-user>" \
@@ -122,9 +124,10 @@ pnpm run pi:ssh-restore-state -- \
 ```
 
 When the dry-run output is correct and the Mac host is stopped, add
-`--execute`. The helper copies the bundle and checksum to the Pi, verifies the
-checksum on the Pi, imports state with the existing safe importer, and rebuilds.
-It does not start NanoClaw, configure rclone, or install systemd.
+`--execute`. The helper inspects the local bundle first, copies the bundle and
+checksum to the Pi, verifies the checksum on the Pi, imports state with the
+existing safe importer, and rebuilds. It does not start NanoClaw, configure
+rclone, or install systemd.
 
 Then start the Pi runtime setup with another dry run:
 

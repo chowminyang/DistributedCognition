@@ -76,6 +76,7 @@ helper_scripts=(
   scripts/pi-export-state.sh
   scripts/pi-import-state.sh
   scripts/pi-install-bridge-timers.sh
+  scripts/pi-inspect-state-bundle.sh
   scripts/pi-install-systemd.sh
   scripts/pi-install-dropbox-sync.sh
 )
@@ -440,8 +441,17 @@ assert_contains "$TMP_DIR/ssh-bootstrap-env.out" "PI_SSH_BOOTSTRAP=dry_run" "ssh
 assert_contains "$TMP_DIR/ssh-bootstrap-env.out" "SSH connect timeout: 7s" "ssh bootstrap uses SSH timeout env"
 
 bundle_src="$TMP_DIR/bundle-src"
-mkdir -p "$bundle_src/state"
-printf 'test state only\n' >"$bundle_src/state/README.txt"
+mkdir -p "$bundle_src/state/data" "$bundle_src/state/store/auth" "$bundle_src/state/groups/dc" "$bundle_src/home-config/nanoclaw"
+cat >"$bundle_src/state/.env" <<'EOF'
+DISTRIBUTED_COGNITION_WHATSAPP_JID=6588216840@s.whatsapp.net
+OPENAI_API_KEY=test-only
+EOF
+printf 'sqlite placeholder\n' >"$bundle_src/state/data/v2.db"
+printf '{"creds":"test-only"}\n' >"$bundle_src/state/store/auth/creds.json"
+printf '# test group\n' >"$bundle_src/state/groups/dc/CLAUDE.md"
+printf '{"roots":[]}\n' >"$bundle_src/home-config/nanoclaw/mount-allowlist.json"
+printf '{"senders":[]}\n' >"$bundle_src/home-config/nanoclaw/sender-allowlist.json"
+printf 'test manifest\n' >"$bundle_src/MANIFEST.txt"
 bundle_path="$TMP_DIR/nanoclaw-pi-state-test.tar.gz"
 tar -C "$bundle_src" -czf "$bundle_path" .
 if command -v shasum >/dev/null 2>&1; then
@@ -450,6 +460,14 @@ else
   (cd "$TMP_DIR" && sha256sum "$(basename "$bundle_path")" >"$(basename "$bundle_path").sha256")
 fi
 checksum_path="$bundle_path.sha256"
+
+pnpm run pi:inspect-state-bundle -- \
+  --bundle "$bundle_path" \
+  --checksum "$checksum_path" \
+  >"$TMP_DIR/inspect-state-bundle.out"
+assert_contains "$TMP_DIR/inspect-state-bundle.out" "STATE_BUNDLE_INSPECT=ok" "state bundle inspector accepts complete test bundle"
+assert_contains "$TMP_DIR/inspect-state-bundle.out" "SHA-256 checksum matches" "state bundle inspector verifies checksum"
+assert_contains "$TMP_DIR/inspect-state-bundle.out" "state/store/auth is present" "state bundle inspector verifies WhatsApp auth path"
 
 pnpm run pi:ssh-restore-state -- \
   --host nanoclaw-pi.local \
@@ -461,6 +479,7 @@ pnpm run pi:ssh-restore-state -- \
   >"$TMP_DIR/ssh-restore-dry-run.out"
 assert_contains "$TMP_DIR/ssh-restore-dry-run.out" "PI_SSH_RESTORE_STATE=dry_run" "ssh restore dry-run does not SSH"
 assert_contains "$TMP_DIR/ssh-restore-dry-run.out" "No SSH was opened" "ssh restore dry-run is non-mutating"
+assert_contains "$TMP_DIR/ssh-restore-dry-run.out" "STATE_BUNDLE_INSPECT=ok" "ssh restore dry-run inspects local state bundle"
 assert_contains "$TMP_DIR/ssh-restore-dry-run.out" "pi-import-state.sh" "ssh restore dry-run shows import command"
 assert_contains "$TMP_DIR/ssh-restore-dry-run.out" "pnpm run build" "ssh restore dry-run shows build command"
 

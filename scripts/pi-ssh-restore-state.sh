@@ -25,6 +25,7 @@ This helper is dry-run by default. It only opens SSH, copies files, or imports
 state when --execute is supplied.
 
 What --execute does:
+  - inspects the local bundle and checksum before transfer;
   - creates the remote import directory on the Pi;
   - copies the bundle and .sha256 file to that directory;
   - verifies the SHA-256 checksum on the Pi before import;
@@ -218,11 +219,16 @@ echo "Force import: $FORCE"
 echo "Cleanup remote bundle: $CLEANUP_REMOTE"
 echo
 
+echo "== Inspect Local State Bundle =="
+bash scripts/pi-inspect-state-bundle.sh --bundle "$BUNDLE" --checksum "$CHECKSUM"
+echo
+
 if [ "$EXECUTE" != "true" ]; then
   echo "PI_SSH_RESTORE_STATE=dry_run"
   echo "No SSH was opened and no state was copied."
   echo
   echo "Would run:"
+  echo "  bash scripts/pi-inspect-state-bundle.sh --bundle $(shell_quote "$BUNDLE") --checksum $(shell_quote "$CHECKSUM")"
   echo "  ssh $TARGET mkdir -p $(shell_quote "$REMOTE_IMPORT_DIR")"
   echo "  scp $(shell_quote "$BUNDLE") $(shell_quote "$CHECKSUM") $TARGET:$(shell_quote "$REMOTE_IMPORT_DIR")/"
   echo "  ssh $TARGET cd $(shell_quote "$REMOTE_PROJECT_ROOT") '&&' bash scripts/pi-import-state.sh $(shell_quote "$REMOTE_IMPORT_DIR/$BUNDLE_BASE") ${IMPORT_ARGS[*]:-}"
