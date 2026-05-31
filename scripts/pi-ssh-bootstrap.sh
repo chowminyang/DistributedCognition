@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+. "$SCRIPT_DIR/pi-ssh-target-guard.sh"
+
 HOST="${NANOCLAW_PI_HOST:-${PI_HOST:-}}"
 REMOTE_USER="${NANOCLAW_PI_USER:-${PI_USER:-}}"
 REMOTE_PROJECT_ROOT="${NANOCLAW_PI_PROJECT_ROOT:-}"
@@ -173,6 +176,7 @@ done
 [ -n "$SECOND_BRAIN_ROOT" ] || { echo "Missing required --second-brain-root" >&2; usage >&2; exit 2; }
 [ -n "$REPO_URL" ] || { echo "Missing required --repo-url" >&2; usage >&2; exit 2; }
 [ -n "$BRANCH" ] || { echo "Missing required --branch" >&2; usage >&2; exit 2; }
+assert_pi_ssh_target "$HOST" "$REMOTE_USER"
 
 TARGET="$REMOTE_USER@$HOST"
 

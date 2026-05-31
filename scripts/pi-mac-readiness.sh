@@ -11,6 +11,7 @@ PI_SECOND_BRAIN_ROOT="${NANOCLAW_PI_SECOND_BRAIN_ROOT:-}"
 PI_CODEX_PROJECTS_ROOT="${NANOCLAW_PI_CODEX_PROJECTS_ROOT:-}"
 PI_RCLONE_REMOTE="${NANOCLAW_PI_RCLONE_REMOTE:-dropbox:}"
 PI_UNIT_NAME="${NANOCLAW_PI_UNIT_NAME:-}"
+PI_SSH_CONNECT_TIMEOUT="${NANOCLAW_PI_SSH_CONNECT_TIMEOUT:-10}"
 EXPECTED_COMMIT="${NANOCLAW_PI_EXPECTED_COMMIT:-}"
 REPO_URL="${NANOCLAW_PI_REPO_URL:-https://github.com/chowminyang/DistributedCognition.git}"
 BRANCH="${NANOCLAW_PI_BRANCH:-main}"
@@ -22,6 +23,7 @@ SKIP_PUBLIC_READINESS="false"
 SKIP_REMOTE_CHECK="false"
 SKIP_DISCOVERY="false"
 INCLUDE_SSH_PREFLIGHT="false"
+OPERATOR_ENV_STATUS="unknown"
 
 usage() {
   cat <<'EOF'
@@ -455,10 +457,40 @@ else
   run_capture_allow_warn "$READINESS_DIR/pi-discovery.txt" "Pi Discovery" pnpm run pi:discover -- --timeout 3 --host "$PI_HOST"
 fi
 
+operator_env_check_cmd=(pnpm run pi:operator-env-check --)
+[ -n "$LOCAL_SECOND_BRAIN_ROOT" ] && operator_env_check_cmd+=(--local-root "$LOCAL_SECOND_BRAIN_ROOT")
+[ -n "$PI_HOST" ] && operator_env_check_cmd+=(--pi-host "$PI_HOST")
+[ -n "$PI_USER" ] && operator_env_check_cmd+=(--pi-user "$PI_USER")
+[ -n "$PI_PROJECT_ROOT" ] && operator_env_check_cmd+=(--pi-path "$PI_PROJECT_ROOT")
+[ -n "$PI_SECOND_BRAIN_ROOT" ] && operator_env_check_cmd+=(--pi-second-brain-root "$PI_SECOND_BRAIN_ROOT")
+[ -n "$PI_CODEX_PROJECTS_ROOT" ] && operator_env_check_cmd+=(--pi-codex-projects-root "$PI_CODEX_PROJECTS_ROOT")
+[ -n "$PI_RCLONE_REMOTE" ] && operator_env_check_cmd+=(--pi-rclone-remote "$PI_RCLONE_REMOTE")
+[ -n "$PI_UNIT_NAME" ] && operator_env_check_cmd+=(--pi-unit-name "$PI_UNIT_NAME")
+operator_env_check_cmd+=(--ssh-timeout "$PI_SSH_CONNECT_TIMEOUT")
+operator_env_check_cmd+=(--bridge-execute-mode memory --expected-bridge-execute-mode memory)
+[ -n "$EXPECTED_COMMIT" ] && operator_env_check_cmd+=(--expected-commit "$EXPECTED_COMMIT")
+[ -n "$REPO_URL" ] && operator_env_check_cmd+=(--repo-url "$REPO_URL")
+[ -n "$BRANCH" ] && operator_env_check_cmd+=(--branch "$BRANCH")
+operator_env_check_cmd+=(--migration-date "$MIGRATION_DATE")
+run_capture_allow_warn "$READINESS_DIR/operator-env-check.txt" "Pi Operator Environment Check" "${operator_env_check_cmd[@]}"
+OPERATOR_ENV_STATUS="$(grep -E '^PI_OPERATOR_ENV_CHECK=' "$READINESS_DIR/operator-env-check.txt" | tail -n 1 | cut -d= -f2 || true)"
+if [ -z "$OPERATOR_ENV_STATUS" ]; then
+  OPERATOR_ENV_STATUS="unknown"
+fi
+case "$OPERATOR_ENV_STATUS" in
+  ready|missing_values)
+    ;;
+  *)
+    warnings+=("Pi operator environment check reported $OPERATOR_ENV_STATUS; SSH preflight will be skipped")
+    ;;
+esac
+
 ssh_preflight_attempted="false"
 if [ "$INCLUDE_SSH_PREFLIGHT" = "true" ]; then
   if is_missing_or_placeholder "$PI_HOST" || is_missing_or_placeholder "$PI_USER" || is_missing_or_placeholder "$PI_PROJECT_ROOT" || is_missing_or_placeholder "$PI_SECOND_BRAIN_ROOT"; then
     write_skipped "$READINESS_DIR/ssh-preflight.txt" "Pi SSH Preflight" "required Pi SSH/path values are missing"
+  elif [ "$OPERATOR_ENV_STATUS" != "ready" ]; then
+    write_skipped "$READINESS_DIR/ssh-preflight.txt" "Pi SSH Preflight" "operator environment check did not report ready ($OPERATOR_ENV_STATUS)"
   else
     ssh_preflight_attempted="true"
     ssh_preflight_cmd=(pnpm run pi:ssh-preflight -- --host "$PI_HOST" --user "$PI_USER" --path "$PI_PROJECT_ROOT" --second-brain-root "$PI_SECOND_BRAIN_ROOT")
@@ -561,6 +593,7 @@ fi
   printf -- '- `health.json`\n'
   printf -- '- `mac-preflight.txt`\n'
   printf -- '- `pi-discovery.txt`\n'
+  printf -- '- `operator-env-check.txt`\n'
   printf -- '- `ssh-preflight.txt`\n'
   printf -- '- `rehearsal.txt`\n'
   printf -- '- `rehearsal/operator-env.sh`\n'

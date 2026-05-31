@@ -74,6 +74,7 @@ helper_scripts=(
   scripts/pi-mac-readiness.sh
   scripts/pi-operator-env-check.sh
   scripts/pi-rehearse-cutover.sh
+  scripts/pi-ssh-target-guard.sh
   scripts/pi-ssh-admin.sh
   scripts/pi-ssh-bootstrap.sh
   scripts/pi-ssh-preflight.sh
@@ -500,6 +501,7 @@ assert_contains "$TMP_DIR/readiness.out" "No SSH was opened" "mac readiness is n
 [ -f "$readiness_dir/health.json" ] || fail "mac readiness writes health artifact"
 [ -f "$readiness_dir/mac-preflight.txt" ] || fail "mac readiness writes mac preflight"
 [ -f "$readiness_dir/pi-discovery.txt" ] || fail "mac readiness writes pi discovery artifact"
+[ -f "$readiness_dir/operator-env-check.txt" ] || fail "mac readiness writes operator env check artifact"
 [ -f "$readiness_dir/ssh-preflight.txt" ] || fail "mac readiness writes ssh preflight artifact"
 [ -f "$readiness_dir/rehearsal/operator-env.sh" ] || fail "mac readiness writes nested operator env"
 [ -f "$readiness_dir/rehearsal/operator-env-check.txt" ] || fail "mac readiness writes nested operator env check"
@@ -511,6 +513,7 @@ assert_contains "$readiness_dir/pi-discovery.txt" "PI_DISCOVERY=ok" "mac readine
 assert_contains "$readiness_dir/git-revision-check.txt" "GIT_REMOTE_COMMIT=ok" "mac readiness verifies expected commit is on configured branch"
 assert_contains "$readiness_dir/summary.md" "git-revision-check.txt" "mac readiness summary lists git revision check"
 assert_contains "$readiness_dir/summary.md" "pi-discovery.txt" "mac readiness summary lists pi discovery artifact"
+assert_contains "$readiness_dir/summary.md" "operator-env-check.txt" "mac readiness summary lists operator env check artifact"
 assert_contains "$readiness_dir/summary.md" "ssh-preflight.txt" "mac readiness summary lists ssh preflight artifact"
 assert_contains "$readiness_dir/summary.md" "rehearsal/operator-env.sh" "mac readiness summary lists nested operator env"
 assert_contains "$readiness_dir/summary.md" "rehearsal/operator-env-check.txt" "mac readiness summary lists nested operator env check"
@@ -520,6 +523,7 @@ assert_contains "$readiness_dir/rehearsal/codex-goal.md" "pi:operator-env-check"
 assert_contains "$readiness_dir/rehearsal/operator-env.sh" "export NANOCLAW_PI_BRIDGE_EXECUTE_MODE=memory" "mac readiness nested rehearsal carries bridge memory mode"
 assert_contains "$readiness_dir/rehearsal/operator-env.sh" "export NANOCLAW_PI_EXPECTED_BRIDGE_EXECUTE_MODE=memory" "mac readiness nested rehearsal carries expected bridge timer mode"
 assert_contains "$readiness_dir/rehearsal/operator-env.sh" "export NANOCLAW_PI_EXPECTED_COMMIT=" "mac readiness nested rehearsal carries expected commit"
+assert_contains "$readiness_dir/operator-env-check.txt" "PI_OPERATOR_ENV_CHECK=ready" "mac readiness validates operator env before optional SSH"
 assert_contains "$readiness_dir/rehearsal/summary.md" "Status: \`ready\`" "mac readiness nested rehearsal is ready with complete values"
 
 fake_bin="$TMP_DIR/fake-bin"
@@ -554,6 +558,44 @@ assert_contains "$readiness_ssh_dir/ssh-preflight.txt" "MOCK_SSH_PREFLIGHT=ok" "
 assert_contains "$readiness_ssh_dir/summary.md" "SSH preflight was attempted" "mac readiness summary distinguishes SSH preflight mode"
 assert_contains "$TMP_DIR/readiness-with-ssh.out" "SSH preflight was attempted" "mac readiness stdout distinguishes SSH preflight mode"
 
+no_ssh_bin="$TMP_DIR/no-ssh-bin"
+mkdir -p "$no_ssh_bin"
+cat >"$no_ssh_bin/ssh" <<'NO_SSH'
+#!/usr/bin/env bash
+set -euo pipefail
+touch "${NO_SSH_SENTINEL:?}"
+echo "ssh should not have been called" >&2
+exit 99
+NO_SSH
+chmod +x "$no_ssh_bin/ssh"
+no_ssh_sentinel="$TMP_DIR/no-ssh-called"
+readiness_unsafe_host_dir="$TMP_DIR/readiness-unsafe-host"
+set +e
+PATH="$no_ssh_bin:$PATH" NO_SSH_SENTINEL="$no_ssh_sentinel" pnpm run pi:mac-readiness -- \
+  --local-root "$readiness_root" \
+  --out-dir "$TMP_DIR/export" \
+  --output-dir "$readiness_unsafe_host_dir" \
+  --pi-host localhost \
+  --pi-user pi \
+  --pi-path /home/pi/NanoClaw \
+  --pi-second-brain-root /home/pi/Distributed-Cognition \
+  --pi-codex-projects-root /home/pi/Codex \
+  --repo-url "$readiness_remote" \
+  --branch main \
+  --migration-date 02-06-26 \
+  --skip-health \
+  --skip-public-readiness \
+  --skip-remote-check \
+  --include-ssh-preflight \
+  >"$TMP_DIR/readiness-unsafe-host.out" \
+  2>"$TMP_DIR/readiness-unsafe-host.err"
+readiness_unsafe_host_code="$?"
+set -e
+assert_exit_code 1 "$readiness_unsafe_host_code" "mac readiness refuses unsafe localhost Pi host before SSH"
+assert_contains "$readiness_unsafe_host_dir/operator-env-check.txt" "PI_OPERATOR_ENV_CHECK=fail" "mac readiness records unsafe operator env failure"
+assert_contains "$readiness_unsafe_host_dir/ssh-preflight.txt" "Skipped: operator environment check did not report ready" "mac readiness skips SSH preflight when operator env is unsafe"
+[ ! -e "$no_ssh_sentinel" ] || fail "mac readiness opened SSH despite unsafe Pi host"
+
 set +e
 pnpm run pi:mac-readiness -- --strict --output-dir "$TMP_DIR/readiness-missing" --skip-health --skip-public-readiness --skip-remote-check >"$TMP_DIR/readiness-missing.out" 2>"$TMP_DIR/readiness-missing.err"
 readiness_missing_code="$?"
@@ -563,6 +605,7 @@ assert_contains "$TMP_DIR/readiness-missing.out" "PI_MAC_READINESS=missing_value
 assert_contains "$TMP_DIR/readiness-missing.out" "operator_env=$TMP_DIR/readiness-missing/rehearsal/operator-env.sh" "strict mac readiness prints fillable operator env path"
 assert_contains "$TMP_DIR/readiness-missing.out" "No SSH was opened" "strict mac readiness remains non-mutating"
 [ -f "$TMP_DIR/readiness-missing/rehearsal/operator-env.sh" ] || fail "strict mac readiness writes missing-value operator env"
+[ -f "$TMP_DIR/readiness-missing/operator-env-check.txt" ] || fail "strict mac readiness writes operator env check"
 [ -f "$TMP_DIR/readiness-missing/rehearsal/operator-env-check.txt" ] || fail "strict mac readiness writes missing-value operator env check"
 [ -f "$TMP_DIR/readiness-missing/pi-discovery.txt" ] || fail "strict mac readiness writes pi discovery artifact"
 assert_contains "$TMP_DIR/readiness-missing/summary.md" "Fillable Operator Environment" "strict mac readiness explains fillable operator env"
@@ -572,6 +615,7 @@ assert_contains "$TMP_DIR/readiness-missing/pi-discovery.txt" "No SSH was opened
 assert_contains "$TMP_DIR/readiness-missing/rehearsal/operator-env.sh" "# Missing: Pi host or IP" "strict mac readiness operator env marks missing Pi host"
 assert_contains "$TMP_DIR/readiness-missing/rehearsal/operator-env.sh" "# Missing: Pi Codex projects folder" "strict mac readiness operator env marks missing Pi Codex projects root"
 assert_contains "$TMP_DIR/readiness-missing/rehearsal/operator-env.sh" "export NANOCLAW_PI_EXPECTED_COMMIT=" "strict mac readiness operator env still records expected commit"
+assert_contains "$TMP_DIR/readiness-missing/operator-env-check.txt" "PI_OPERATOR_ENV_CHECK=missing_values" "strict mac readiness operator env check reports missing values"
 assert_contains "$TMP_DIR/readiness-missing/rehearsal/operator-env-check.txt" "PI_OPERATOR_ENV_CHECK=missing_values" "strict mac readiness nested operator env check reports missing values"
 
 pnpm run pi:mac-readiness -- --help >"$TMP_DIR/readiness-help.out"
@@ -727,6 +771,50 @@ assert_contains "$TMP_DIR/ssh-preflight-missing.err" "Missing required --host" "
 assert_contains "$TMP_DIR/ssh-bootstrap-missing.err" "Missing required --host" "ssh bootstrap missing host is explicit"
 assert_contains "$TMP_DIR/ssh-restore-missing.err" "Missing required --host" "ssh restore missing host is explicit"
 assert_contains "$TMP_DIR/ssh-start-runtime-missing.err" "Missing required --host" "ssh start runtime missing host is explicit"
+
+set +e
+PATH="$no_ssh_bin:$PATH" NO_SSH_SENTINEL="$no_ssh_sentinel" pnpm run pi:ssh-preflight -- \
+  --host localhost \
+  --user pi \
+  --path /home/pi/NanoClaw \
+  --second-brain-root /home/pi/Distributed-Cognition \
+  >"$TMP_DIR/ssh-preflight-localhost.out" \
+  2>"$TMP_DIR/ssh-preflight-localhost.err"
+preflight_localhost_code="$?"
+PATH="$no_ssh_bin:$PATH" NO_SSH_SENTINEL="$no_ssh_sentinel" pnpm run pi:ssh-admin -- status \
+  --host localhost \
+  --user pi \
+  --path /home/pi/NanoClaw \
+  >"$TMP_DIR/ssh-admin-localhost.out" \
+  2>"$TMP_DIR/ssh-admin-localhost.err"
+admin_localhost_code="$?"
+PATH="$no_ssh_bin:$PATH" NO_SSH_SENTINEL="$no_ssh_sentinel" pnpm run pi:ssh-bootstrap -- \
+  --host localhost \
+  --user pi \
+  --path /home/pi/NanoClaw \
+  --second-brain-root /home/pi/Distributed-Cognition \
+  >"$TMP_DIR/ssh-bootstrap-localhost.out" \
+  2>"$TMP_DIR/ssh-bootstrap-localhost.err"
+bootstrap_localhost_code="$?"
+PATH="$no_ssh_bin:$PATH" NO_SSH_SENTINEL="$no_ssh_sentinel" pnpm run pi:ssh-start-runtime -- \
+  --host localhost \
+  --user pi \
+  --path /home/pi/NanoClaw \
+  --second-brain-root /home/pi/Distributed-Cognition \
+  --codex-projects-root /home/pi/Codex \
+  >"$TMP_DIR/ssh-start-runtime-localhost.out" \
+  2>"$TMP_DIR/ssh-start-runtime-localhost.err"
+start_runtime_localhost_code="$?"
+set -e
+assert_exit_code 2 "$preflight_localhost_code" "ssh preflight refuses localhost before SSH"
+assert_exit_code 2 "$admin_localhost_code" "ssh admin refuses localhost before SSH"
+assert_exit_code 2 "$bootstrap_localhost_code" "ssh bootstrap refuses localhost before SSH"
+assert_exit_code 2 "$start_runtime_localhost_code" "ssh start runtime refuses localhost before SSH"
+assert_contains "$TMP_DIR/ssh-preflight-localhost.err" "Refusing unsafe Pi host" "ssh preflight unsafe host error is explicit"
+assert_contains "$TMP_DIR/ssh-admin-localhost.err" "Refusing unsafe Pi host" "ssh admin unsafe host error is explicit"
+assert_contains "$TMP_DIR/ssh-bootstrap-localhost.err" "Refusing unsafe Pi host" "ssh bootstrap unsafe host error is explicit"
+assert_contains "$TMP_DIR/ssh-start-runtime-localhost.err" "Refusing unsafe Pi host" "ssh start runtime unsafe host error is explicit"
+[ ! -e "$no_ssh_sentinel" ] || fail "SSH helper opened SSH despite unsafe Pi host"
 
 fake_admin_bin="$TMP_DIR/fake-admin-bin"
 mkdir -p "$fake_admin_bin"
@@ -945,6 +1033,21 @@ env \
   pnpm run pi:ssh-restore-state -- \
     >"$TMP_DIR/ssh-restore-env.out"
 assert_contains "$TMP_DIR/ssh-restore-env.out" "PI_SSH_RESTORE_STATE=dry_run" "ssh restore accepts environment defaults"
+
+set +e
+PATH="$no_ssh_bin:$PATH" NO_SSH_SENTINEL="$no_ssh_sentinel" pnpm run pi:ssh-restore-state -- \
+  --host localhost \
+  --user pi \
+  --path /home/pi/NanoClaw \
+  --bundle "$bundle_path" \
+  --execute \
+  >"$TMP_DIR/ssh-restore-localhost.out" \
+  2>"$TMP_DIR/ssh-restore-localhost.err"
+restore_localhost_code="$?"
+set -e
+assert_exit_code 2 "$restore_localhost_code" "ssh restore refuses localhost before SSH"
+assert_contains "$TMP_DIR/ssh-restore-localhost.err" "Refusing unsafe Pi host" "ssh restore unsafe host error is explicit"
+[ ! -e "$no_ssh_sentinel" ] || fail "ssh restore opened SSH despite unsafe Pi host"
 
 pnpm run pi:ssh-start-runtime -- \
   --host nanoclaw-pi.local \

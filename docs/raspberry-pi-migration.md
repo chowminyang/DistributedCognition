@@ -129,6 +129,10 @@ Pi values are present, no placeholders remain, the Pi host is not localhost,
 Pi paths are absolute, bridge modes are valid, and the expected commit looks
 like a git SHA.
 
+The SSH helpers enforce the same target boundary before opening SSH. They
+refuse `localhost`, `127.*`, `::1`, `0.0.0.0`, hosts with `user@` prefixes, and
+Pi SSH users with unsupported characters.
+
 For a broader one-command readiness snapshot on the Mac, run:
 
 ```bash

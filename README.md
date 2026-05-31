@@ -211,6 +211,10 @@ pnpm run pi:operator-env-check -- --operator-env "<path to operator-env.sh>" --s
 Do not let the Mac Codex cutover thread open SSH until this reports
 `PI_OPERATOR_ENV_CHECK=ready`.
 
+The Pi SSH helpers also refuse loopback targets such as `localhost`, `127.*`,
+or `::1`, and hosts with a `user@` prefix. This prevents an accidental cutover
+command from targeting the Mac instead of the Raspberry Pi.
+
 To produce a broader Mac-side readiness bundle before Tuesday:
 
 ```bash

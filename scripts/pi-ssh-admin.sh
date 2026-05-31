@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+. "$SCRIPT_DIR/pi-ssh-target-guard.sh"
+
 ACTION=""
 HOST="${NANOCLAW_PI_HOST:-${PI_HOST:-}}"
 REMOTE_USER="${NANOCLAW_PI_USER:-${PI_USER:-}}"
@@ -358,6 +361,7 @@ done
 [ -n "$HOST" ] || { echo "Missing required --host" >&2; usage >&2; exit 2; }
 [ -n "$REMOTE_USER" ] || { echo "Missing required --user" >&2; usage >&2; exit 2; }
 [ -n "$REMOTE_PROJECT_ROOT" ] || { echo "Missing required --path" >&2; usage >&2; exit 2; }
+assert_pi_ssh_target "$HOST" "$REMOTE_USER"
 case "$BRIDGE_EXECUTE_MODE" in
   dry-run|memory|all)
     ;;
