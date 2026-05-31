@@ -20,6 +20,10 @@ Options:
 Existing paths are moved into backups/pi-import-<timestamp>/ when --force is
 used. This script also restores ~/.config/nanoclaw allowlist files when the
 bundle contains them.
+
+By default the script refuses to import while a NanoClaw host process or
+NanoClaw Docker agent container appears to be running. Restoring WhatsApp auth
+and SQLite state should happen while the runtime is quiet.
 EOF
 }
 
@@ -59,10 +63,64 @@ done
 [ -n "$BUNDLE" ] || { usage >&2; exit 2; }
 [ -f "$BUNDLE" ] || { echo "Bundle not found: $BUNDLE" >&2; exit 1; }
 
-is_nanoclaw_running() {
-  pgrep -f "$PROJECT_ROOT/dist/index.js" >/dev/null 2>&1 && return 0
-  pgrep -f "$PROJECT_ROOT/src/index.ts" >/dev/null 2>&1 && return 0
-  return 1
+have() {
+  command -v "$1" >/dev/null 2>&1
+}
+
+canonical_dir() {
+  (cd "$1" 2>/dev/null && pwd -P)
+}
+
+pid_cwd() {
+  local pid="$1"
+  local cwd=""
+
+  if have lsof; then
+    cwd="$(lsof -a -p "$pid" -d cwd -Fn 2>/dev/null | sed -n 's/^n//p' | head -n 1 || true)"
+  fi
+
+  if [ -z "$cwd" ] && [ -e "/proc/$pid/cwd" ] && have readlink; then
+    cwd="$(readlink "/proc/$pid/cwd" 2>/dev/null || true)"
+  fi
+
+  [ -n "$cwd" ] || return 1
+  canonical_dir "$cwd"
+}
+
+find_host_pids() {
+  have pgrep || return 0
+
+  local candidates
+  candidates="$(pgrep -f '(^|[ /])(node|tsx)([ ]|.*[ ])(dist/index\.js|src/index\.ts)' 2>/dev/null || true)"
+  [ -n "$candidates" ] || return 0
+
+  local project_root_canonical pid cwd
+  project_root_canonical="$(canonical_dir "$PROJECT_ROOT")"
+  while IFS= read -r pid; do
+    [ -n "$pid" ] || continue
+    [ "$pid" != "$$" ] || continue
+    [ "$pid" != "${PPID:-}" ] || continue
+    cwd="$(pid_cwd "$pid" 2>/dev/null || true)"
+    [ "$cwd" = "$project_root_canonical" ] || continue
+    printf '%s\n' "$pid"
+  done <<EOF
+$candidates
+EOF
+}
+
+find_docker_containers() {
+  have docker || return 0
+
+  docker ps --format '{{.Names}}\t{{.Image}}\t{{.Status}}' 2>/dev/null |
+    awk -F '\t' '
+      $1 ~ /^nanoclaw-v2-/ || $1 ~ /^nanoclaw-agent-v2-/ || $2 ~ /(^|\/)nanoclaw-agent(:|@|$|-v2-)/ {
+        print $1 "\t" $2 "\t" $3
+      }
+    '
+}
+
+unique_lines() {
+  awk 'NF && !seen[$0]++'
 }
 
 copy_path() {
@@ -75,12 +133,46 @@ copy_path() {
   fi
 }
 
-if [ "$ALLOW_RUNNING" != "true" ] && is_nanoclaw_running; then
+HOST_PIDS="$(find_host_pids | unique_lines)"
+DOCKER_CONTAINERS="$(find_docker_containers | unique_lines)"
+
+if [ "$ALLOW_RUNNING" != "true" ] && { [ -n "$HOST_PIDS" ] || [ -n "$DOCKER_CONTAINERS" ]; }; then
   cat >&2 <<EOF
-NanoClaw appears to be running from:
+NanoClaw appears to be running on this host.
+
+Project:
   $PROJECT_ROOT
+EOF
+
+  if [ -n "$HOST_PIDS" ]; then
+    cat >&2 <<'EOF'
+
+Matching host PIDs:
+EOF
+    while IFS= read -r pid; do
+      [ -n "$pid" ] && printf '  - %s\n' "$pid" >&2
+    done <<EOF
+$HOST_PIDS
+EOF
+  fi
+
+  if [ -n "$DOCKER_CONTAINERS" ]; then
+    cat >&2 <<'EOF'
+
+NanoClaw Docker agent containers are still running:
+EOF
+    while IFS=$'\t' read -r name image status; do
+      [ -n "$name" ] || continue
+      printf '  - %s image=%s status=%s\n' "$name" "${image:-unknown}" "${status:-unknown}" >&2
+    done <<EOF
+$DOCKER_CONTAINERS
+EOF
+  fi
+
+  cat >&2 <<'EOF'
 
 Stop the service first, then rerun.
+Use --allow-running only for an emergency best-effort import.
 EOF
   exit 1
 fi

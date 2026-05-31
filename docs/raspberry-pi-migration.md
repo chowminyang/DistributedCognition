@@ -240,7 +240,10 @@ When the dry-run output is correct and the Mac NanoClaw host is stopped, add
 `--execute` to the same command. The helper inspects the local bundle first,
 copies the bundle and checksum to the Pi, verifies the checksum on the Pi,
 imports state through `scripts/pi-import-state.sh`, runs `pnpm run build`, and
-removes the copied bundle from the Pi when `--cleanup-remote` is supplied.
+removes the copied bundle from the Pi when `--cleanup-remote` is supplied. The
+Pi-side importer also refuses to restore over a running NanoClaw host process
+or NanoClaw Docker agent container unless `--allow-running` is explicitly used
+for an emergency best-effort import.
 
 Then configure the Pi runtime with a second dry run:
 
@@ -292,6 +295,11 @@ bash scripts/pi-inspect-state-bundle.sh --bundle ~/nanoclaw-pi-state-*.tar.gz
 bash scripts/pi-import-state.sh ~/nanoclaw-pi-state-*.tar.gz --force
 pnpm run build
 ```
+
+If the manual importer reports a running NanoClaw process or Docker agent
+container, stop the Pi service or container first and rerun the import. Use
+`--allow-running` only for an emergency best-effort recovery because the bundle
+contains WhatsApp auth and SQLite runtime state.
 
 Important WhatsApp cutover rule: only one host should run this WhatsApp session at a time. Keep the Mac service stopped before starting the Pi service. If WhatsApp rejects the restored auth, keep the same `.env` settings and re-pair on the Pi using the pairing code or QR output in `data/`.
 

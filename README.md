@@ -126,8 +126,10 @@ pnpm run pi:ssh-restore-state -- \
 When the dry-run output is correct and the Mac host is stopped, add
 `--execute`. The helper inspects the local bundle first, copies the bundle and
 checksum to the Pi, verifies the checksum on the Pi, imports state with the
-existing safe importer, and rebuilds. It does not start NanoClaw, configure
-rclone, or install systemd.
+existing safe importer, and rebuilds. The importer refuses to run while a
+NanoClaw host process or Docker agent container appears to be active on the Pi,
+unless `--allow-running` is explicitly used for emergency recovery. It does not
+start NanoClaw, configure rclone, or install systemd.
 
 Then start the Pi runtime setup with another dry run:
 
