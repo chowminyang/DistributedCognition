@@ -3,8 +3,13 @@ set -euo pipefail
 
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/dc-pi-helper-tests.XXXXXX")"
+MAC_GUARD_PID=""
 
 cleanup() {
+  if [ -n "${MAC_GUARD_PID:-}" ] && kill -0 "$MAC_GUARD_PID" 2>/dev/null; then
+    kill "$MAC_GUARD_PID" 2>/dev/null || true
+    wait "$MAC_GUARD_PID" 2>/dev/null || true
+  fi
   rm -rf "$TMP_DIR"
 }
 trap cleanup EXIT
@@ -136,6 +141,7 @@ assert_contains "$goal_out" "Raspberry Pi is the final always-on Distributed Cog
 assert_contains "$goal_out" "pnpm run pi:ssh-bootstrap" "codex goal includes SSH bootstrap"
 assert_contains "$goal_out" "pnpm run pi:ssh-restore-state" "codex goal includes SSH state restore"
 assert_contains "$goal_out" "pnpm run pi:ssh-start-runtime" "codex goal includes SSH runtime start"
+assert_contains "$goal_out" "execute path must refuse to start while the Mac NanoClaw host is still running" "codex goal includes Mac host runtime guard"
 assert_contains "$goal_out" "--proof-text" "codex goal includes Pi WhatsApp persistence proof"
 assert_contains "$goal_out" "Do not mark the goal complete" "codex goal includes completion guard"
 assert_contains "$goal_out" "02-06-26" "codex goal includes migration date"
@@ -176,6 +182,7 @@ assert_contains "$plan_out" "pnpm run dc:stop-host -- --execute" "cutover plan i
 assert_contains "$plan_out" "pnpm run pi:ssh-preflight" "cutover plan includes SSH preflight"
 assert_contains "$plan_out" "pnpm run pi:ssh-restore-state" "cutover plan includes SSH state restore"
 assert_contains "$plan_out" "pnpm run pi:ssh-start-runtime" "cutover plan includes SSH runtime start"
+assert_contains "$plan_out" "refuses to start while the Mac NanoClaw host appears to be running" "cutover plan documents Mac host runtime guard"
 assert_contains "$plan_out" "pnpm run pi:ssh-admin -- doctor" "cutover plan includes Pi doctor check"
 assert_contains "$plan_out" "--proof-text" "cutover plan includes Pi WhatsApp persistence proof"
 assert_contains "$plan_out" "Post-Cutover Bridge Work" "cutover plan includes post-cutover bridge work"
@@ -368,6 +375,7 @@ assert_contains "$TMP_DIR/ssh-start-runtime-help.out" "dry-run by default" "ssh 
 assert_contains "$TMP_DIR/ssh-start-runtime-help.out" "systemd installation/startup" "ssh start runtime help documents systemd startup"
 assert_contains "$TMP_DIR/ssh-start-runtime-help.out" "--skip-bridge-timers" "ssh start runtime help documents bridge timer skip"
 assert_contains "$TMP_DIR/ssh-start-runtime-help.out" "--execute-bridges" "ssh start runtime help documents bridge timer execute mode"
+assert_contains "$TMP_DIR/ssh-start-runtime-help.out" "--allow-mac-host-running" "ssh start runtime help documents Mac host guard override"
 assert_contains "$TMP_DIR/ssh-start-runtime-help.out" "NANOCLAW_PI_SSH_CONNECT_TIMEOUT" "ssh start runtime help documents SSH timeout env"
 
 set +e
@@ -506,11 +514,34 @@ pnpm run pi:ssh-start-runtime -- \
   >"$TMP_DIR/ssh-start-runtime-dry-run.out"
 assert_contains "$TMP_DIR/ssh-start-runtime-dry-run.out" "PI_SSH_START_RUNTIME=dry_run" "ssh start runtime dry-run does not SSH"
 assert_contains "$TMP_DIR/ssh-start-runtime-dry-run.out" "No SSH was opened" "ssh start runtime dry-run is non-mutating"
+assert_contains "$TMP_DIR/ssh-start-runtime-dry-run.out" "Mac host guard: enforced" "ssh start runtime dry-run reports Mac host guard"
 assert_contains "$TMP_DIR/ssh-start-runtime-dry-run.out" "pi-install-dropbox-sync.sh" "ssh start runtime dry-run shows rclone timer install"
 assert_contains "$TMP_DIR/ssh-start-runtime-dry-run.out" "dc:ensure-docker-access" "ssh start runtime dry-run shows Docker access update"
 assert_contains "$TMP_DIR/ssh-start-runtime-dry-run.out" "pi-install-systemd.sh" "ssh start runtime dry-run shows systemd install"
 assert_contains "$TMP_DIR/ssh-start-runtime-dry-run.out" "pi-install-bridge-timers.sh" "ssh start runtime dry-run shows Pi bridge timer install"
 assert_contains "$TMP_DIR/ssh-start-runtime-dry-run.out" "dc:health" "ssh start runtime dry-run shows health check"
+
+node -e 'setInterval(() => {}, 1000)' dist/index.js >/dev/null 2>&1 &
+MAC_GUARD_PID="$!"
+sleep 1
+set +e
+pnpm run pi:ssh-start-runtime -- \
+  --host nanoclaw-pi.local \
+  --user pi \
+  --path /home/pi/NanoClaw \
+  --second-brain-root /home/pi/Distributed-Cognition \
+  --codex-projects-root /home/pi/Codex \
+  --execute \
+  >"$TMP_DIR/ssh-start-runtime-mac-guard.out" \
+  2>"$TMP_DIR/ssh-start-runtime-mac-guard.err"
+mac_guard_code="$?"
+kill "$MAC_GUARD_PID" 2>/dev/null || true
+wait "$MAC_GUARD_PID" 2>/dev/null || true
+MAC_GUARD_PID=""
+set -e
+assert_exit_code 1 "$mac_guard_code" "ssh start runtime execute refuses while Mac host is running"
+assert_contains "$TMP_DIR/ssh-start-runtime-mac-guard.err" "Refusing to start the Pi runtime while the Mac NanoClaw host appears to be running" "ssh start runtime Mac guard explains refusal"
+assert_contains "$TMP_DIR/ssh-start-runtime-mac-guard.err" "WhatsApp/Baileys must run from only one host at a time" "ssh start runtime Mac guard protects WhatsApp single-host invariant"
 
 env \
   NANOCLAW_PI_HOST=nanoclaw-pi.local \

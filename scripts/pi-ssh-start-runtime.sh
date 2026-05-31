@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 HOST="${NANOCLAW_PI_HOST:-${PI_HOST:-}}"
 REMOTE_USER="${NANOCLAW_PI_USER:-${PI_USER:-}}"
 REMOTE_PROJECT_ROOT="${NANOCLAW_PI_PROJECT_ROOT:-}"
@@ -17,6 +18,7 @@ UNIT_NAME="${NANOCLAW_PI_UNIT_NAME:-}"
 BRIDGE_INTERVAL="${NANOCLAW_PI_BRIDGE_INTERVAL:-5min}"
 BRIDGE_UNIT_PREFIX="${NANOCLAW_PI_BRIDGE_UNIT_PREFIX:-}"
 SSH_CONNECT_TIMEOUT="${NANOCLAW_PI_SSH_CONNECT_TIMEOUT:-}"
+ALLOW_MAC_HOST_RUNNING="${NANOCLAW_PI_ALLOW_MAC_HOST_RUNNING:-false}"
 EXECUTE=false
 EXECUTE_BRIDGES=false
 SKIP_RCLONE=false
@@ -73,6 +75,9 @@ Optional:
   --skip-systemd                 Do not install/start the systemd service.
   --skip-bridge-timers           Do not install/start Pi bridge timers.
   --skip-health                  Do not run dc:health.
+  --allow-mac-host-running       Allow --execute even if this Mac checkout
+                                 still appears to run NanoClaw. Use only for
+                                 rollback/emergency work.
   --execute                      Actually SSH to the Pi and start setup.
   --ssh-option <option>          Extra ssh option. Values like BatchMode=yes
                                  are passed as ssh -o options. May be repeated.
@@ -95,6 +100,7 @@ Environment defaults:
   NANOCLAW_PI_BRIDGE_INTERVAL
   NANOCLAW_PI_BRIDGE_UNIT_PREFIX
   NANOCLAW_PI_SSH_CONNECT_TIMEOUT
+  NANOCLAW_PI_ALLOW_MAC_HOST_RUNNING
 
 Examples:
   bash scripts/pi-ssh-start-runtime.sh --host nanoclaw-pi.local --user pi --path /home/pi/NanoClaw --second-brain-root /home/pi/Distributed-Cognition --codex-projects-root /home/pi/Codex
@@ -123,6 +129,109 @@ add_default_ssh_options
 
 shell_quote() {
   printf '%q' "$1"
+}
+
+have() {
+  command -v "$1" >/dev/null 2>&1
+}
+
+canonical_dir() {
+  (cd "$1" 2>/dev/null && pwd -P)
+}
+
+pid_cwd() {
+  local pid="$1"
+  local cwd=""
+
+  if have lsof; then
+    cwd="$(lsof -a -p "$pid" -d cwd -Fn 2>/dev/null | sed -n 's/^n//p' | head -n 1 || true)"
+  fi
+
+  if [ -z "$cwd" ] && [ -e "/proc/$pid/cwd" ] && have readlink; then
+    cwd="$(readlink "/proc/$pid/cwd" 2>/dev/null || true)"
+  fi
+
+  [ -n "$cwd" ] || return 1
+  canonical_dir "$cwd"
+}
+
+find_local_host_pids() {
+  have pgrep || return 0
+
+  local candidates
+  candidates="$(pgrep -f '(^|[ /])(node|tsx)([ ]|.*[ ])(dist/index\.js|src/index\.ts)' 2>/dev/null || true)"
+  [ -n "$candidates" ] || return 0
+
+  local pid cwd
+  while IFS= read -r pid; do
+    [ -n "$pid" ] || continue
+    [ "$pid" != "$$" ] || continue
+    [ "$pid" != "${PPID:-}" ] || continue
+    cwd="$(pid_cwd "$pid" 2>/dev/null || true)"
+    [ "$cwd" = "$PROJECT_ROOT" ] || continue
+    printf '%s\n' "$pid"
+  done <<EOF
+$candidates
+EOF
+}
+
+find_local_screen_sessions() {
+  have screen || return 0
+
+  { screen -ls 2>/dev/null || true; } |
+    awk '
+      /[0-9]+\./ {
+        for (i = 1; i <= NF; i += 1) {
+          if ($i ~ /^[0-9]+\./ && tolower($i) ~ /(nanoclaw|distributed|cognition)/) {
+            print $i
+          }
+        }
+      }
+    '
+}
+
+unique_lines() {
+  awk 'NF && !seen[$0]++'
+}
+
+require_mac_host_stopped_for_execute() {
+  [ "$ALLOW_MAC_HOST_RUNNING" != "true" ] || {
+    echo "WARN - Mac host guard bypassed by --allow-mac-host-running" >&2
+    return 0
+  }
+
+  local host_pids screen_sessions
+  host_pids="$(find_local_host_pids | unique_lines)"
+  screen_sessions="$(find_local_screen_sessions | unique_lines)"
+
+  [ -z "$host_pids" ] && [ -z "$screen_sessions" ] && return 0
+
+  echo "Refusing to start the Pi runtime while the Mac NanoClaw host appears to be running." >&2
+  echo "WhatsApp/Baileys must run from only one host at a time." >&2
+  echo "Run this first during final cutover:" >&2
+  echo "  pnpm run dc:install-launchd -- uninstall" >&2
+  echo "  pnpm run dc:stop-host -- --execute" >&2
+  echo "  pnpm run pi:mac-preflight -- --root <mac Distributed-Cognition folder> --out-dir <export dir> --require-stopped" >&2
+  echo >&2
+  if [ -n "$screen_sessions" ]; then
+    echo "Matching screen sessions:" >&2
+    while IFS= read -r session; do
+      [ -n "$session" ] && echo "  screen: $session" >&2
+    done <<EOF
+$screen_sessions
+EOF
+  fi
+  if [ -n "$host_pids" ]; then
+    echo "Matching host PIDs:" >&2
+    while IFS= read -r pid; do
+      [ -n "$pid" ] && echo "  pid: $pid cwd: $PROJECT_ROOT" >&2
+    done <<EOF
+$host_pids
+EOF
+  fi
+  echo >&2
+  echo "Use --allow-mac-host-running only for explicit rollback or emergency work." >&2
+  exit 1
 }
 
 while [ "$#" -gt 0 ]; do
@@ -226,6 +335,10 @@ while [ "$#" -gt 0 ]; do
       SKIP_HEALTH=true
       shift
       ;;
+    --allow-mac-host-running)
+      ALLOW_MAC_HOST_RUNNING=true
+      shift
+      ;;
     --execute)
       EXECUTE=true
       shift
@@ -263,6 +376,21 @@ if [ -z "$RCLONE_TARGET" ]; then
   RCLONE_TARGET="${RCLONE_REMOTE}${RCLONE_FOLDER}"
 fi
 
+case "$ALLOW_MAC_HOST_RUNNING" in
+  true|false)
+    ;;
+  1|yes|YES)
+    ALLOW_MAC_HOST_RUNNING=true
+    ;;
+  0|no|NO|"")
+    ALLOW_MAC_HOST_RUNNING=false
+    ;;
+  *)
+    echo "NANOCLAW_PI_ALLOW_MAC_HOST_RUNNING must be true or false" >&2
+    exit 2
+    ;;
+esac
+
 TARGET="$REMOTE_USER@$HOST"
 
 echo "Pi SSH runtime start"
@@ -277,6 +405,7 @@ echo "rclone interval: $RCLONE_INTERVAL"
 echo "rclone mode: $RCLONE_MODE"
 echo "bridge timer interval: $BRIDGE_INTERVAL"
 echo "bridge timer mode: $([ "$EXECUTE_BRIDGES" = "true" ] && echo execute || echo dry-run)"
+echo "Mac host guard: $([ "$ALLOW_MAC_HOST_RUNNING" = "true" ] && echo bypassed || echo enforced)"
 [ -n "$SSH_CONNECT_TIMEOUT" ] && echo "SSH connect timeout: ${SSH_CONNECT_TIMEOUT}s"
 [ -n "$UNIT_NAME" ] && echo "Service unit: $UNIT_NAME"
 [ -n "$BRIDGE_UNIT_PREFIX" ] && echo "Bridge unit prefix: $BRIDGE_UNIT_PREFIX"
@@ -336,6 +465,8 @@ if [ "$EXECUTE" != "true" ]; then
   echo "Add --execute only after state has been restored on the Pi and the Mac host remains stopped."
   exit 0
 fi
+
+require_mac_host_stopped_for_execute
 
 ssh "${SSH_OPTIONS[@]}" "$TARGET" 'bash -s' -- \
   "$REMOTE_PROJECT_ROOT" \

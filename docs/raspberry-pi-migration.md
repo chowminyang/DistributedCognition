@@ -234,11 +234,14 @@ pnpm run pi:ssh-start-runtime -- \
   --rclone-remote dropbox:
 ```
 
-When the dry-run output is correct, add `--execute`. This creates the selected
-local folders, installs and starts the rclone timer for
-`dropbox:Distributed-Cognition`, updates Docker mount access for Distributed
-Cognition, installs and starts the NanoClaw systemd service, installs and
-starts Pi-side bridge timers, and runs `pnpm run dc:health` on the Pi.
+When the dry-run output is correct, add `--execute`. The execute path refuses
+to start the Pi runtime if this Mac checkout still appears to be running
+NanoClaw, unless you explicitly pass `--allow-mac-host-running` for rollback or
+emergency work. It creates the selected local folders, installs and starts the
+rclone timer for `dropbox:Distributed-Cognition`, updates Docker mount access
+for Distributed Cognition, installs and starts the NanoClaw systemd service,
+installs and starts Pi-side bridge timers, and runs `pnpm run dc:health` on the
+Pi.
 
 By default the bridge timers dry-run queued Mnemon, Codex, and action work.
 Add `--execute-bridges` to `pi:ssh-start-runtime` only when you want those

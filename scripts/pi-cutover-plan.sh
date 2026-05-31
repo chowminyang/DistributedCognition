@@ -271,6 +271,7 @@ if [ -n "$PI_UNIT_NAME" ]; then
 fi
 section "5. Configure Pi Sync And Service"
 print_command "$start_runtime_cmd"
+print_command "# The --execute path refuses to start while the Mac NanoClaw host appears to be running."
 print_command "# This also installs Pi bridge timers in dry-run mode by default. Add --execute-bridges only when queued bridge work should execute automatically on the Pi."
 print_command "# If the dry run is correct, rerun the same command with --execute."
 

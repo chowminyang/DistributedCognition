@@ -141,13 +141,16 @@ pnpm run pi:ssh-start-runtime -- \
   --rclone-remote dropbox:
 ```
 
-When the dry-run output is correct, add `--execute`. This installs/starts the
-rclone timer for only the selected `Distributed-Cognition` folder, updates the
-Docker mount allowlist and group mounts, installs/starts the Pi systemd service,
-installs/starts Pi bridge timers for health, dashboard, Mnemon, Codex, and
-action queues, and runs `dc:health`. Bridge timers are dry-run by default;
-pass `--execute-bridges` to `pi:ssh-start-runtime` only when you want queued
-bridge work to execute automatically on the Pi.
+When the dry-run output is correct, add `--execute`. The execute path refuses
+to start the Pi runtime if this Mac checkout still appears to be running
+NanoClaw, unless you explicitly pass `--allow-mac-host-running` for rollback or
+emergency work. It installs/starts the rclone timer for only the selected
+`Distributed-Cognition` folder, updates the Docker mount allowlist and group
+mounts, installs/starts the Pi systemd service, installs/starts Pi bridge
+timers for health, dashboard, Mnemon, Codex, and action queues, and runs
+`dc:health`. Bridge timers are dry-run by default; pass `--execute-bridges` to
+`pi:ssh-start-runtime` only when you want queued bridge work to execute
+automatically on the Pi.
 
 To generate a paste-ready `/goal` prompt for the Mac Codex thread that will
 control the Pi on migration day:

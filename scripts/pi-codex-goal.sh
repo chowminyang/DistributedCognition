@@ -239,7 +239,7 @@ Work plan:
    If the dry run is correct, rerun the same command with --execute. This must verify sha256 on the Pi before importing.
 9. Configure rclone sync, update Docker mount access, install/start systemd, install/start Pi bridge timers, and run health using the dry-run helper first:
    pnpm run pi:ssh-start-runtime -- --host "${PI_HOST_DISPLAY}" --user "${PI_USER_DISPLAY}" --path "${PI_PROJECT_DISPLAY}" --second-brain-root "${PI_SECOND_BRAIN_DISPLAY}" --codex-projects-root "${PI_CODEX_DISPLAY}" --rclone-remote "${PI_RCLONE_REMOTE}"
-   If the dry run is correct, rerun the same command with --execute.
+   If the dry run is correct, rerun the same command with --execute. The execute path must refuse to start while the Mac NanoClaw host is still running, unless I explicitly approve rollback/emergency override.
 10. Verify from the Mac:
    pnpm run pi:ssh-admin -- status
    pnpm run pi:ssh-admin -- health
