@@ -198,7 +198,8 @@ missing `NANOCLAW_PI_*` lines, source it from the Mac Codex shell, run
 `pi:operator-env-check`, then rerun readiness. The bundle also includes
 `pi-first-boot-checklist.txt` and `ssh-key-setup.txt`, both non-mutating dry-runs
 showing the exact first-boot and dedicated-key commands to run before Pi SSH
-control.
+control. Open `next-action.md` in the same bundle for the current gate and the
+next safe command sequence.
 
 When you are ready to capture the final state, stop the Mac launchd jobs first so SQLite, WhatsApp auth, bridge queues, and delivery ledgers are quiet:
 

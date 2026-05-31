@@ -25,6 +25,7 @@ SKIP_DISCOVERY="false"
 INCLUDE_SSH_PREFLIGHT="false"
 OPERATOR_ENV_STATUS="unknown"
 SSH_KEY_STATUS="unknown"
+PI_FIRST_BOOT_STATUS="unknown"
 
 usage() {
   cat <<'EOF'
@@ -459,6 +460,20 @@ first_boot_checklist_cmd=(pnpm run pi:first-boot-checklist --)
 [ -n "$PI_CODEX_PROJECTS_ROOT" ] && first_boot_checklist_cmd+=(--pi-codex-projects-root "$PI_CODEX_PROJECTS_ROOT")
 [ -n "$PI_RCLONE_REMOTE" ] && first_boot_checklist_cmd+=(--pi-rclone-remote "$PI_RCLONE_REMOTE")
 run_capture_allow_warn "$READINESS_DIR/pi-first-boot-checklist.txt" "Pi First Boot Checklist" "${first_boot_checklist_cmd[@]}"
+PI_FIRST_BOOT_STATUS="$(grep -E '^PI_FIRST_BOOT_CHECKLIST=' "$READINESS_DIR/pi-first-boot-checklist.txt" | tail -n 1 | cut -d= -f2 || true)"
+if [ -z "$PI_FIRST_BOOT_STATUS" ]; then
+  PI_FIRST_BOOT_STATUS="unknown"
+fi
+case "$PI_FIRST_BOOT_STATUS" in
+  ready)
+    ;;
+  needs_ssh_key)
+    warnings+=("Pi first-boot checklist says the dedicated Mac SSH public key is still missing")
+    ;;
+  *)
+    warnings+=("Pi first-boot checklist reported $PI_FIRST_BOOT_STATUS; inspect pi-first-boot-checklist.txt before cutover")
+    ;;
+esac
 
 if [ "$SKIP_DISCOVERY" = "true" ]; then
   write_skipped "$READINESS_DIR/pi-discovery.txt" "Pi Discovery" "--skip-discovery supplied"
@@ -590,6 +605,7 @@ fi
   printf -- '- Pi Distributed-Cognition folder: `%s`\n' "${PI_SECOND_BRAIN_ROOT:-<missing>}"
   printf -- '- Pi Codex projects folder: `%s`\n' "${PI_CODEX_PROJECTS_ROOT:-<missing>}"
   printf -- '- Pi rclone remote: `%s`\n' "${PI_RCLONE_REMOTE:-<optional-not-set>}"
+  printf -- '- Pi first-boot checklist: `%s`\n' "$PI_FIRST_BOOT_STATUS"
   printf -- '- Mac SSH key check: `%s`\n' "$SSH_KEY_STATUS"
   printf -- '- Expected Pi commit: `%s`\n' "${EXPECTED_COMMIT:-<not checked>}"
   printf -- '- Repo URL: `%s`\n' "${REPO_URL:-<missing>}"
@@ -636,6 +652,7 @@ fi
   printf -- '- `ssh-key-check.txt`\n'
   printf -- '- `operator-env-check.txt`\n'
   printf -- '- `ssh-preflight.txt`\n'
+  printf -- '- `next-action.md`\n'
   printf -- '- `rehearsal.txt`\n'
   printf -- '- `rehearsal/operator-env.sh`\n'
   printf -- '- `rehearsal/operator-env-check.txt`\n'
@@ -653,6 +670,60 @@ fi
   fi
   printf 'Final cutover still requires stopping the Mac NanoClaw host before export, and WhatsApp must run on only one host at a time.\n'
 } >"$READINESS_DIR/summary.md"
+
+{
+  printf '# Next Mac-To-Pi Action\n\n'
+  printf 'Status: `%s`\n\n' "$status"
+  printf 'Generated: `%s`\n\n' "$(date '+%d-%m-%y, %H:%M')"
+  if [ "$ssh_preflight_attempted" = "true" ]; then
+    printf 'SSH preflight was attempted in this bundle. No WhatsApp/runtime state was changed.\n\n'
+  else
+    printf 'No SSH was opened. No WhatsApp/runtime state was changed.\n\n'
+  fi
+
+  printf '## Gate\n\n'
+  printf -- '- Expected Pi commit: `%s`\n' "${EXPECTED_COMMIT:-<not checked>}"
+  printf -- '- Pi first-boot checklist: `%s`\n' "$PI_FIRST_BOOT_STATUS"
+  printf -- '- Mac SSH key check: `%s`\n' "$SSH_KEY_STATUS"
+  printf -- '- Pi operator environment: `%s`\n' "$OPERATOR_ENV_STATUS"
+  printf -- '- SSH preflight attempted: `%s`\n\n' "$ssh_preflight_attempted"
+
+  printf '## Do Next\n\n'
+  if [ "$PI_FIRST_BOOT_STATUS" = "needs_ssh_key" ] || [ "$SSH_KEY_STATUS" = "missing_key" ]; then
+    printf 'Create the dedicated Mac-to-Pi SSH key only when you are ready to authorize it:\n\n'
+    printf '```bash\n'
+    print_command pnpm run pi:ssh-key-setup -- --execute
+    printf '```\n\n'
+    printf 'Then use `pi-first-boot-checklist.txt` to configure Raspberry Pi Imager with SSH enabled and the dedicated public key.\n\n'
+  elif [ "${#missing[@]}" -gt 0 ]; then
+    printf 'Fill the non-secret Pi operator values in `rehearsal/operator-env.sh`, source that file in the Mac Codex shell, then rerun readiness:\n\n'
+    printf '```bash\n'
+    print_command source "$READINESS_DIR/rehearsal/operator-env.sh"
+    print_command pnpm run pi:operator-env-check
+    print_command pnpm run pi:mac-readiness -- --local-root "${LOCAL_SECOND_BRAIN_ROOT:-<mac-distributed-cognition-folder>}" --include-ssh-preflight
+    printf '```\n\n'
+  elif [ "$INCLUDE_SSH_PREFLIGHT" != "true" ]; then
+    printf 'The next live gate is SSH preflight. Run it only after the Pi is powered on and the operator env values are sourced:\n\n'
+    printf '```bash\n'
+    print_command pnpm run pi:mac-readiness -- --local-root "$LOCAL_SECOND_BRAIN_ROOT" --include-ssh-preflight
+    printf '```\n\n'
+  elif [ "$status" = "ready" ] || [ "$status" = "warn" ]; then
+    printf 'Proceed to the cutover plan only when WhatsApp should move from the Mac to the Pi. Stop the Mac runtime before exporting state:\n\n'
+    printf '```bash\n'
+    print_command pnpm run pi:cutover-plan
+    print_command pnpm run dc:stop-host -- --execute
+    print_command pnpm run pi:mac-preflight -- --root "$LOCAL_SECOND_BRAIN_ROOT" --out-dir "$OUT_DIR" --require-stopped
+    printf '```\n\n'
+  else
+    printf 'Inspect `summary.md` and the failed artifacts before continuing.\n\n'
+  fi
+
+  printf '## Invariants\n\n'
+  printf -- '- Keep WhatsApp active on only one host at a time.\n'
+  printf -- '- Do not copy broad Dropbox, home, Desktop, Documents, or Downloads folders.\n'
+  printf -- '- Keep secrets out of git and out of readiness bundles.\n'
+  printf -- '- Use `--execute` only for the intentional state-changing steps.\n'
+} >"$READINESS_DIR/next-action.md"
 
 echo "PI_MAC_READINESS=$status"
 echo "bundle=$READINESS_DIR"
