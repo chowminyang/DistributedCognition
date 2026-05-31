@@ -105,6 +105,26 @@ packages, clones/builds the repo, creates the selected local folders, and
 checks Docker, but it does not copy secrets, import WhatsApp auth, start
 NanoClaw, configure rclone, or install the systemd service.
 
+After the final Mac export, restore the secret state bundle from the Mac
+control plane with a dry run first:
+
+```bash
+STATE_BUNDLE="$(ls -t "$HOME/Desktop/dc-pi-migration"/nanoclaw-pi-state-*.tar.gz | head -n 1)"
+
+pnpm run pi:ssh-restore-state -- \
+  --host "<pi-host-or-ip>" \
+  --user "<pi-ssh-user>" \
+  --path "<pi NanoClaw checkout path>" \
+  --bundle "$STATE_BUNDLE" \
+  --force \
+  --cleanup-remote
+```
+
+When the dry-run output is correct and the Mac host is stopped, add
+`--execute`. The helper copies the bundle and checksum to the Pi, verifies the
+checksum on the Pi, imports state with the existing safe importer, and rebuilds.
+It does not start NanoClaw, configure rclone, or install systemd.
+
 To generate a paste-ready `/goal` prompt for the Mac Codex thread that will
 control the Pi on migration day:
 

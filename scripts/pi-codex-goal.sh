@@ -232,13 +232,17 @@ Work plan:
 7. Run Mac export preflight and export the secret state bundle:
    pnpm run pi:mac-preflight -- --root "${MAC_SECOND_BRAIN_DISPLAY}" --out-dir "${OUT_DIR}" --require-stopped
    pnpm run pi:export -- --out-dir "${OUT_DIR}"
-8. Copy the state bundle to the Pi, verify sha256, import state, configure rclone sync, update Docker mount access, install/start systemd.
-9. Verify from the Mac:
+8. Restore the final state bundle from the Mac control plane using the dry-run helper first:
+   STATE_BUNDLE="\$(ls -t "${OUT_DIR}"/nanoclaw-pi-state-*.tar.gz | head -n 1)"
+   pnpm run pi:ssh-restore-state -- --host "${PI_HOST_DISPLAY}" --user "${PI_USER_DISPLAY}" --path "${PI_PROJECT_DISPLAY}" --bundle "\$STATE_BUNDLE" --force --cleanup-remote
+   If the dry run is correct, rerun the same command with --execute. This must verify sha256 on the Pi before importing.
+9. Configure rclone sync, update Docker mount access, and install/start systemd on the Pi.
+10. Verify from the Mac:
    pnpm run pi:ssh-admin -- status
    pnpm run pi:ssh-admin -- health
    pnpm run pi:ssh-admin -- dashboard
    pnpm run pi:ssh-admin -- logs --lines 80
-10. Gather the post-cutover verification bundle:
+11. Gather the post-cutover verification bundle:
    pnpm run pi:verify-cutover -- \\
      --local-root "${MAC_SECOND_BRAIN_DISPLAY}" \\
      --host "${PI_HOST_DISPLAY}" \\
@@ -246,11 +250,11 @@ Work plan:
      --path "${PI_PROJECT_DISPLAY}" \\
      --second-brain-root "${PI_SECOND_BRAIN_DISPLAY}" \\
      --execute
-11. Run a live WhatsApp smoke test from my allowed personal chat:
+12. Run a live WhatsApp smoke test from my allowed personal chat:
    DC, run a health check.
    DC, what can you see in the second-brain folder?
    DC, capture this as a harmless Pi cutover test reflection.
-12. After WhatsApp is proven to be replying from the Pi, reinstall the Mac bridge jobs only:
+13. After WhatsApp is proven to be replying from the Pi, reinstall the Mac bridge jobs only:
    pnpm run dc:install-launchd -- install --root "${MAC_SECOND_BRAIN_DISPLAY}" --projects-root "\$HOME/Documents/Codex" --execute-bridges --load
    pnpm run dc:install-launchd -- status
    Do not restart the Mac NanoClaw/WhatsApp host unless I explicitly roll back.

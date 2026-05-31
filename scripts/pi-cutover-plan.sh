@@ -254,16 +254,15 @@ else
   print_command "pnpm run pi:mac-preflight -- --root <mac Distributed-Cognition folder> --out-dir $(quote_shell "$OUT_DIR") --require-stopped"
 fi
 print_command "pnpm run pi:export -- --out-dir $(quote_shell "$OUT_DIR")"
-print_command "scp $(quote_shell "$OUT_DIR")/nanoclaw-pi-state-*.tar.gz ${PI_USER:-<pi-user>}@${PI_HOST:-<pi-host>}:~"
-print_command "scp $(quote_shell "$OUT_DIR")/nanoclaw-pi-state-*.sha256 ${PI_USER:-<pi-user>}@${PI_HOST:-<pi-host>}:~"
 
-section "4. Restore And Start On Pi"
+section "4. Restore State From Mac"
+print_command "STATE_BUNDLE=\"\$(ls -t $(quote_shell "$OUT_DIR")/nanoclaw-pi-state-*.tar.gz | head -n 1)\""
+print_command "pnpm run pi:ssh-restore-state -- --host $(quote_shell "${PI_HOST:-<pi-host>}") --user $(quote_shell "${PI_USER:-<pi-user>}") --path $(quote_shell "${PI_PROJECT_ROOT:-<pi NanoClaw path>}") --bundle \"\$STATE_BUNDLE\" --force --cleanup-remote"
+print_command "# If the dry run is correct, rerun the same command with --execute."
+
+section "5. Configure Pi Sync And Service"
 print_command "ssh ${PI_USER:-<pi-user>}@${PI_HOST:-<pi-host>}"
-print_command "cd ~"
-print_command "sha256sum -c nanoclaw-pi-state-*.sha256"
 print_command "cd $(quote_shell "${PI_PROJECT_ROOT:-<pi NanoClaw path>}")"
-print_command "bash scripts/pi-import-state.sh ~/nanoclaw-pi-state-*.tar.gz --force"
-print_command "pnpm run build"
 print_command "mkdir -p $(quote_shell "${PI_SECOND_BRAIN_ROOT:-<pi Distributed-Cognition path>}")"
 if [ -n "$PI_CODEX_PROJECTS_ROOT" ]; then
   print_command "mkdir -p $(quote_shell "$PI_CODEX_PROJECTS_ROOT")"
@@ -276,7 +275,7 @@ else
 fi
 print_command "bash scripts/pi-install-systemd.sh --start"
 
-section "5. Smoke Test From Mac"
+section "6. Smoke Test From Mac"
 if [ -n "$PI_UNIT_NAME" ]; then
   print_command "export NANOCLAW_PI_UNIT_NAME=$(quote_shell "$PI_UNIT_NAME")"
 fi
@@ -291,7 +290,7 @@ else
   print_command "pnpm run pi:verify-cutover -- --local-root <mac Distributed-Cognition folder> --host $(quote_shell "${PI_HOST:-<pi-host>}") --user $(quote_shell "${PI_USER:-<pi-user>}") --path $(quote_shell "${PI_PROJECT_ROOT:-<pi NanoClaw path>}") --second-brain-root $(quote_shell "${PI_SECOND_BRAIN_ROOT:-<pi Distributed-Cognition path>}") --execute"
 fi
 
-section "6. WhatsApp Test"
+section "7. WhatsApp Test"
 cat <<'EOF'
   From the allowed personal WhatsApp chat, send:
     DC, run a health check.
@@ -305,7 +304,7 @@ cat <<'EOF'
     - The Mac host remains stopped.
 EOF
 
-section "7. Resume Mac-Side Bridges Only"
+section "8. Resume Mac-Side Bridges Only"
 cat <<'EOF'
   Do this only after WhatsApp replies are proven to come from the Pi.
   These launchd jobs do not start the Mac NanoClaw/WhatsApp host; they only let

@@ -192,14 +192,29 @@ bash setup.sh
 pnpm run build
 ```
 
-From the Mac, copy the state bundle to the Pi:
+From the Mac, restore the final state bundle through the SSH helper. Run the
+dry run first:
 
 ```bash
-scp "$HOME/Desktop/dc-pi-migration"/nanoclaw-pi-state-*.tar.gz pi@nanoclaw-pi.local:~
-scp "$HOME/Desktop/dc-pi-migration"/nanoclaw-pi-state-*.sha256 pi@nanoclaw-pi.local:~
+cd /Users/minyangchow/Documents/NanoClaw
+STATE_BUNDLE="$(ls -t "$HOME/Desktop/dc-pi-migration"/nanoclaw-pi-state-*.tar.gz | head -n 1)"
+
+pnpm run pi:ssh-restore-state -- \
+  --host nanoclaw-pi.local \
+  --user pi \
+  --path /home/pi/NanoClaw \
+  --bundle "$STATE_BUNDLE" \
+  --force \
+  --cleanup-remote
 ```
 
-On the Pi:
+When the dry-run output is correct and the Mac NanoClaw host is stopped, add
+`--execute` to the same command. The helper copies the bundle and checksum to
+the Pi, verifies the checksum on the Pi, imports state through
+`scripts/pi-import-state.sh`, runs `pnpm run build`, and removes the copied
+bundle from the Pi when `--cleanup-remote` is supplied.
+
+Manual fallback on the Pi:
 
 ```bash
 cd ~

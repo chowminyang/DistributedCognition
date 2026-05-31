@@ -55,6 +55,7 @@ helper_scripts=(
   scripts/pi-ssh-admin.sh
   scripts/pi-ssh-bootstrap.sh
   scripts/pi-ssh-preflight.sh
+  scripts/pi-ssh-restore-state.sh
   scripts/pi-verify-cutover.sh
   scripts/pi-mac-export-preflight.sh
   scripts/pi-export-state.sh
@@ -93,6 +94,7 @@ assert_contains "$goal_out" "/goal" "codex goal starts with slash goal"
 assert_contains "$goal_out" "Mac Codex is the control plane" "codex goal names Mac control plane"
 assert_contains "$goal_out" "Raspberry Pi is the final always-on Distributed Cognition runtime" "codex goal names Pi runtime"
 assert_contains "$goal_out" "pnpm run pi:ssh-bootstrap" "codex goal includes SSH bootstrap"
+assert_contains "$goal_out" "pnpm run pi:ssh-restore-state" "codex goal includes SSH state restore"
 assert_contains "$goal_out" "Do not mark the goal complete" "codex goal includes completion guard"
 assert_contains "$goal_out" "02-06-26" "codex goal includes migration date"
 assert_contains "$goal_out" "reinstall the Mac bridge jobs only" "codex goal keeps Mac bridge-only resumption explicit"
@@ -130,6 +132,7 @@ assert_contains "$plan_out" "Distributed Cognition runs fully on the Raspberry P
 assert_contains "$plan_out" "CUTOVER_PLAN=ready" "cutover plan succeeds with complete values"
 assert_contains "$plan_out" "pnpm run dc:stop-host -- --execute" "cutover plan includes final Mac host stop"
 assert_contains "$plan_out" "pnpm run pi:ssh-preflight" "cutover plan includes SSH preflight"
+assert_contains "$plan_out" "pnpm run pi:ssh-restore-state" "cutover plan includes SSH state restore"
 assert_contains "$plan_out" "pnpm run pi:ssh-admin -- doctor" "cutover plan includes Pi doctor check"
 assert_contains "$plan_out" "Resume Mac-Side Bridges Only" "cutover plan includes bridge-only Mac resumption"
 assert_contains "$plan_out" "pnpm run dc:install-launchd -- install" "cutover plan re-enables only bridge jobs after Pi proof"
@@ -276,6 +279,10 @@ pnpm run pi:ssh-bootstrap -- --help >"$TMP_DIR/ssh-bootstrap-help.out"
 assert_contains "$TMP_DIR/ssh-bootstrap-help.out" "dry-run by default" "ssh bootstrap help documents dry-run default"
 assert_contains "$TMP_DIR/ssh-bootstrap-help.out" "--execute" "ssh bootstrap help documents execute mode"
 
+pnpm run pi:ssh-restore-state -- --help >"$TMP_DIR/ssh-restore-help.out"
+assert_contains "$TMP_DIR/ssh-restore-help.out" "dry-run by default" "ssh restore help documents dry-run default"
+assert_contains "$TMP_DIR/ssh-restore-help.out" "verifies the checksum on the Pi" "ssh restore help documents remote checksum verification"
+
 set +e
 pnpm run pi:ssh-admin -- status >"$TMP_DIR/ssh-admin-missing.out" 2>"$TMP_DIR/ssh-admin-missing.err"
 admin_missing_code="$?"
@@ -289,15 +296,19 @@ pnpm run pi:ssh-preflight >"$TMP_DIR/ssh-preflight-missing.out" 2>"$TMP_DIR/ssh-
 preflight_missing_code="$?"
 pnpm run pi:ssh-bootstrap >"$TMP_DIR/ssh-bootstrap-missing.out" 2>"$TMP_DIR/ssh-bootstrap-missing.err"
 bootstrap_missing_code="$?"
+pnpm run pi:ssh-restore-state >"$TMP_DIR/ssh-restore-missing.out" 2>"$TMP_DIR/ssh-restore-missing.err"
+restore_missing_code="$?"
 set -e
 assert_exit_code 2 "$admin_missing_code" "ssh admin fails before SSH when target values are missing"
 assert_exit_code 2 "$doctor_missing_root_code" "ssh admin doctor fails before SSH when second-brain root is missing"
 assert_exit_code 2 "$preflight_missing_code" "ssh preflight fails before SSH when target values are missing"
 assert_exit_code 2 "$bootstrap_missing_code" "ssh bootstrap fails before SSH when target values are missing"
+assert_exit_code 2 "$restore_missing_code" "ssh restore fails before SSH when target values are missing"
 assert_contains "$TMP_DIR/ssh-admin-missing.err" "Missing required --host" "ssh admin missing host is explicit"
 assert_contains "$TMP_DIR/ssh-admin-doctor-missing-root.err" "doctor requires --second-brain-root" "ssh admin doctor missing second-brain root is explicit"
 assert_contains "$TMP_DIR/ssh-preflight-missing.err" "Missing required --host" "ssh preflight missing host is explicit"
 assert_contains "$TMP_DIR/ssh-bootstrap-missing.err" "Missing required --host" "ssh bootstrap missing host is explicit"
+assert_contains "$TMP_DIR/ssh-restore-missing.err" "Missing required --host" "ssh restore missing host is explicit"
 
 pnpm run pi:ssh-bootstrap -- \
   --host nanoclaw-pi.local \
@@ -326,5 +337,40 @@ env \
   pnpm run pi:ssh-bootstrap -- \
     >"$TMP_DIR/ssh-bootstrap-env.out"
 assert_contains "$TMP_DIR/ssh-bootstrap-env.out" "PI_SSH_BOOTSTRAP=dry_run" "ssh bootstrap accepts environment defaults"
+
+bundle_src="$TMP_DIR/bundle-src"
+mkdir -p "$bundle_src/state"
+printf 'test state only\n' >"$bundle_src/state/README.txt"
+bundle_path="$TMP_DIR/nanoclaw-pi-state-test.tar.gz"
+tar -C "$bundle_src" -czf "$bundle_path" .
+if command -v shasum >/dev/null 2>&1; then
+  (cd "$TMP_DIR" && shasum -a 256 "$(basename "$bundle_path")" >"$(basename "$bundle_path").sha256")
+else
+  (cd "$TMP_DIR" && sha256sum "$(basename "$bundle_path")" >"$(basename "$bundle_path").sha256")
+fi
+checksum_path="$bundle_path.sha256"
+
+pnpm run pi:ssh-restore-state -- \
+  --host nanoclaw-pi.local \
+  --user pi \
+  --path /home/pi/NanoClaw \
+  --bundle "$bundle_path" \
+  --force \
+  --cleanup-remote \
+  >"$TMP_DIR/ssh-restore-dry-run.out"
+assert_contains "$TMP_DIR/ssh-restore-dry-run.out" "PI_SSH_RESTORE_STATE=dry_run" "ssh restore dry-run does not SSH"
+assert_contains "$TMP_DIR/ssh-restore-dry-run.out" "No SSH was opened" "ssh restore dry-run is non-mutating"
+assert_contains "$TMP_DIR/ssh-restore-dry-run.out" "pi-import-state.sh" "ssh restore dry-run shows import command"
+assert_contains "$TMP_DIR/ssh-restore-dry-run.out" "pnpm run build" "ssh restore dry-run shows build command"
+
+env \
+  NANOCLAW_PI_HOST=nanoclaw-pi.local \
+  NANOCLAW_PI_USER=pi \
+  NANOCLAW_PI_PROJECT_ROOT=/home/pi/NanoClaw \
+  NANOCLAW_PI_STATE_BUNDLE="$bundle_path" \
+  NANOCLAW_PI_STATE_CHECKSUM="$checksum_path" \
+  pnpm run pi:ssh-restore-state -- \
+    >"$TMP_DIR/ssh-restore-env.out"
+assert_contains "$TMP_DIR/ssh-restore-env.out" "PI_SSH_RESTORE_STATE=dry_run" "ssh restore accepts environment defaults"
 
 echo "PI_MIGRATION_HELPERS=ok"
