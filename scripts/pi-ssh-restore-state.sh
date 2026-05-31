@@ -7,6 +7,7 @@ REMOTE_PROJECT_ROOT="${NANOCLAW_PI_PROJECT_ROOT:-}"
 BUNDLE="${NANOCLAW_PI_STATE_BUNDLE:-}"
 CHECKSUM="${NANOCLAW_PI_STATE_CHECKSUM:-}"
 REMOTE_IMPORT_DIR="${NANOCLAW_PI_REMOTE_IMPORT_DIR:-~/nanoclaw-state-import}"
+SSH_CONNECT_TIMEOUT="${NANOCLAW_PI_SSH_CONNECT_TIMEOUT:-}"
 EXECUTE=false
 FORCE=false
 CLEANUP_REMOTE=false
@@ -58,6 +59,7 @@ Environment defaults:
   NANOCLAW_PI_STATE_BUNDLE
   NANOCLAW_PI_STATE_CHECKSUM
   NANOCLAW_PI_REMOTE_IMPORT_DIR
+  NANOCLAW_PI_SSH_CONNECT_TIMEOUT
 
 Examples:
   bash scripts/pi-ssh-restore-state.sh --host nanoclaw-pi.local --user pi --path /home/pi/NanoClaw --bundle "$HOME/Desktop/dc-pi-migration/nanoclaw-pi-state-20260601T120000Z.tar.gz"
@@ -73,6 +75,16 @@ add_ssh_option() {
     SSH_OPTIONS+=("$option_value")
   fi
 }
+
+add_default_ssh_options() {
+  if [ -n "$SSH_CONNECT_TIMEOUT" ]; then
+    [[ "$SSH_CONNECT_TIMEOUT" =~ ^[0-9]+$ ]] || { echo "NANOCLAW_PI_SSH_CONNECT_TIMEOUT must be a positive integer" >&2; exit 2; }
+    [ "$SSH_CONNECT_TIMEOUT" -gt 0 ] || { echo "NANOCLAW_PI_SSH_CONNECT_TIMEOUT must be greater than 0" >&2; exit 2; }
+    add_ssh_option "ConnectTimeout=$SSH_CONNECT_TIMEOUT"
+  fi
+}
+
+add_default_ssh_options
 
 expand_local_path() {
   case "$1" in
@@ -201,6 +213,7 @@ echo "NanoClaw path: $REMOTE_PROJECT_ROOT"
 echo "Local bundle: $BUNDLE"
 echo "Local checksum: $CHECKSUM"
 echo "Remote import dir: $REMOTE_IMPORT_DIR"
+[ -n "$SSH_CONNECT_TIMEOUT" ] && echo "SSH connect timeout: ${SSH_CONNECT_TIMEOUT}s"
 echo "Force import: $FORCE"
 echo "Cleanup remote bundle: $CLEANUP_REMOTE"
 echo

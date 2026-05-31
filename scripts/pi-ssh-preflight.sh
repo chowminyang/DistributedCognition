@@ -7,6 +7,7 @@ REMOTE_PROJECT_ROOT="${NANOCLAW_PI_PROJECT_ROOT:-}"
 SECOND_BRAIN_ROOT="${NANOCLAW_PI_SECOND_BRAIN_ROOT:-${DC_SECOND_BRAIN_ROOT:-}}"
 CODEX_PROJECTS_ROOT="${NANOCLAW_PI_CODEX_PROJECTS_ROOT:-}"
 RCLONE_REMOTE="${NANOCLAW_PI_RCLONE_REMOTE:-}"
+SSH_CONNECT_TIMEOUT="${NANOCLAW_PI_SSH_CONNECT_TIMEOUT:-}"
 SSH_OPTIONS=()
 
 usage() {
@@ -37,6 +38,7 @@ Environment defaults:
   NANOCLAW_PI_SECOND_BRAIN_ROOT
   NANOCLAW_PI_CODEX_PROJECTS_ROOT
   NANOCLAW_PI_RCLONE_REMOTE
+  NANOCLAW_PI_SSH_CONNECT_TIMEOUT
 EOF
 }
 
@@ -48,6 +50,16 @@ add_ssh_option() {
     SSH_OPTIONS+=("$option_value")
   fi
 }
+
+add_default_ssh_options() {
+  if [ -n "$SSH_CONNECT_TIMEOUT" ]; then
+    [[ "$SSH_CONNECT_TIMEOUT" =~ ^[0-9]+$ ]] || { echo "NANOCLAW_PI_SSH_CONNECT_TIMEOUT must be a positive integer" >&2; exit 2; }
+    [ "$SSH_CONNECT_TIMEOUT" -gt 0 ] || { echo "NANOCLAW_PI_SSH_CONNECT_TIMEOUT must be greater than 0" >&2; exit 2; }
+    add_ssh_option "ConnectTimeout=$SSH_CONNECT_TIMEOUT"
+  fi
+}
+
+add_default_ssh_options
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
@@ -114,6 +126,7 @@ echo "NanoClaw path: $REMOTE_PROJECT_ROOT"
 echo "Second brain root: $SECOND_BRAIN_ROOT"
 [ -n "$CODEX_PROJECTS_ROOT" ] && echo "Codex projects root: $CODEX_PROJECTS_ROOT"
 [ -n "$RCLONE_REMOTE" ] && echo "Expected rclone remote: $RCLONE_REMOTE"
+[ -n "$SSH_CONNECT_TIMEOUT" ] && echo "SSH connect timeout: ${SSH_CONNECT_TIMEOUT}s"
 echo
 
 ssh "${SSH_OPTIONS[@]}" "$TARGET" 'bash -s' -- \

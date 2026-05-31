@@ -17,6 +17,7 @@ INCLUDE_LOGS="false"
 SKIP_DASHBOARD="false"
 PROOF_TEXT="${NANOCLAW_PI_WHATSAPP_PROOF_TEXT:-}"
 PROOF_SINCE_MINUTES="${NANOCLAW_PI_WHATSAPP_PROOF_SINCE_MINUTES:-30}"
+SSH_CONNECT_TIMEOUT="${NANOCLAW_PI_SSH_CONNECT_TIMEOUT:-}"
 SSH_OPTIONS=()
 RAW_SSH_OPTIONS=()
 PROOF_RESULT="skipped"
@@ -70,6 +71,7 @@ Environment defaults:
   NANOCLAW_PI_UNIT_NAME
   NANOCLAW_PI_WHATSAPP_PROOF_TEXT
   NANOCLAW_PI_WHATSAPP_PROOF_SINCE_MINUTES
+  NANOCLAW_PI_SSH_CONNECT_TIMEOUT
 EOF
 }
 
@@ -123,6 +125,16 @@ add_ssh_option() {
     RAW_SSH_OPTIONS+=("$option_value")
   fi
 }
+
+add_default_ssh_options() {
+  if [ -n "$SSH_CONNECT_TIMEOUT" ]; then
+    [[ "$SSH_CONNECT_TIMEOUT" =~ ^[0-9]+$ ]] || { echo "NANOCLAW_PI_SSH_CONNECT_TIMEOUT must be a positive integer" >&2; exit 2; }
+    [ "$SSH_CONNECT_TIMEOUT" -gt 0 ] || { echo "NANOCLAW_PI_SSH_CONNECT_TIMEOUT must be greater than 0" >&2; exit 2; }
+    add_ssh_option "ConnectTimeout=$SSH_CONNECT_TIMEOUT"
+  fi
+}
+
+add_default_ssh_options
 
 missing=()
 failures=()
@@ -504,6 +516,7 @@ fi
   printf -- '- Pi NanoClaw path: `%s`\n' "${REMOTE_PROJECT_ROOT:-<missing>}"
   printf -- '- Pi Distributed-Cognition folder: `%s`\n' "${SECOND_BRAIN_ROOT:-<missing>}"
   printf -- '- Pi systemd unit: `%s`\n\n' "${UNIT_NAME:-<auto-detect>}"
+  [ -n "$SSH_CONNECT_TIMEOUT" ] && printf -- '- SSH connect timeout: `%ss`\n' "$SSH_CONNECT_TIMEOUT"
   printf -- '- WhatsApp persistence proof: `%s`\n' "$PROOF_RESULT"
   printf -- '- WhatsApp proof search window: `%s minutes`\n\n' "$PROOF_SINCE_MINUTES"
 

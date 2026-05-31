@@ -7,6 +7,7 @@ REMOTE_USER="${NANOCLAW_PI_USER:-${PI_USER:-}}"
 REMOTE_PROJECT_ROOT="${NANOCLAW_PI_PROJECT_ROOT:-}"
 SECOND_BRAIN_ROOT="${NANOCLAW_PI_SECOND_BRAIN_ROOT:-${DC_SECOND_BRAIN_ROOT:-}}"
 UNIT_NAME="${NANOCLAW_PI_UNIT_NAME:-}"
+SSH_CONNECT_TIMEOUT="${NANOCLAW_PI_SSH_CONNECT_TIMEOUT:-}"
 LINES="120"
 SSH_OPTIONS=()
 
@@ -50,6 +51,7 @@ Environment defaults:
   NANOCLAW_PI_PROJECT_ROOT
   NANOCLAW_PI_SECOND_BRAIN_ROOT
   NANOCLAW_PI_UNIT_NAME
+  NANOCLAW_PI_SSH_CONNECT_TIMEOUT
 
 Examples:
   bash scripts/pi-ssh-admin.sh doctor --host nanoclaw-pi.local --user pi --path /home/pi/NanoClaw --second-brain-root /home/pi/Distributed-Cognition
@@ -68,6 +70,16 @@ add_ssh_option() {
     SSH_OPTIONS+=("$option_value")
   fi
 }
+
+add_default_ssh_options() {
+  if [ -n "$SSH_CONNECT_TIMEOUT" ]; then
+    [[ "$SSH_CONNECT_TIMEOUT" =~ ^[0-9]+$ ]] || { echo "NANOCLAW_PI_SSH_CONNECT_TIMEOUT must be a positive integer" >&2; exit 2; }
+    [ "$SSH_CONNECT_TIMEOUT" -gt 0 ] || { echo "NANOCLAW_PI_SSH_CONNECT_TIMEOUT must be greater than 0" >&2; exit 2; }
+    add_ssh_option "ConnectTimeout=$SSH_CONNECT_TIMEOUT"
+  fi
+}
+
+add_default_ssh_options
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
@@ -147,6 +159,7 @@ echo "Target: $TARGET"
 echo "NanoClaw path: $REMOTE_PROJECT_ROOT"
 [ -n "$SECOND_BRAIN_ROOT" ] && echo "Second brain root: $SECOND_BRAIN_ROOT"
 [ -n "$UNIT_NAME" ] && echo "Service unit: $UNIT_NAME"
+[ -n "$SSH_CONNECT_TIMEOUT" ] && echo "SSH connect timeout: ${SSH_CONNECT_TIMEOUT}s"
 echo
 
 ssh "${SSH_OPTIONS[@]}" "$TARGET" 'bash -s' -- \

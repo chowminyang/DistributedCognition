@@ -9,6 +9,7 @@ CODEX_PROJECTS_ROOT="${NANOCLAW_PI_CODEX_PROJECTS_ROOT:-}"
 RCLONE_REMOTE="${NANOCLAW_PI_RCLONE_REMOTE:-}"
 REPO_URL="${NANOCLAW_PI_REPO_URL:-https://github.com/chowminyang/DistributedCognition.git}"
 BRANCH="${NANOCLAW_PI_BRANCH:-main}"
+SSH_CONNECT_TIMEOUT="${NANOCLAW_PI_SSH_CONNECT_TIMEOUT:-}"
 EXECUTE=false
 SKIP_APT=false
 SKIP_DOCKER_CHECK=false
@@ -60,6 +61,7 @@ Environment defaults:
   NANOCLAW_PI_RCLONE_REMOTE
   NANOCLAW_PI_REPO_URL
   NANOCLAW_PI_BRANCH
+  NANOCLAW_PI_SSH_CONNECT_TIMEOUT
 
 Examples:
   bash scripts/pi-ssh-bootstrap.sh --host nanoclaw-pi.local --user pi --path /home/pi/NanoClaw --second-brain-root /home/pi/Distributed-Cognition
@@ -75,6 +77,16 @@ add_ssh_option() {
     SSH_OPTIONS+=("$option_value")
   fi
 }
+
+add_default_ssh_options() {
+  if [ -n "$SSH_CONNECT_TIMEOUT" ]; then
+    [[ "$SSH_CONNECT_TIMEOUT" =~ ^[0-9]+$ ]] || { echo "NANOCLAW_PI_SSH_CONNECT_TIMEOUT must be a positive integer" >&2; exit 2; }
+    [ "$SSH_CONNECT_TIMEOUT" -gt 0 ] || { echo "NANOCLAW_PI_SSH_CONNECT_TIMEOUT must be greater than 0" >&2; exit 2; }
+    add_ssh_option "ConnectTimeout=$SSH_CONNECT_TIMEOUT"
+  fi
+}
+
+add_default_ssh_options
 
 shell_quote() {
   printf '%q' "$1"
@@ -384,6 +396,7 @@ print_summary() {
   echo "Repo URL: $REPO_URL"
   echo "Branch: $BRANCH"
   [ -n "$RCLONE_REMOTE" ] && echo "Expected rclone remote: $RCLONE_REMOTE"
+  [ -n "$SSH_CONNECT_TIMEOUT" ] && echo "SSH connect timeout: ${SSH_CONNECT_TIMEOUT}s"
   echo "Skip apt: $SKIP_APT"
   echo "Skip Docker check: $SKIP_DOCKER_CHECK"
 }

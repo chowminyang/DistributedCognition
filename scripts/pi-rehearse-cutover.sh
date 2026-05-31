@@ -11,6 +11,7 @@ PI_SECOND_BRAIN_ROOT="${NANOCLAW_PI_SECOND_BRAIN_ROOT:-}"
 PI_CODEX_PROJECTS_ROOT="${NANOCLAW_PI_CODEX_PROJECTS_ROOT:-}"
 PI_RCLONE_REMOTE="${NANOCLAW_PI_RCLONE_REMOTE:-dropbox:}"
 PI_UNIT_NAME="${NANOCLAW_PI_UNIT_NAME:-}"
+PI_SSH_CONNECT_TIMEOUT="${NANOCLAW_PI_SSH_CONNECT_TIMEOUT:-10}"
 REPO_URL="${NANOCLAW_PI_REPO_URL:-https://github.com/chowminyang/DistributedCognition.git}"
 BRANCH="${NANOCLAW_PI_BRANCH:-main}"
 MIGRATION_DATE="${NANOCLAW_PI_MIGRATION_DATE:-02-06-26}"
@@ -62,6 +63,7 @@ Environment defaults:
   NANOCLAW_PI_CODEX_PROJECTS_ROOT
   NANOCLAW_PI_RCLONE_REMOTE
   NANOCLAW_PI_UNIT_NAME
+  NANOCLAW_PI_SSH_CONNECT_TIMEOUT
   NANOCLAW_PI_REPO_URL
   NANOCLAW_PI_BRANCH
   NANOCLAW_PI_MIGRATION_DATE
@@ -198,6 +200,7 @@ write_operator_env() {
     write_export_line "NANOCLAW_PI_CODEX_PROJECTS_ROOT" "$PI_CODEX_PROJECTS_ROOT" "Pi Codex projects folder"
     write_export_line "NANOCLAW_PI_RCLONE_REMOTE" "$PI_RCLONE_REMOTE" "Pi rclone remote"
     write_export_line "NANOCLAW_PI_UNIT_NAME" "$PI_UNIT_NAME" "Pi NanoClaw systemd unit name" "optional"
+    write_export_line "NANOCLAW_PI_SSH_CONNECT_TIMEOUT" "$PI_SSH_CONNECT_TIMEOUT" "Pi SSH connect timeout in seconds"
     write_export_line "NANOCLAW_PI_REPO_URL" "$REPO_URL" "DistributedCognition repo URL"
     write_export_line "NANOCLAW_PI_BRANCH" "$BRANCH" "DistributedCognition branch"
     write_export_line "NANOCLAW_PI_MIGRATION_DATE" "$MIGRATION_DATE" "planned migration date"
@@ -262,6 +265,7 @@ write_summary() {
     printf -- '- Pi Codex projects folder: `%s`\n' "${PI_CODEX_PROJECTS_ROOT:-<optional-not-set>}"
     printf -- '- Pi rclone remote: `%s`\n' "${PI_RCLONE_REMOTE:-<optional-not-set>}"
     printf -- '- Pi systemd unit: `%s`\n' "${PI_UNIT_NAME:-<auto-detect>}"
+    printf -- '- Pi SSH connect timeout: `%ss`\n' "${PI_SSH_CONNECT_TIMEOUT:-<unset>}"
     printf -- '- Repo URL: `%s`\n' "${REPO_URL:-<missing>}"
     printf -- '- Branch: `%s`\n' "${BRANCH:-<missing>}"
     printf -- '- Migration date: `%s`\n\n' "$MIGRATION_DATE"

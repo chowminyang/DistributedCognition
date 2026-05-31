@@ -172,7 +172,9 @@ This creates `output/pi-cutover-rehearsal/DD-MM-YY-HHMM/` with the Codex
 `/goal`, a non-secret `operator-env.sh` file to source in the Mac Codex
 thread, cutover checklist, SSH bootstrap dry run, SSH state-restore dry run,
 SSH runtime-start dry run, and a summary. It does not open SSH, stop the Mac
-host, export state, import state, or touch WhatsApp.
+host, export state, import state, or touch WhatsApp. The generated operator
+environment also sets `NANOCLAW_PI_SSH_CONNECT_TIMEOUT=10` so SSH helpers fail
+quickly if the Pi hostname or IP is stale.
 
 To produce a broader Mac-side readiness bundle before Tuesday:
 

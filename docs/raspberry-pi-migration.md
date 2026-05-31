@@ -103,8 +103,10 @@ default. It opens no SSH connection, stops no local service, exports no state,
 and does not touch WhatsApp auth. Use this before Tuesday so the Mac Codex
 thread can start from a concrete bundle instead of improvising.
 The generated `operator-env.sh` contains only non-secret SSH, path, repo,
-branch, date, and rclone values. Source it from the Mac Codex shell before
-running the cutover helpers.
+branch, date, rclone, and SSH timeout values. Source it from the Mac Codex
+shell before running the cutover helpers. By default it sets
+`NANOCLAW_PI_SSH_CONNECT_TIMEOUT=10`, which keeps Codex from waiting forever if
+the Pi hostname or IP is wrong.
 
 For a broader one-command readiness snapshot on the Mac, run:
 
@@ -349,6 +351,7 @@ export NANOCLAW_PI_PROJECT_ROOT=/home/pi/NanoClaw
 export NANOCLAW_PI_SECOND_BRAIN_ROOT=/home/pi/Distributed-Cognition
 export NANOCLAW_PI_CODEX_PROJECTS_ROOT=/home/pi/Codex
 export NANOCLAW_PI_RCLONE_REMOTE=dropbox:
+export NANOCLAW_PI_SSH_CONNECT_TIMEOUT=10
 
 pnpm run pi:ssh-preflight
 ```

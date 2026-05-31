@@ -13,6 +13,7 @@ RCLONE_TARGET="${NANOCLAW_PI_RCLONE_TARGET:-}"
 RCLONE_INTERVAL="${NANOCLAW_PI_RCLONE_INTERVAL:-5min}"
 RCLONE_MODE="${NANOCLAW_PI_RCLONE_MODE:-copy}"
 UNIT_NAME="${NANOCLAW_PI_UNIT_NAME:-}"
+SSH_CONNECT_TIMEOUT="${NANOCLAW_PI_SSH_CONNECT_TIMEOUT:-}"
 EXECUTE=false
 SKIP_RCLONE=false
 SKIP_DOCKER_ACCESS=false
@@ -79,6 +80,7 @@ Environment defaults:
   NANOCLAW_PI_RCLONE_INTERVAL
   NANOCLAW_PI_RCLONE_MODE
   NANOCLAW_PI_UNIT_NAME
+  NANOCLAW_PI_SSH_CONNECT_TIMEOUT
 
 Examples:
   bash scripts/pi-ssh-start-runtime.sh --host nanoclaw-pi.local --user pi --path /home/pi/NanoClaw --second-brain-root /home/pi/Distributed-Cognition --codex-projects-root /home/pi/Codex
@@ -94,6 +96,16 @@ add_ssh_option() {
     SSH_OPTIONS+=("$option_value")
   fi
 }
+
+add_default_ssh_options() {
+  if [ -n "$SSH_CONNECT_TIMEOUT" ]; then
+    [[ "$SSH_CONNECT_TIMEOUT" =~ ^[0-9]+$ ]] || { echo "NANOCLAW_PI_SSH_CONNECT_TIMEOUT must be a positive integer" >&2; exit 2; }
+    [ "$SSH_CONNECT_TIMEOUT" -gt 0 ] || { echo "NANOCLAW_PI_SSH_CONNECT_TIMEOUT must be greater than 0" >&2; exit 2; }
+    add_ssh_option "ConnectTimeout=$SSH_CONNECT_TIMEOUT"
+  fi
+}
+
+add_default_ssh_options
 
 shell_quote() {
   printf '%q' "$1"
@@ -225,6 +237,7 @@ echo "Second brain root: $SECOND_BRAIN_ROOT"
 echo "rclone target: $RCLONE_TARGET"
 echo "rclone interval: $RCLONE_INTERVAL"
 echo "rclone mode: $RCLONE_MODE"
+[ -n "$SSH_CONNECT_TIMEOUT" ] && echo "SSH connect timeout: ${SSH_CONNECT_TIMEOUT}s"
 [ -n "$UNIT_NAME" ] && echo "Service unit: $UNIT_NAME"
 echo
 
