@@ -73,7 +73,7 @@ pnpm run dc:install-launchd -- status
 
 Omit `--execute-bridges` for a dry-run scheduler. Logs are written under `logs/launchd/`, and `pnpm run dc:install-launchd -- uninstall` removes the generated LaunchAgents.
 
-For Raspberry Pi cutover, use Codex on the Mac as the SSH control plane, but run Distributed Cognition fully on the Pi. Stop the Mac launchd jobs before exporting state, restore the state bundle on the Pi, sync only the selected `Distributed-Cognition` folder with external rclone, and run NanoClaw as a Pi systemd service. See [docs/raspberry-pi-migration.md](docs/raspberry-pi-migration.md).
+For Raspberry Pi cutover, use Codex on the Mac as the SSH control plane, but run Distributed Cognition fully on the Pi. Stop the Mac launchd jobs before exporting state, restore the state bundle on the Pi, sync only the selected `Distributed-Cognition` folder with external rclone, and run NanoClaw as a Pi systemd service. The final export writes a local Mac runtime lock so this checkout will not restart WhatsApp/Baileys by accident after the Pi takes over. See [docs/raspberry-pi-migration.md](docs/raspberry-pi-migration.md).
 
 To print a read-only cutover checklist from your current environment:
 
@@ -230,6 +230,12 @@ pnpm run pi:mac-preflight -- \
 only during the final Pi cutover after stopping launchd. It also reports and
 stops running NanoClaw Docker agent containers named `nanoclaw-v2-*`, so final
 export is quiet even if an agent was mid-task.
+
+`pi:export` writes `logs/pi-cutover/mac-runtime-disabled.lock` after creating
+the secret bundle. From then on, `pnpm start` / `pnpm dev` in this Mac checkout
+will refuse to start the WhatsApp runtime unless you intentionally roll back by
+removing that lock, or temporarily set
+`NANOCLAW_ALLOW_MAC_RUNTIME_AFTER_PI_EXPORT=true`.
 
 Once the Pi is reachable by SSH, check it from the Mac:
 

@@ -147,8 +147,12 @@ directory is this checkout, screen sessions named for NanoClaw / Distributed
 Cognition, and NanoClaw Docker agent containers named `nanoclaw-v2-*`. The
 export script writes a secret bundle and a matching `.sha256` file. Treat the
 bundle like a password because it contains `.env` and WhatsApp auth. After
-exporting, do not restart the Mac NanoClaw host unless you intentionally roll
-back from the Pi.
+exporting, `pi:export` also writes
+`logs/pi-cutover/mac-runtime-disabled.lock`. This makes `pnpm start` / `pnpm dev`
+in the Mac checkout refuse to start the WhatsApp runtime by accident. Remove
+that lock only for rollback, or set
+`NANOCLAW_ALLOW_MAC_RUNTIME_AFTER_PI_EXPORT=true` for a deliberate temporary
+override.
 
 ## First Boot On The Pi
 
@@ -570,6 +574,9 @@ sudo systemctl stop 'nanoclaw-v2-*.service'
 ```
 
 Then start the old Mac service again. Do not leave both services running against the same WhatsApp account.
+If you used the final export path, remove
+`logs/pi-cutover/mac-runtime-disabled.lock` first, or set
+`NANOCLAW_ALLOW_MAC_RUNTIME_AFTER_PI_EXPORT=true` for the rollback start.
 
 ## Notes
 

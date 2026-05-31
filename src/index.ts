@@ -17,6 +17,7 @@ import { startActiveDeliveryPoll, startSweepDeliveryPoll, setDeliveryAdapter, st
 import { startHostSweep, stopHostSweep } from './host-sweep.js';
 import { routeInbound } from './router.js';
 import { log } from './log.js';
+import { MAC_RUNTIME_LOCK_OVERRIDE_ENV, checkMacRuntimeLock } from './runtime-lock.js';
 
 // Response + shutdown registries live in response-registry.ts to break the
 // circular import cycle: src/index.ts imports src/modules/index.js for side
@@ -64,6 +65,17 @@ import type { ChannelAdapter, ChannelSetup } from './channels/adapter.js';
 import { initChannelAdapters, teardownChannelAdapters, getChannelAdapter } from './channels/channel-registry.js';
 
 async function main(): Promise<void> {
+  const runtimeLock = checkMacRuntimeLock();
+  if (runtimeLock.blocked) {
+    throw new Error(
+      `Mac NanoClaw runtime is disabled by Raspberry Pi cutover lock at ${runtimeLock.path}. ` +
+        `Remove the lock only for rollback, or set ${MAC_RUNTIME_LOCK_OVERRIDE_ENV}=true for an intentional override.`,
+    );
+  }
+  if (runtimeLock.reason === 'override') {
+    log.warn('Mac runtime cutover lock override is enabled', { path: runtimeLock.path });
+  }
+
   log.info('NanoClaw starting');
 
   // 0. Circuit breaker — backoff on rapid restarts

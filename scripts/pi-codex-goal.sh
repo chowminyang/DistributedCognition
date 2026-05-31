@@ -234,6 +234,7 @@ Work plan:
 7. Run Mac export preflight and export the secret state bundle:
    pnpm run pi:mac-preflight -- --root "${MAC_SECOND_BRAIN_DISPLAY}" --out-dir "${OUT_DIR}" --require-stopped
    pnpm run pi:export -- --out-dir "${OUT_DIR}"
+   Confirm the export wrote a Mac runtime lock under logs/pi-cutover/ so accidental Mac host restarts are blocked after cutover.
 8. Restore the final state bundle from the Mac control plane using the dry-run helper first:
    STATE_BUNDLE="\$(ls -t "${OUT_DIR}"/nanoclaw-pi-state-*.tar.gz | head -n 1)"
    pnpm run pi:inspect-state-bundle -- --bundle "\$STATE_BUNDLE"

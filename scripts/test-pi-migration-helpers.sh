@@ -162,6 +162,7 @@ assert_contains "$goal_out" "pnpm run pi:ssh-restore-state" "codex goal includes
 assert_contains "$goal_out" "pnpm run pi:ssh-start-runtime" "codex goal includes SSH runtime start"
 assert_contains "$goal_out" "execute path must refuse to start while the Mac NanoClaw host is still running" "codex goal includes Mac host runtime guard"
 assert_contains "$goal_out" "Mac NanoClaw Docker agent containers are still running" "codex goal includes Mac Docker runtime guard"
+assert_contains "$goal_out" "Mac runtime lock under logs/pi-cutover/" "codex goal includes Mac runtime lock"
 assert_contains "$goal_out" "--proof-text" "codex goal includes Pi WhatsApp persistence proof"
 assert_contains "$goal_out" "--expected-commit" "codex goal includes expected commit verification"
 assert_contains "$goal_out" "Do not mark the goal complete" "codex goal includes completion guard"
@@ -204,6 +205,7 @@ assert_contains "$plan_out" "pnpm run pi:ssh-preflight" "cutover plan includes S
 assert_contains "$plan_out" "pnpm run pi:ssh-restore-state" "cutover plan includes SSH state restore"
 assert_contains "$plan_out" "pnpm run pi:ssh-start-runtime" "cutover plan includes SSH runtime start"
 assert_contains "$plan_out" "Mac NanoClaw host or NanoClaw Docker agent containers appear to be running" "cutover plan documents Mac host and Docker runtime guard"
+assert_contains "$plan_out" "logs/pi-cutover/mac-runtime-disabled.lock" "cutover plan documents Mac runtime lock"
 assert_contains "$plan_out" "pnpm run pi:ssh-admin -- doctor" "cutover plan includes Pi doctor check"
 assert_contains "$plan_out" "--proof-text" "cutover plan includes Pi WhatsApp persistence proof"
 assert_contains "$plan_out" "NANOCLAW_PI_EXPECTED_COMMIT" "cutover plan records expected Pi commit"
@@ -452,6 +454,10 @@ assert_contains "$TMP_DIR/ssh-start-runtime-help.out" "--skip-bridge-timers" "ss
 assert_contains "$TMP_DIR/ssh-start-runtime-help.out" "--execute-bridges" "ssh start runtime help documents bridge timer execute mode"
 assert_contains "$TMP_DIR/ssh-start-runtime-help.out" "--allow-mac-host-running" "ssh start runtime help documents Mac host guard override"
 assert_contains "$TMP_DIR/ssh-start-runtime-help.out" "NANOCLAW_PI_SSH_CONNECT_TIMEOUT" "ssh start runtime help documents SSH timeout env"
+
+pnpm run pi:export -- --help >"$TMP_DIR/pi-export-help.out"
+assert_contains "$TMP_DIR/pi-export-help.out" "--no-runtime-lock" "pi export help documents runtime lock opt-out"
+assert_contains "$TMP_DIR/pi-export-help.out" "NANOCLAW_ALLOW_MAC_RUNTIME_AFTER_PI_EXPORT" "pi export help documents runtime lock override"
 
 set +e
 pnpm run pi:ssh-admin -- status >"$TMP_DIR/ssh-admin-missing.out" 2>"$TMP_DIR/ssh-admin-missing.err"

@@ -4,6 +4,8 @@ set -euo pipefail
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 OUT_DIR="$PROJECT_ROOT/output"
 ALLOW_RUNNING="false"
+CREATE_RUNTIME_LOCK="true"
+RUNTIME_LOCK="$PROJECT_ROOT/logs/pi-cutover/mac-runtime-disabled.lock"
 
 usage() {
   cat <<'EOF'
@@ -14,10 +16,16 @@ Creates a secret NanoClaw state bundle for Raspberry Pi migration.
 Options:
   --out-dir <path>       Output directory. Default: ./output
   --allow-running        Export even if a NanoClaw process appears to be running.
+  --no-runtime-lock      Do not write the local Mac cutover runtime lock.
   -h, --help             Show this help.
 
 The bundle includes .env, data/, store/, groups/, and ~/.config/nanoclaw
 allowlist files when present. It contains secrets.
+
+After a successful export, this script writes a local ignored lock file that
+prevents this Mac checkout from starting the WhatsApp/NanoClaw runtime again
+by accident. Remove it only for rollback, or set
+NANOCLAW_ALLOW_MAC_RUNTIME_AFTER_PI_EXPORT=true for an intentional override.
 EOF
 }
 
@@ -30,6 +38,13 @@ while [ "$#" -gt 0 ]; do
       ;;
     --allow-running)
       ALLOW_RUNNING="true"
+      shift
+      ;;
+    --no-runtime-lock)
+      CREATE_RUNTIME_LOCK="false"
+      shift
+      ;;
+    --)
       shift
       ;;
     -h|--help)
@@ -58,6 +73,22 @@ copy_path() {
   else
     cp -a "$src" "$dest_dir/"
   fi
+}
+
+write_runtime_lock() {
+  local source_host
+  source_host="$(hostname 2>/dev/null || printf 'unknown')"
+  mkdir -p "$(dirname "$RUNTIME_LOCK")"
+  {
+    printf '# Distributed Cognition Mac runtime lock\n'
+    printf 'created_at_utc=%s\n' "$STAMP"
+    printf 'source_host=%s\n' "$source_host"
+    printf 'project_root=%s\n' "$PROJECT_ROOT"
+    printf 'state_bundle=%s\n' "$BUNDLE"
+    printf 'reason=pi_state_export_completed\n'
+    printf 'override_env=NANOCLAW_ALLOW_MAC_RUNTIME_AFTER_PI_EXPORT=true\n'
+  } > "$RUNTIME_LOCK"
+  chmod 600 "$RUNTIME_LOCK"
 }
 
 if [ "$ALLOW_RUNNING" != "true" ] && is_nanoclaw_running; then
@@ -113,6 +144,10 @@ EOF
 tar -C "$TMP_DIR" -czf "$BUNDLE" .
 chmod 600 "$BUNDLE"
 
+if [ "$CREATE_RUNTIME_LOCK" = "true" ]; then
+  write_runtime_lock
+fi
+
 if command -v shasum >/dev/null 2>&1; then
   (cd "$OUT_DIR" && shasum -a 256 "$(basename "$BUNDLE")" > "$(basename "$BUNDLE").sha256")
 elif command -v sha256sum >/dev/null 2>&1; then
@@ -124,3 +159,9 @@ fi
 echo "Created: $BUNDLE"
 [ -f "$BUNDLE.sha256" ] && echo "Checksum: $BUNDLE.sha256"
 echo "This bundle contains .env and WhatsApp auth. Keep it private."
+if [ "$CREATE_RUNTIME_LOCK" = "true" ]; then
+  echo "Mac runtime lock: $RUNTIME_LOCK"
+  echo "The Mac NanoClaw runtime will refuse to start from this checkout unless you remove that lock for rollback or set NANOCLAW_ALLOW_MAC_RUNTIME_AFTER_PI_EXPORT=true."
+else
+  echo "Mac runtime lock: skipped"
+fi

@@ -256,6 +256,7 @@ else
   print_command "pnpm run pi:mac-preflight -- --root <mac Distributed-Cognition folder> --out-dir $(quote_shell "$OUT_DIR") --require-stopped"
 fi
 print_command "pnpm run pi:export -- --out-dir $(quote_shell "$OUT_DIR")"
+print_command "# pi:export writes logs/pi-cutover/mac-runtime-disabled.lock so this Mac checkout will not restart the WhatsApp runtime by accident."
 
 section "4. Restore State From Mac"
 print_command "STATE_BUNDLE=\"\$(ls -t $(quote_shell "$OUT_DIR")/nanoclaw-pi-state-*.tar.gz | head -n 1)\""
