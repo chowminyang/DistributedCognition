@@ -555,6 +555,7 @@ PATH="$fake_bin:$PATH" pnpm run pi:mac-readiness -- \
   --include-ssh-preflight \
   >"$TMP_DIR/readiness-with-ssh.out"
 assert_contains "$readiness_ssh_dir/ssh-preflight.txt" "MOCK_SSH_PREFLIGHT=ok" "mac readiness can include SSH preflight"
+assert_contains "$readiness_ssh_dir/ssh-preflight.txt" "--ssh-option ConnectTimeout=10" "mac readiness passes SSH preflight timeout explicitly"
 assert_contains "$readiness_ssh_dir/summary.md" "SSH preflight was attempted" "mac readiness summary distinguishes SSH preflight mode"
 assert_contains "$TMP_DIR/readiness-with-ssh.out" "SSH preflight was attempted" "mac readiness stdout distinguishes SSH preflight mode"
 
@@ -672,12 +673,27 @@ pnpm run pi:verify-cutover -- --strict --output-dir "$TMP_DIR/verify-missing" >"
 verify_missing_code="$?"
 pnpm run pi:verify-cutover -- --execute --output-dir "$TMP_DIR/verify-execute-missing" >"$TMP_DIR/verify-execute-missing.out" 2>"$TMP_DIR/verify-execute-missing.err"
 verify_execute_missing_code="$?"
+PATH="$no_ssh_bin:$PATH" NO_SSH_SENTINEL="$no_ssh_sentinel" pnpm run pi:verify-cutover -- \
+  --strict \
+  --local-root "$TMP_DIR/Distributed-Cognition" \
+  --out-dir "$TMP_DIR/export" \
+  --output-dir "$TMP_DIR/verify-localhost" \
+  --host localhost \
+  --user pi \
+  --path /home/pi/NanoClaw \
+  --second-brain-root /home/pi/Distributed-Cognition \
+  >"$TMP_DIR/verify-localhost.out" \
+  2>"$TMP_DIR/verify-localhost.err"
+verify_localhost_code="$?"
 set -e
 assert_exit_code 1 "$verify_missing_code" "strict cutover verification fails when values are missing"
 assert_exit_code 2 "$verify_execute_missing_code" "execute cutover verification fails before SSH when values are missing"
+assert_exit_code 2 "$verify_localhost_code" "cutover verification refuses localhost before SSH"
 assert_contains "$TMP_DIR/verify-missing.out" "PI_CUTOVER_VERIFY=missing_values" "strict cutover verification reports missing values"
 assert_contains "$TMP_DIR/verify-missing.out" "No SSH was opened" "strict cutover verification remains non-mutating"
 assert_contains "$TMP_DIR/verify-execute-missing.out" "PI_CUTOVER_VERIFY=missing_values" "execute cutover verification reports missing values before SSH"
+assert_contains "$TMP_DIR/verify-localhost.err" "Refusing unsafe Pi host" "cutover verification unsafe host error is explicit"
+[ ! -e "$no_ssh_sentinel" ] || fail "cutover verification opened SSH despite unsafe Pi host"
 
 pnpm run pi:verify-cutover -- --help >"$TMP_DIR/verify-cutover-help.out"
 assert_contains "$TMP_DIR/verify-cutover-help.out" "--proof-text" "cutover verification help documents proof text"
@@ -685,10 +701,12 @@ assert_contains "$TMP_DIR/verify-cutover-help.out" "--proof-since-minutes" "cuto
 assert_contains "$TMP_DIR/verify-cutover-help.out" "--expected-commit" "cutover verification help documents expected commit"
 assert_contains "$TMP_DIR/verify-cutover-help.out" "--expected-bridge-execute-mode" "cutover verification help documents expected bridge timer mode"
 assert_contains "$TMP_DIR/verify-cutover-help.out" "NANOCLAW_PI_SSH_CONNECT_TIMEOUT" "cutover verification help documents SSH timeout env"
+assert_contains "$TMP_DIR/verify-cutover-help.out" "StrictHostKeyChecking=accept-new" "cutover verification help documents non-interactive SSH host key default"
 
 pnpm run pi:ssh-admin -- --help >"$TMP_DIR/ssh-admin-help.out"
 assert_contains "$TMP_DIR/ssh-admin-help.out" "Required options, unless the matching environment defaults are set" "ssh admin help documents env defaults"
 assert_contains "$TMP_DIR/ssh-admin-help.out" "BatchMode=yes" "ssh admin help documents -o style ssh options"
+assert_contains "$TMP_DIR/ssh-admin-help.out" "StrictHostKeyChecking=accept-new" "ssh admin help documents default host key handling"
 assert_contains "$TMP_DIR/ssh-admin-help.out" "doctor" "ssh admin help documents doctor action"
 assert_contains "$TMP_DIR/ssh-admin-help.out" "bridge-timers" "ssh admin help documents bridge timer action"
 assert_contains "$TMP_DIR/ssh-admin-help.out" "process-bridges" "ssh admin help documents Pi-side bridge processing"
@@ -705,6 +723,7 @@ assert_contains "$TMP_DIR/ssh-admin-help.out" "NANOCLAW_PI_EXPECTED_BRIDGE_EXECU
 pnpm run pi:ssh-preflight -- --help >"$TMP_DIR/ssh-preflight-help.out"
 assert_contains "$TMP_DIR/ssh-preflight-help.out" "Required options, unless the matching environment defaults are set" "ssh preflight help documents env defaults"
 assert_contains "$TMP_DIR/ssh-preflight-help.out" "BatchMode=yes" "ssh preflight help documents -o style ssh options"
+assert_contains "$TMP_DIR/ssh-preflight-help.out" "StrictHostKeyChecking=accept-new" "ssh preflight help documents default host key handling"
 assert_contains "$TMP_DIR/ssh-preflight-help.out" "NANOCLAW_PI_SSH_CONNECT_TIMEOUT" "ssh preflight help documents SSH timeout env"
 
 pnpm run pi:ssh-bootstrap -- --help >"$TMP_DIR/ssh-bootstrap-help.out"
@@ -821,11 +840,12 @@ mkdir -p "$fake_admin_bin"
 cat >"$fake_admin_bin/ssh" <<'FAKE_ADMIN_SSH'
 #!/usr/bin/env bash
 set -euo pipefail
+[ -z "${FAKE_ADMIN_SSH_ARGS:-}" ] || printf '%s\n' "$@" >"$FAKE_ADMIN_SSH_ARGS"
 cat >/dev/null
 echo "MOCK_SSH_ADMIN=ok"
 FAKE_ADMIN_SSH
 chmod +x "$fake_admin_bin/ssh"
-PATH="$fake_admin_bin:$PATH" pnpm run pi:ssh-admin -- process-bridges \
+PATH="$fake_admin_bin:$PATH" FAKE_ADMIN_SSH_ARGS="$TMP_DIR/ssh-admin-args.txt" NANOCLAW_PI_SSH_CONNECT_TIMEOUT=7 pnpm run pi:ssh-admin -- process-bridges \
   --host nanoclaw-pi.local \
   --user pi \
   --path /home/pi/NanoClaw \
@@ -837,6 +857,11 @@ PATH="$fake_admin_bin:$PATH" pnpm run pi:ssh-admin -- process-bridges \
 assert_contains "$TMP_DIR/ssh-admin-memory-mode.out" "Bridge execute mode: memory" "ssh admin reports memory bridge mode"
 assert_contains "$TMP_DIR/ssh-admin-memory-mode.out" "Bridge limit: 2" "ssh admin reports bridge limit"
 assert_contains "$TMP_DIR/ssh-admin-memory-mode.out" "MOCK_SSH_ADMIN=ok" "ssh admin opens SSH after local memory-mode validation"
+assert_contains "$TMP_DIR/ssh-admin-args.txt" "BatchMode=yes" "ssh admin passes non-interactive SSH batch mode by default"
+assert_contains "$TMP_DIR/ssh-admin-args.txt" "StrictHostKeyChecking=accept-new" "ssh admin accepts first-seen Pi host keys by default"
+assert_contains "$TMP_DIR/ssh-admin-args.txt" "ServerAliveInterval=15" "ssh admin passes SSH keepalive interval by default"
+assert_contains "$TMP_DIR/ssh-admin-args.txt" "ServerAliveCountMax=2" "ssh admin passes SSH keepalive limit by default"
+assert_contains "$TMP_DIR/ssh-admin-args.txt" "ConnectTimeout=7" "ssh admin passes configured SSH connect timeout"
 
 fake_bridge_admin_bin="$TMP_DIR/fake-bridge-admin-bin"
 mkdir -p "$fake_bridge_admin_bin"

@@ -133,6 +133,14 @@ The SSH helpers enforce the same target boundary before opening SSH. They
 refuse `localhost`, `127.*`, `::1`, `0.0.0.0`, hosts with `user@` prefixes, and
 Pi SSH users with unsupported characters.
 
+Because Mac Codex is the operator, the SSH helpers are non-interactive by
+default. They pass `BatchMode=yes`, `StrictHostKeyChecking=accept-new`,
+`ServerAliveInterval=15`, and `ServerAliveCountMax=2` to `ssh`/`scp`, plus
+`ConnectTimeout=<seconds>` when `NANOCLAW_PI_SSH_CONNECT_TIMEOUT` is set. This
+means a first-seen Pi host key is added automatically, a changed host key is
+rejected, and missing SSH key authentication fails fast instead of hanging for a
+password prompt. Set up SSH key login from the Mac before cutover.
+
 For a broader one-command readiness snapshot on the Mac, run:
 
 ```bash
@@ -429,6 +437,10 @@ When you ask Codex on the Mac to control the Pi, have these ready:
   from Mac Codex.
 - Whether Docker `hello-world` succeeds without `sudo`.
 - The exported bundle path if the restore has not happened yet.
+
+SSH key login from the Mac should already work before final cutover. The helper
+commands are designed for Codex-driven, non-interactive SSH and should fail
+quickly if key auth or host trust is not ready.
 
 Run the SSH preflight from the Mac before restoring state or starting the Pi service:
 

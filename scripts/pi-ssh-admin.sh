@@ -73,6 +73,10 @@ Optional:
                                  only for rollback/emergency work.
   --ssh-option <option>          Extra ssh option. Values like BatchMode=yes
                                  are passed as ssh -o options. May be repeated.
+                                 Defaults include BatchMode=yes,
+                                 StrictHostKeyChecking=accept-new,
+                                 ServerAliveInterval=15, and
+                                 ServerAliveCountMax=2.
   -h, --help                     Show this help.
 
 Environment defaults:
@@ -112,11 +116,7 @@ add_ssh_option() {
 }
 
 add_default_ssh_options() {
-  if [ -n "$SSH_CONNECT_TIMEOUT" ]; then
-    [[ "$SSH_CONNECT_TIMEOUT" =~ ^[0-9]+$ ]] || { echo "NANOCLAW_PI_SSH_CONNECT_TIMEOUT must be a positive integer" >&2; exit 2; }
-    [ "$SSH_CONNECT_TIMEOUT" -gt 0 ] || { echo "NANOCLAW_PI_SSH_CONNECT_TIMEOUT must be greater than 0" >&2; exit 2; }
-    add_ssh_option "ConnectTimeout=$SSH_CONNECT_TIMEOUT"
-  fi
+  add_default_pi_ssh_options "$SSH_CONNECT_TIMEOUT"
 }
 
 add_default_ssh_options

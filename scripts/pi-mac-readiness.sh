@@ -496,6 +496,7 @@ if [ "$INCLUDE_SSH_PREFLIGHT" = "true" ]; then
     ssh_preflight_cmd=(pnpm run pi:ssh-preflight -- --host "$PI_HOST" --user "$PI_USER" --path "$PI_PROJECT_ROOT" --second-brain-root "$PI_SECOND_BRAIN_ROOT")
     [ -n "$PI_CODEX_PROJECTS_ROOT" ] && ssh_preflight_cmd+=(--codex-projects-root "$PI_CODEX_PROJECTS_ROOT")
     [ -n "$PI_RCLONE_REMOTE" ] && ssh_preflight_cmd+=(--rclone-remote "$PI_RCLONE_REMOTE")
+    [ -n "$PI_SSH_CONNECT_TIMEOUT" ] && ssh_preflight_cmd+=(--ssh-option "ConnectTimeout=$PI_SSH_CONNECT_TIMEOUT")
     run_capture_allow_warn "$READINESS_DIR/ssh-preflight.txt" "Pi SSH Preflight" "${ssh_preflight_cmd[@]}"
     if grep -Fq "PREFLIGHT_RESULT=warn" "$READINESS_DIR/ssh-preflight.txt"; then
       warnings+=("Pi SSH preflight completed with warnings")

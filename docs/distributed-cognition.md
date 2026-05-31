@@ -1041,15 +1041,16 @@ Short migration path:
 
 1. Use Codex on the Mac as the SSH control plane for the Pi.
 2. Stop the Mac launchd jobs before exporting state.
-3. Clone the repo on the Raspberry Pi.
-4. Restore only the deliberate state bundle: `.env`, `data/`, `store/`, `groups/`, and NanoClaw allowlists.
-5. Create a local second-brain folder on the Pi.
-6. Use rclone or another external sync method to sync only the selected Dropbox `Distributed-Cognition` folder.
-7. Mount that local folder into Docker.
-8. Rebuild containers on the Raspberry Pi rather than copying Mac images.
-9. Re-pair WhatsApp if needed.
-10. Start the Pi systemd service with bridge timers in `memory` mode.
-11. Verify logs, health, Dropbox writes, and WhatsApp allowlist again.
-12. Use Mac Codex over SSH for checks and heavier app-visible Codex/action handoffs.
+3. Set up SSH key login from the Mac to the Pi; the helper scripts use non-interactive SSH by default.
+4. Clone the repo on the Raspberry Pi.
+5. Restore only the deliberate state bundle: `.env`, `data/`, `store/`, `groups/`, and NanoClaw allowlists.
+6. Create a local second-brain folder on the Pi.
+7. Use rclone or another external sync method to sync only the selected Dropbox `Distributed-Cognition` folder.
+8. Mount that local folder into Docker.
+9. Rebuild containers on the Raspberry Pi rather than copying Mac images.
+10. Re-pair WhatsApp if needed.
+11. Start the Pi systemd service with bridge timers in `memory` mode.
+12. Verify logs, health, Dropbox writes, and WhatsApp allowlist again.
+13. Use Mac Codex over SSH for checks and heavier app-visible Codex/action handoffs.
 
 Do not add Dropbox sync inside NanoClaw. Dropbox or rclone belongs outside the app.

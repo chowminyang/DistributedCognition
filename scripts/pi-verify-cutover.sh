@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+. "$SCRIPT_DIR/pi-ssh-target-guard.sh"
+
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 LOCAL_SECOND_BRAIN_ROOT="${DC_SECOND_BRAIN_ROOT:-}"
 OUT_DIR="$HOME/Desktop/dc-pi-migration"
 HOST="${NANOCLAW_PI_HOST:-${PI_HOST:-}}"
@@ -66,6 +69,10 @@ Optional:
                                  many minutes. Default: 30.
   --ssh-option <option>          Extra ssh option. Values like BatchMode=yes
                                  are passed as ssh -o options. May be repeated.
+                                 Defaults include BatchMode=yes,
+                                 StrictHostKeyChecking=accept-new,
+                                 ServerAliveInterval=15, and
+                                 ServerAliveCountMax=2.
   --execute                      Actually run the local stopped check and SSH verification.
   --strict                       Exit non-zero in dry-run if required values are missing.
   -h, --help                     Show this help.
@@ -138,11 +145,7 @@ add_ssh_option() {
 }
 
 add_default_ssh_options() {
-  if [ -n "$SSH_CONNECT_TIMEOUT" ]; then
-    [[ "$SSH_CONNECT_TIMEOUT" =~ ^[0-9]+$ ]] || { echo "NANOCLAW_PI_SSH_CONNECT_TIMEOUT must be a positive integer" >&2; exit 2; }
-    [ "$SSH_CONNECT_TIMEOUT" -gt 0 ] || { echo "NANOCLAW_PI_SSH_CONNECT_TIMEOUT must be greater than 0" >&2; exit 2; }
-    add_ssh_option "ConnectTimeout=$SSH_CONNECT_TIMEOUT"
-  fi
+  add_default_pi_ssh_options "$SSH_CONNECT_TIMEOUT"
 }
 
 add_default_ssh_options
@@ -513,6 +516,10 @@ require_value "Pi host (--host or NANOCLAW_PI_HOST)" "$HOST"
 require_value "Pi SSH user (--user or NANOCLAW_PI_USER)" "$REMOTE_USER"
 require_value "Pi NanoClaw path (--path or NANOCLAW_PI_PROJECT_ROOT)" "$REMOTE_PROJECT_ROOT"
 require_value "Pi Distributed-Cognition path (--second-brain-root or NANOCLAW_PI_SECOND_BRAIN_ROOT)" "$SECOND_BRAIN_ROOT"
+
+if [ "${#missing[@]}" -eq 0 ]; then
+  assert_pi_ssh_target "$HOST" "$REMOTE_USER"
+fi
 
 mkdir -p "$VERIFY_DIR"
 cd "$PROJECT_ROOT"
