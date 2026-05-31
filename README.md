@@ -169,7 +169,8 @@ pnpm run pi:rehearse-cutover -- \
 ```
 
 This creates `output/pi-cutover-rehearsal/DD-MM-YY-HHMM/` with the Codex
-`/goal`, cutover checklist, SSH bootstrap dry run, SSH state-restore dry run,
+`/goal`, a non-secret `operator-env.sh` file to source in the Mac Codex
+thread, cutover checklist, SSH bootstrap dry run, SSH state-restore dry run,
 SSH runtime-start dry run, and a summary. It does not open SSH, stop the Mac
 host, export state, import state, or touch WhatsApp.
 

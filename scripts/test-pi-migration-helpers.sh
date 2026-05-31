@@ -32,6 +32,20 @@ assert_contains() {
   fi
 }
 
+assert_not_contains() {
+  local file="$1"
+  local pattern="$2"
+  local label="$3"
+  if grep -Fq -- "$pattern" "$file"; then
+    echo "Did not expect to find: $pattern" >&2
+    echo "--- output ---" >&2
+    sed -n '1,180p' "$file" >&2
+    fail "$label"
+  else
+    ok "$label"
+  fi
+}
+
 assert_exit_code() {
   local expected="$1"
   local actual="$2"
@@ -177,17 +191,23 @@ pnpm run pi:rehearse-cutover -- \
 assert_contains "$TMP_DIR/rehearsal.out" "PI_CUTOVER_REHEARSAL=ready" "cutover rehearsal succeeds with complete values"
 assert_contains "$TMP_DIR/rehearsal.out" "No SSH was opened" "cutover rehearsal is non-mutating"
 [ -f "$rehearsal_dir/summary.md" ] || fail "cutover rehearsal writes summary"
+[ -f "$rehearsal_dir/operator-env.sh" ] || fail "cutover rehearsal writes operator env"
 [ -f "$rehearsal_dir/codex-goal.md" ] || fail "cutover rehearsal writes codex goal"
 [ -f "$rehearsal_dir/cutover-plan.txt" ] || fail "cutover rehearsal writes cutover plan"
 [ -f "$rehearsal_dir/ssh-bootstrap-dry-run.txt" ] || fail "cutover rehearsal writes ssh bootstrap dry-run"
 [ -f "$rehearsal_dir/ssh-restore-state-dry-run.txt" ] || fail "cutover rehearsal writes ssh state restore dry-run"
 [ -f "$rehearsal_dir/ssh-start-runtime-dry-run.txt" ] || fail "cutover rehearsal writes ssh runtime start dry-run"
 assert_contains "$rehearsal_dir/codex-goal.md" "/goal" "cutover rehearsal includes goal prompt"
+assert_contains "$rehearsal_dir/operator-env.sh" "export NANOCLAW_PI_HOST=nanoclaw-pi.local" "cutover rehearsal operator env includes Pi host"
+assert_contains "$rehearsal_dir/operator-env.sh" "export NANOCLAW_PI_CODEX_PROJECTS_ROOT=/home/pi/Codex" "cutover rehearsal operator env includes Codex projects root"
+assert_not_contains "$rehearsal_dir/operator-env.sh" "OPENAI_API_KEY" "cutover rehearsal operator env excludes API keys"
+assert_not_contains "$rehearsal_dir/operator-env.sh" "WHATSAPP_" "cutover rehearsal operator env excludes WhatsApp env vars"
 assert_contains "$rehearsal_dir/cutover-plan.txt" "CUTOVER_PLAN=ready" "cutover rehearsal includes ready cutover plan"
 assert_contains "$rehearsal_dir/ssh-bootstrap-dry-run.txt" "PI_SSH_BOOTSTRAP=dry_run" "cutover rehearsal includes bootstrap dry-run"
 assert_contains "$rehearsal_dir/ssh-restore-state-dry-run.txt" "PI_SSH_RESTORE_STATE=dry_run" "cutover rehearsal includes state restore dry-run"
 assert_contains "$rehearsal_dir/ssh-start-runtime-dry-run.txt" "PI_SSH_START_RUNTIME=dry_run" "cutover rehearsal includes runtime start dry-run"
 assert_contains "$rehearsal_dir/summary.md" "No SSH was opened" "cutover rehearsal summary states no SSH"
+assert_contains "$rehearsal_dir/summary.md" "operator-env.sh" "cutover rehearsal summary lists operator env artifact"
 assert_contains "$rehearsal_dir/summary.md" "ssh-restore-state-dry-run.txt" "cutover rehearsal summary lists state restore artifact"
 assert_contains "$rehearsal_dir/summary.md" "ssh-start-runtime-dry-run.txt" "cutover rehearsal summary lists runtime start artifact"
 

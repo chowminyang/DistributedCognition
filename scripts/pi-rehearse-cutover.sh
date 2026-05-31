@@ -23,6 +23,7 @@ Usage: bash scripts/pi-rehearse-cutover.sh [options]
 
 Creates a non-mutating Raspberry Pi cutover rehearsal bundle for Codex on the
 Mac to review before controlling the Pi over SSH. The bundle contains:
+  - operator-env.sh, a non-secret Mac control-plane environment file
   - codex-goal.md
   - cutover-plan.txt
   - ssh-bootstrap-dry-run.txt, or a skipped bootstrap note when values are missing
@@ -159,6 +160,50 @@ run_capture() {
   fi
 }
 
+write_export_line() {
+  local name="$1"
+  local value="$2"
+  local label="$3"
+  local required="${4:-required}"
+
+  if is_missing_or_placeholder "$value"; then
+    if [ "$required" = "optional" ]; then
+      printf '# Optional: %s\n' "$label"
+      printf '# export %s=\n\n' "$name"
+    else
+      printf '# Missing: %s\n' "$label"
+      printf '# export %s=<set-this>\n\n' "$name"
+    fi
+  else
+    printf 'export %s=%s\n' "$name" "$(quote_arg "$value")"
+  fi
+}
+
+write_operator_env() {
+  local output_file="$1"
+  {
+    printf '# Distributed Cognition Pi Operator Environment\n'
+    printf '# Generated: %s\n' "$(date '+%d-%m-%y, %H:%M')"
+    printf '# Source this from Codex on the Mac before running Pi cutover helpers.\n'
+    printf '# This file must contain only non-secret paths and SSH target values.\n'
+    printf '# It must not contain API keys, WhatsApp auth, .env contents, or state bundles.\n\n'
+    printf '# Usage:\n'
+    printf '#   source %s\n\n' "$(quote_arg "$output_file")"
+
+    write_export_line "DC_SECOND_BRAIN_ROOT" "$LOCAL_SECOND_BRAIN_ROOT" "Mac Distributed-Cognition folder"
+    write_export_line "NANOCLAW_PI_HOST" "$PI_HOST" "Pi host or IP"
+    write_export_line "NANOCLAW_PI_USER" "$PI_USER" "Pi SSH user"
+    write_export_line "NANOCLAW_PI_PROJECT_ROOT" "$PI_PROJECT_ROOT" "Pi NanoClaw checkout path"
+    write_export_line "NANOCLAW_PI_SECOND_BRAIN_ROOT" "$PI_SECOND_BRAIN_ROOT" "Pi Distributed-Cognition folder"
+    write_export_line "NANOCLAW_PI_CODEX_PROJECTS_ROOT" "$PI_CODEX_PROJECTS_ROOT" "Pi Codex projects folder"
+    write_export_line "NANOCLAW_PI_RCLONE_REMOTE" "$PI_RCLONE_REMOTE" "Pi rclone remote"
+    write_export_line "NANOCLAW_PI_UNIT_NAME" "$PI_UNIT_NAME" "Pi NanoClaw systemd unit name" "optional"
+    write_export_line "NANOCLAW_PI_REPO_URL" "$REPO_URL" "DistributedCognition repo URL"
+    write_export_line "NANOCLAW_PI_BRANCH" "$BRANCH" "DistributedCognition branch"
+    write_export_line "NANOCLAW_PI_MIGRATION_DATE" "$MIGRATION_DATE" "planned migration date"
+  } >"$output_file"
+}
+
 write_bootstrap_skipped() {
   local output_file="$1"
   {
@@ -238,6 +283,7 @@ write_summary() {
     fi
 
     printf '## Artifacts\n\n'
+    printf -- '- `operator-env.sh`\n'
     printf -- '- `codex-goal.md`\n'
     printf -- '- `cutover-plan.txt`\n'
     printf -- '- `ssh-bootstrap-dry-run.txt`\n'
@@ -246,6 +292,10 @@ write_summary() {
     printf -- '- `summary.md`\n\n'
 
     printf '## Next Commands\n\n'
+    printf 'Load the non-secret operator environment:\n\n'
+    printf '```bash\n'
+    printf 'source %s\n' "$(quote_arg "$REHEARSAL_DIR/operator-env.sh")"
+    printf '```\n\n'
     printf 'Review the generated `/goal` prompt:\n\n'
     printf '```bash\n'
     printf 'sed -n '\''1,220p'\'' %s\n' "$(quote_arg "$REHEARSAL_DIR/codex-goal.md")"
@@ -382,6 +432,8 @@ require_runtime_value "Pi Codex projects path (--pi-codex-projects-root or NANOC
 
 mkdir -p "$REHEARSAL_DIR"
 cd "$PROJECT_ROOT"
+
+write_operator_env "$REHEARSAL_DIR/operator-env.sh"
 
 goal_cmd=(pnpm run pi:codex-goal --)
 [ -n "$LOCAL_SECOND_BRAIN_ROOT" ] && goal_cmd+=(--local-root "$LOCAL_SECOND_BRAIN_ROOT")

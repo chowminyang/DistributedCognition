@@ -82,9 +82,9 @@ The generated prompt tells Codex to inspect current state, use dry-run helpers
 first, ask before final Mac stop/export, keep WhatsApp active on only one host,
 and verify that DC replies from the Pi before marking the goal complete.
 
-To bundle the `/goal`, the read-only cutover checklist, and the SSH dry-runs
-for bootstrap, state restore, and runtime start into one timestamped rehearsal
-folder:
+To bundle the `/goal`, a non-secret Mac operator environment file, the
+read-only cutover checklist, and the SSH dry-runs for bootstrap, state restore,
+and runtime start into one timestamped rehearsal folder:
 
 ```bash
 pnpm run pi:rehearse-cutover -- \
@@ -102,6 +102,9 @@ The rehearsal writes to `output/pi-cutover-rehearsal/DD-MM-YY-HHMM/` by
 default. It opens no SSH connection, stops no local service, exports no state,
 and does not touch WhatsApp auth. Use this before Tuesday so the Mac Codex
 thread can start from a concrete bundle instead of improvising.
+The generated `operator-env.sh` contains only non-secret SSH, path, repo,
+branch, date, and rclone values. Source it from the Mac Codex shell before
+running the cutover helpers.
 
 For a broader one-command readiness snapshot on the Mac, run:
 
