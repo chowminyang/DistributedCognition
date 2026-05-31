@@ -277,6 +277,7 @@ section "6. Smoke Test From Mac"
 if [ -n "$PI_UNIT_NAME" ]; then
   print_command "export NANOCLAW_PI_UNIT_NAME=$(quote_shell "$PI_UNIT_NAME")"
 fi
+print_command "PROOF_TEXT=\"DC Pi cutover proof \$(date '+%d-%m-%y-%H%M')\""
 print_command "pnpm run pi:ssh-admin -- status"
 print_command "pnpm run pi:ssh-admin -- health"
 print_command "pnpm run pi:ssh-admin -- doctor"
@@ -293,7 +294,7 @@ cat <<'EOF'
   From the allowed personal WhatsApp chat, send:
     DC, run a health check.
     DC, what can you see in the second-brain folder?
-    DC, capture this as a harmless Pi cutover test reflection.
+    DC, capture this as Pi cutover proof: <value of PROOF_TEXT>
 
   Confirm:
     - DC replies from the Pi.
@@ -301,6 +302,11 @@ cat <<'EOF'
     - rclone copies those files to the selected Dropbox folder.
     - The Mac host remains stopped.
 EOF
+if [ -n "$LOCAL_SECOND_BRAIN_ROOT" ]; then
+  print_command "pnpm run pi:verify-cutover -- --local-root $(quote_shell "$LOCAL_SECOND_BRAIN_ROOT") --host $(quote_shell "${PI_HOST:-<pi-host>}") --user $(quote_shell "${PI_USER:-<pi-user>}") --path $(quote_shell "${PI_PROJECT_ROOT:-<pi NanoClaw path>}") --second-brain-root $(quote_shell "${PI_SECOND_BRAIN_ROOT:-<pi Distributed-Cognition path>}") --proof-text \"\$PROOF_TEXT\" --proof-since-minutes 30 --execute"
+else
+  print_command "pnpm run pi:verify-cutover -- --local-root <mac Distributed-Cognition folder> --host $(quote_shell "${PI_HOST:-<pi-host>}") --user $(quote_shell "${PI_USER:-<pi-user>}") --path $(quote_shell "${PI_PROJECT_ROOT:-<pi NanoClaw path>}") --second-brain-root $(quote_shell "${PI_SECOND_BRAIN_ROOT:-<pi Distributed-Cognition path>}") --proof-text \"\$PROOF_TEXT\" --proof-since-minutes 30 --execute"
+fi
 
 section "8. Resume Mac-Side Bridges Only"
 cat <<'EOF'

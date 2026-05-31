@@ -410,18 +410,38 @@ pnpm run pi:verify-cutover -- \
   --execute
 ```
 
+For the final WhatsApp persistence proof, generate one unique harmless proof
+phrase, send it from the allowlisted 1:1 WhatsApp chat, then rerun the verifier
+with the same phrase:
+
+```bash
+PROOF_TEXT="DC Pi cutover proof $(date '+%d-%m-%y-%H%M')"
+# Send WhatsApp: DC, capture this as Pi cutover proof: <value of PROOF_TEXT>
+pnpm run pi:verify-cutover -- \
+  --local-root "$HOME/Library/CloudStorage/Dropbox/Distributed-Cognition" \
+  --host nanoclaw-pi.local \
+  --user pi \
+  --path /home/pi/NanoClaw \
+  --second-brain-root /home/pi/Distributed-Cognition \
+  --proof-text "$PROOF_TEXT" \
+  --proof-since-minutes 30 \
+  --execute
+```
+
 The verifier writes `output/pi-cutover-verification/DD-MM-YY-HHMM/` with:
 
 - Mac stopped-state preflight.
 - Pi service/status output.
 - Pi `dc:health` output.
 - Pi dashboard refresh output.
+- Optional Pi WhatsApp persistence proof when `--proof-text` is supplied.
 - A manual WhatsApp checklist.
 
-This helper can prove the local stopped state and Pi health path, but it cannot
-itself prove WhatsApp delivery. The migration is complete only after the
-manual WhatsApp checklist succeeds from the allowlisted 1:1 chat and the new
-capture lands in the Pi second-brain folder.
+This helper can prove the local stopped state and Pi health path. With
+`--proof-text`, it can also prove that a manually sent WhatsApp capture landed
+in recent Pi second-brain files without printing the note body. The visible
+WhatsApp reply still needs to be checked from the allowlisted 1:1 chat before
+the migration is complete.
 
 ## Mac Bridge Jobs After Cutover
 

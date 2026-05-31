@@ -257,8 +257,29 @@ pnpm run pi:verify-cutover -- \
 
 After the Mac host is stopped and the Pi service is running, add `--execute`.
 This checks the Mac stopped state plus Pi status, health, and dashboard output,
-and writes `output/pi-cutover-verification/DD-MM-YY-HHMM/`. The final WhatsApp
-reply test remains manual and is written into the bundle checklist.
+and writes `output/pi-cutover-verification/DD-MM-YY-HHMM/`.
+
+For the final live proof, send one unique harmless WhatsApp phrase from the
+allowlisted chat, then rerun the verifier with that phrase:
+
+```bash
+PROOF_TEXT="DC Pi cutover proof $(date '+%d-%m-%y-%H%M')"
+# Send WhatsApp: DC, capture this as Pi cutover proof: <value of PROOF_TEXT>
+pnpm run pi:verify-cutover -- \
+  --local-root "<local Distributed-Cognition folder>" \
+  --host "<pi-host-or-ip>" \
+  --user "<pi-ssh-user>" \
+  --path "<pi NanoClaw checkout path>" \
+  --second-brain-root "<pi Distributed-Cognition path>" \
+  --proof-text "$PROOF_TEXT" \
+  --proof-since-minutes 30 \
+  --execute
+```
+
+The helper does not send WhatsApp messages, but with `--proof-text` it can SSH
+to the Pi and prove that the manually sent capture landed in recent Pi
+second-brain files. The visible WhatsApp reply is still confirmed manually from
+the bundle checklist.
 
 After WhatsApp replies are proven to come from the Pi, you can re-enable only
 the Mac-side maintenance and bridge jobs so local Codex can keep processing

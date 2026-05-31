@@ -252,10 +252,21 @@ Work plan:
      --path "${PI_PROJECT_DISPLAY}" \\
      --second-brain-root "${PI_SECOND_BRAIN_DISPLAY}" \\
      --execute
-12. Run a live WhatsApp smoke test from my allowed personal chat:
+12. Run a live WhatsApp smoke test from my allowed personal chat, using one unique harmless proof phrase:
+   PROOF_TEXT="DC Pi cutover proof \$(date '+%d-%m-%y-%H%M')"
    DC, run a health check.
    DC, what can you see in the second-brain folder?
-   DC, capture this as a harmless Pi cutover test reflection.
+   DC, capture this as Pi cutover proof: <value of PROOF_TEXT>
+   Then prove that the capture landed in the Pi second-brain folder:
+   pnpm run pi:verify-cutover -- \\
+     --local-root "${MAC_SECOND_BRAIN_DISPLAY}" \\
+     --host "${PI_HOST_DISPLAY}" \\
+     --user "${PI_USER_DISPLAY}" \\
+     --path "${PI_PROJECT_DISPLAY}" \\
+     --second-brain-root "${PI_SECOND_BRAIN_DISPLAY}" \\
+     --proof-text "\$PROOF_TEXT" \\
+     --proof-since-minutes 30 \\
+     --execute
 13. After WhatsApp is proven to be replying from the Pi, reinstall the Mac bridge jobs only:
    pnpm run dc:install-launchd -- install --root "${MAC_SECOND_BRAIN_DISPLAY}" --projects-root "\$HOME/Documents/Codex" --execute-bridges --load
    pnpm run dc:install-launchd -- status
@@ -269,6 +280,7 @@ Completion evidence required:
 - Mac NanoClaw host remains stopped after cutover.
 - The post-cutover verification helper writes a clean verification bundle.
 - DC replies on WhatsApp from the Pi.
+- The proof phrase from the live WhatsApp test is found in recent Pi second-brain files by running pnpm run pi:verify-cutover -- --proof-text ... --execute.
 - A raw note and processed note are created in the Pi Distributed-Cognition folder.
 - rclone sync is configured for only the selected Distributed-Cognition folder.
 - Mac bridge jobs are either intentionally left off or re-enabled only for health/dashboard/Mnemon/Codex/action queues against the synced second-brain folder.

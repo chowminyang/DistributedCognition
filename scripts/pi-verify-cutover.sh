@@ -15,7 +15,11 @@ EXECUTE="false"
 STRICT="false"
 INCLUDE_LOGS="false"
 SKIP_DASHBOARD="false"
+PROOF_TEXT="${NANOCLAW_PI_WHATSAPP_PROOF_TEXT:-}"
+PROOF_SINCE_MINUTES="${NANOCLAW_PI_WHATSAPP_PROOF_SINCE_MINUTES:-30}"
 SSH_OPTIONS=()
+RAW_SSH_OPTIONS=()
+PROOF_RESULT="skipped"
 
 usage() {
   cat <<'EOF'
@@ -46,6 +50,11 @@ Optional:
   --lines <count>                Log lines if --include-logs is supplied. Default: 80.
   --include-logs                 Also capture recent Pi service logs. Logs may contain private content.
   --skip-dashboard               Do not run the remote dashboard refresh.
+  --proof-text <text>            Unique harmless WhatsApp phrase to verify in
+                                 recent Pi second-brain files. The script does
+                                 not send this message; send it manually first.
+  --proof-since-minutes <count>  Search recent Pi files modified within this
+                                 many minutes. Default: 30.
   --ssh-option <option>          Extra ssh option. Values like BatchMode=yes
                                  are passed as ssh -o options. May be repeated.
   --execute                      Actually run the local stopped check and SSH verification.
@@ -59,6 +68,8 @@ Environment defaults:
   NANOCLAW_PI_PROJECT_ROOT
   NANOCLAW_PI_SECOND_BRAIN_ROOT
   NANOCLAW_PI_UNIT_NAME
+  NANOCLAW_PI_WHATSAPP_PROOF_TEXT
+  NANOCLAW_PI_WHATSAPP_PROOF_SINCE_MINUTES
 EOF
 }
 
@@ -105,10 +116,11 @@ is_missing_or_placeholder() {
 
 add_ssh_option() {
   local option_value="$1"
+  SSH_OPTIONS+=("--ssh-option" "$option_value")
   if [[ "$option_value" == *=* && "$option_value" != -* ]]; then
-    SSH_OPTIONS+=("--ssh-option" "$option_value")
+    RAW_SSH_OPTIONS+=("-o" "$option_value")
   else
-    SSH_OPTIONS+=("--ssh-option" "$option_value")
+    RAW_SSH_OPTIONS+=("$option_value")
   fi
 }
 
@@ -163,6 +175,11 @@ write_manual_whatsapp_checklist() {
   {
     printf '# Manual WhatsApp Verification\n\n'
     printf 'Run this only after the Pi service is started and the Mac NanoClaw host remains stopped.\n\n'
+    printf 'For persistence proof, choose a unique harmless phrase such as:\n\n'
+    printf '`DC Pi cutover proof DD-MM-YY-HHMM`\n\n'
+    printf 'Send this from the allowlisted personal WhatsApp identity:\n\n'
+    printf '`DC, capture this as Pi cutover proof: <your unique proof phrase>`\n\n'
+    printf 'Then rerun the verifier with `--proof-text "<your unique proof phrase>" --execute` so the Mac can SSH into the Pi and confirm the phrase landed in the Pi second-brain folder.\n\n'
     printf 'Send these from the allowlisted personal WhatsApp identity:\n\n'
     printf '1. `DC, run a health check.`\n'
     printf '2. `DC, capture this as a harmless Pi cutover verification reflection.`\n'
@@ -175,6 +192,103 @@ write_manual_whatsapp_checklist() {
     printf -- '- The Mac NanoClaw host remains stopped after the reply.\n\n'
     printf 'Do not mark the migration complete until this manual WhatsApp reply path is verified from the Pi.\n'
   } >"$output_file"
+}
+
+write_whatsapp_proof_skipped() {
+  local output_file="$1"
+  {
+    printf '# Pi WhatsApp Persistence Proof\n\n'
+    printf 'Status: `skipped`\n\n'
+    printf 'No proof text was configured. This verifier did not search the Pi second-brain folder for a WhatsApp capture.\n\n'
+    printf 'To prove persistence after manual WhatsApp testing, rerun with:\n\n'
+    printf '```bash\n'
+    printf 'pnpm run pi:verify-cutover -- ... --proof-text "<unique harmless proof phrase>" --execute\n'
+    printf '```\n'
+  } >"$output_file"
+}
+
+write_whatsapp_proof_dry_run() {
+  local output_file="$1"
+  {
+    printf '# Pi WhatsApp Persistence Proof\n\n'
+    printf 'Status: `dry_run`\n\n'
+    printf 'Proof text: `%s`\n\n' "$PROOF_TEXT"
+    printf 'Search window: `%s minutes`\n\n' "$PROOF_SINCE_MINUTES"
+    printf 'Dry-run command:\n\n```bash\n'
+    print_command ssh "${RAW_SSH_OPTIONS[@]}" "$REMOTE_USER@$HOST" "bash -s -- $(quote_arg "$SECOND_BRAIN_ROOT") $(quote_arg "$PROOF_TEXT") $(quote_arg "$PROOF_SINCE_MINUTES")"
+    printf '```\n\n'
+    printf 'Not executed. No SSH was opened. No WhatsApp/runtime state was changed.\n'
+  } >"$output_file"
+}
+
+run_whatsapp_proof_capture() {
+  local output_file="$1"
+  {
+    printf '# Pi WhatsApp Persistence Proof\n\n'
+    printf 'Proof text: `%s`\n\n' "$PROOF_TEXT"
+    printf 'Search window: `%s minutes`\n\n' "$PROOF_SINCE_MINUTES"
+    printf 'Command:\n\n```bash\n'
+    print_command ssh "${RAW_SSH_OPTIONS[@]}" "$REMOTE_USER@$HOST" "bash -s -- $(quote_arg "$SECOND_BRAIN_ROOT") $(quote_arg "$PROOF_TEXT") $(quote_arg "$PROOF_SINCE_MINUTES")"
+    printf '```\n\n'
+  } >"$output_file"
+
+  set +e
+  ssh "${RAW_SSH_OPTIONS[@]}" "$REMOTE_USER@$HOST" 'bash -s' -- "$SECOND_BRAIN_ROOT" "$PROOF_TEXT" "$PROOF_SINCE_MINUTES" >>"$output_file" 2>&1 <<'REMOTE_SCRIPT'
+set -euo pipefail
+
+root="$1"
+proof_text="$2"
+minutes="$3"
+
+if [ -z "$proof_text" ]; then
+  echo "PI_WHATSAPP_PROOF=skipped"
+  echo "No proof text was supplied."
+  exit 2
+fi
+
+if ! [[ "$minutes" =~ ^[0-9]+$ ]] || [ "$minutes" -le 0 ]; then
+  echo "PI_WHATSAPP_PROOF=invalid_window"
+  echo "Search window must be a positive integer number of minutes."
+  exit 2
+fi
+
+if [ ! -d "$root" ]; then
+  echo "PI_WHATSAPP_PROOF=missing"
+  echo "Pi second-brain root not found."
+  echo "Search root: $root"
+  exit 1
+fi
+
+matches=()
+while IFS= read -r -d '' file; do
+  if grep -IlF -- "$proof_text" "$file" >/dev/null 2>&1; then
+    rel="${file#$root/}"
+    matches+=("$rel")
+    [ "${#matches[@]}" -ge 20 ] && break
+  fi
+done < <(find "$root" -type f \( -name '*.md' -o -name '*.txt' -o -name '*.json' \) -mmin "-$minutes" -print0)
+
+if [ "${#matches[@]}" -eq 0 ]; then
+  echo "PI_WHATSAPP_PROOF=missing"
+  echo "No recent Markdown/text/JSON file under the Pi second-brain root contained the proof text."
+  echo "Search root: $root"
+  echo "Search window minutes: $minutes"
+  exit 1
+fi
+
+echo "PI_WHATSAPP_PROOF=found"
+echo "Matched recent files relative to the Pi second-brain root:"
+printf -- '- %s\n' "${matches[@]}"
+REMOTE_SCRIPT
+  local exit_code="$?"
+  set -e
+
+  if [ "$exit_code" -ne 0 ]; then
+    PROOF_RESULT="missing"
+    failures+=("Pi WhatsApp persistence proof exited with $exit_code")
+  else
+    PROOF_RESULT="found"
+  fi
 }
 
 while [ "$#" -gt 0 ]; do
@@ -224,6 +338,17 @@ while [ "$#" -gt 0 ]; do
       [[ "$LINES" =~ ^[0-9]+$ ]] || { echo "--lines must be an integer" >&2; exit 2; }
       shift 2
       ;;
+    --proof-text)
+      PROOF_TEXT="${2:-}"
+      [ -n "$PROOF_TEXT" ] || { echo "Missing value for --proof-text" >&2; exit 2; }
+      shift 2
+      ;;
+    --proof-since-minutes)
+      PROOF_SINCE_MINUTES="${2:-}"
+      [[ "$PROOF_SINCE_MINUTES" =~ ^[0-9]+$ ]] || { echo "--proof-since-minutes must be a positive integer" >&2; exit 2; }
+      [ "$PROOF_SINCE_MINUTES" -gt 0 ] || { echo "--proof-since-minutes must be greater than 0" >&2; exit 2; }
+      shift 2
+      ;;
     --ssh-option)
       option_value="${2:-}"
       [ -n "$option_value" ] || { echo "Missing value for --ssh-option" >&2; exit 2; }
@@ -264,6 +389,11 @@ done
 LOCAL_SECOND_BRAIN_ROOT="$(expand_local_path "$LOCAL_SECOND_BRAIN_ROOT")"
 OUT_DIR="$(expand_local_path "$OUT_DIR")"
 VERIFY_DIR="$(expand_local_path "$VERIFY_DIR")"
+
+if ! [[ "$PROOF_SINCE_MINUTES" =~ ^[0-9]+$ ]] || [ "$PROOF_SINCE_MINUTES" -le 0 ]; then
+  echo "NANOCLAW_PI_WHATSAPP_PROOF_SINCE_MINUTES must be a positive integer" >&2
+  exit 2
+fi
 
 if [ -z "$VERIFY_DIR" ]; then
   timestamp="$(date '+%d-%m-%y-%H%M')"
@@ -317,6 +447,11 @@ if [ "$EXECUTE" = "true" ]; then
   if [ "$INCLUDE_LOGS" = "true" ]; then
     run_capture "$VERIFY_DIR/pi-logs.txt" "Pi Service Logs" "${logs_cmd[@]}"
   fi
+  if [ -n "$PROOF_TEXT" ]; then
+    run_whatsapp_proof_capture "$VERIFY_DIR/pi-whatsapp-proof.txt"
+  else
+    write_whatsapp_proof_skipped "$VERIFY_DIR/pi-whatsapp-proof.txt"
+  fi
 else
   write_dry_run_artifact "$VERIFY_DIR/mac-stopped-check.txt" "Mac Host Stopped Check" "${mac_check_cmd[@]}"
   write_dry_run_artifact "$VERIFY_DIR/pi-status.txt" "Pi Status" "${status_cmd[@]}"
@@ -324,6 +459,12 @@ else
   write_dry_run_artifact "$VERIFY_DIR/pi-dashboard.txt" "Pi Dashboard" "${dashboard_cmd[@]}"
   if [ "$INCLUDE_LOGS" = "true" ]; then
     write_dry_run_artifact "$VERIFY_DIR/pi-logs.txt" "Pi Service Logs" "${logs_cmd[@]}"
+  fi
+  if [ -n "$PROOF_TEXT" ]; then
+    PROOF_RESULT="dry_run"
+    write_whatsapp_proof_dry_run "$VERIFY_DIR/pi-whatsapp-proof.txt"
+  else
+    write_whatsapp_proof_skipped "$VERIFY_DIR/pi-whatsapp-proof.txt"
   fi
 fi
 
@@ -335,6 +476,8 @@ if [ "$EXECUTE" = "true" ]; then
   if [ "${#failures[@]}" -gt 0 ]; then
     status="fail"
     exit_code=1
+  elif [ "$PROOF_RESULT" = "found" ]; then
+    status="verified_local_pi_and_whatsapp_persistence"
   else
     status="verified_local_and_pi_checks"
   fi
@@ -361,6 +504,8 @@ fi
   printf -- '- Pi NanoClaw path: `%s`\n' "${REMOTE_PROJECT_ROOT:-<missing>}"
   printf -- '- Pi Distributed-Cognition folder: `%s`\n' "${SECOND_BRAIN_ROOT:-<missing>}"
   printf -- '- Pi systemd unit: `%s`\n\n' "${UNIT_NAME:-<auto-detect>}"
+  printf -- '- WhatsApp persistence proof: `%s`\n' "$PROOF_RESULT"
+  printf -- '- WhatsApp proof search window: `%s minutes`\n\n' "$PROOF_SINCE_MINUTES"
 
   if [ "${#missing[@]}" -gt 0 ]; then
     printf '## Missing Values\n\n'
@@ -384,10 +529,11 @@ fi
   printf -- '- `pi-health.txt`\n'
   printf -- '- `pi-dashboard.txt`\n'
   [ "$INCLUDE_LOGS" = "true" ] && printf -- '- `pi-logs.txt`\n'
+  printf -- '- `pi-whatsapp-proof.txt`\n'
   printf -- '- `manual-whatsapp-checklist.md`\n\n'
 
   printf '## Completion Rule\n\n'
-  printf 'This helper can verify the Mac stopped state plus Pi service/health/dashboard checks. It cannot by itself prove WhatsApp delivery. The migration is complete only after the manual WhatsApp checklist also succeeds from the Pi.\n'
+  printf 'This helper verifies the Mac stopped state plus Pi service/health/dashboard checks. If `--proof-text` is supplied after a manual WhatsApp test, it also verifies that the proof phrase landed in recent Pi second-brain files. The visual WhatsApp reply still needs to be confirmed from the allowlisted 1:1 chat before migration is complete.\n'
 } >"$VERIFY_DIR/summary.md"
 
 echo "PI_CUTOVER_VERIFY=$status"

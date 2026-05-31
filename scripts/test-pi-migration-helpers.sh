@@ -111,6 +111,7 @@ assert_contains "$goal_out" "Raspberry Pi is the final always-on Distributed Cog
 assert_contains "$goal_out" "pnpm run pi:ssh-bootstrap" "codex goal includes SSH bootstrap"
 assert_contains "$goal_out" "pnpm run pi:ssh-restore-state" "codex goal includes SSH state restore"
 assert_contains "$goal_out" "pnpm run pi:ssh-start-runtime" "codex goal includes SSH runtime start"
+assert_contains "$goal_out" "--proof-text" "codex goal includes Pi WhatsApp persistence proof"
 assert_contains "$goal_out" "Do not mark the goal complete" "codex goal includes completion guard"
 assert_contains "$goal_out" "02-06-26" "codex goal includes migration date"
 assert_contains "$goal_out" "reinstall the Mac bridge jobs only" "codex goal keeps Mac bridge-only resumption explicit"
@@ -151,6 +152,7 @@ assert_contains "$plan_out" "pnpm run pi:ssh-preflight" "cutover plan includes S
 assert_contains "$plan_out" "pnpm run pi:ssh-restore-state" "cutover plan includes SSH state restore"
 assert_contains "$plan_out" "pnpm run pi:ssh-start-runtime" "cutover plan includes SSH runtime start"
 assert_contains "$plan_out" "pnpm run pi:ssh-admin -- doctor" "cutover plan includes Pi doctor check"
+assert_contains "$plan_out" "--proof-text" "cutover plan includes Pi WhatsApp persistence proof"
 assert_contains "$plan_out" "Resume Mac-Side Bridges Only" "cutover plan includes bridge-only Mac resumption"
 assert_contains "$plan_out" "pnpm run dc:install-launchd -- install" "cutover plan re-enables only bridge jobs after Pi proof"
 
@@ -269,6 +271,8 @@ pnpm run pi:verify-cutover -- \
   --unit-name nanoclaw-v2-test.service \
   --include-logs \
   --lines 12 \
+  --proof-text "DC Pi cutover proof 02-06-26-1200" \
+  --proof-since-minutes 45 \
   >"$TMP_DIR/verify-cutover.out"
 assert_contains "$TMP_DIR/verify-cutover.out" "PI_CUTOVER_VERIFY=dry_run" "cutover verification dry-run reports status"
 assert_contains "$TMP_DIR/verify-cutover.out" "No SSH was opened" "cutover verification dry-run is non-mutating"
@@ -278,11 +282,16 @@ assert_contains "$TMP_DIR/verify-cutover.out" "No SSH was opened" "cutover verif
 [ -f "$verify_dir/pi-health.txt" ] || fail "cutover verification writes Pi health check"
 [ -f "$verify_dir/pi-dashboard.txt" ] || fail "cutover verification writes Pi dashboard check"
 [ -f "$verify_dir/pi-logs.txt" ] || fail "cutover verification writes optional logs check"
+[ -f "$verify_dir/pi-whatsapp-proof.txt" ] || fail "cutover verification writes WhatsApp persistence proof"
 [ -f "$verify_dir/manual-whatsapp-checklist.md" ] || fail "cutover verification writes WhatsApp checklist"
 assert_contains "$verify_dir/mac-stopped-check.txt" "pnpm run pi:mac-preflight" "cutover verification checks Mac stopped state"
 assert_contains "$verify_dir/pi-status.txt" "pnpm run pi:ssh-admin -- status" "cutover verification checks Pi status"
 assert_contains "$verify_dir/pi-health.txt" "pnpm run pi:ssh-admin -- health" "cutover verification checks Pi health"
+assert_contains "$verify_dir/pi-whatsapp-proof.txt" "Status: \`dry_run\`" "cutover verification can dry-run WhatsApp proof"
+assert_contains "$verify_dir/pi-whatsapp-proof.txt" "DC Pi cutover proof 02-06-26-1200" "cutover verification records proof phrase"
+assert_contains "$verify_dir/summary.md" "pi-whatsapp-proof.txt" "cutover verification summary lists WhatsApp proof"
 assert_contains "$verify_dir/manual-whatsapp-checklist.md" "Do not mark the migration complete" "cutover verification keeps WhatsApp proof explicit"
+assert_contains "$verify_dir/manual-whatsapp-checklist.md" "--proof-text" "cutover verification checklist explains proof rerun"
 
 set +e
 pnpm run pi:verify-cutover -- --strict --output-dir "$TMP_DIR/verify-missing" >"$TMP_DIR/verify-missing.out" 2>"$TMP_DIR/verify-missing.err"
@@ -295,6 +304,10 @@ assert_exit_code 2 "$verify_execute_missing_code" "execute cutover verification 
 assert_contains "$TMP_DIR/verify-missing.out" "PI_CUTOVER_VERIFY=missing_values" "strict cutover verification reports missing values"
 assert_contains "$TMP_DIR/verify-missing.out" "No SSH was opened" "strict cutover verification remains non-mutating"
 assert_contains "$TMP_DIR/verify-execute-missing.out" "PI_CUTOVER_VERIFY=missing_values" "execute cutover verification reports missing values before SSH"
+
+pnpm run pi:verify-cutover -- --help >"$TMP_DIR/verify-cutover-help.out"
+assert_contains "$TMP_DIR/verify-cutover-help.out" "--proof-text" "cutover verification help documents proof text"
+assert_contains "$TMP_DIR/verify-cutover-help.out" "--proof-since-minutes" "cutover verification help documents proof window"
 
 pnpm run pi:ssh-admin -- --help >"$TMP_DIR/ssh-admin-help.out"
 assert_contains "$TMP_DIR/ssh-admin-help.out" "Required options, unless the matching environment defaults are set" "ssh admin help documents env defaults"
