@@ -234,8 +234,9 @@ pnpm run pi:mac-preflight -- \
 
 `dc:stop-host` is a dry run unless you pass `--execute`; use the execute form
 only during the final Pi cutover after stopping launchd. It also reports and
-stops running NanoClaw Docker agent containers named `nanoclaw-v2-*`, so final
-export is quiet even if an agent was mid-task.
+stops running NanoClaw Docker agent containers detected by NanoClaw container
+name or `nanoclaw-agent` image, so final export is quiet even if an agent was
+mid-task.
 
 `pi:export` writes `logs/pi-cutover/mac-runtime-disabled.lock` after creating
 the secret bundle. From then on, `pnpm start` / `pnpm dev` in this Mac checkout

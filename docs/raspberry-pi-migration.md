@@ -149,10 +149,10 @@ pnpm run pi:export -- --out-dir "$HOME/Desktop/dc-pi-migration"
 `dc:stop-host` is dry-run by default; the `--execute` flag is intentional for
 the final cutover. It only targets NanoClaw host processes whose working
 directory is this checkout, screen sessions named for NanoClaw / Distributed
-Cognition, and NanoClaw Docker agent containers named `nanoclaw-v2-*`. The
-export script writes a secret bundle and a matching `.sha256` file. Treat the
-bundle like a password because it contains `.env` and WhatsApp auth. After
-exporting, `pi:export` also writes
+Cognition, and NanoClaw Docker agent containers detected by NanoClaw container
+name or `nanoclaw-agent` image. The export script writes a secret bundle and a
+matching `.sha256` file. Treat the bundle like a password because it contains
+`.env` and WhatsApp auth. After exporting, `pi:export` also writes
 `logs/pi-cutover/mac-runtime-disabled.lock`. This makes `pnpm start` / `pnpm dev`
 in the Mac checkout refuse to start the WhatsApp runtime by accident. Remove
 that lock only for rollback, or set

@@ -181,7 +181,12 @@ find_local_screen_sessions() {
 find_local_docker_containers() {
   have_local docker || return 0
 
-  docker ps --filter 'name=nanoclaw-v2-' --format '{{.Names}}' 2>/dev/null | awk 'NF'
+  docker ps --format '{{.Names}}\t{{.Image}}\t{{.Status}}' 2>/dev/null |
+    awk -F '\t' '
+      $1 ~ /^nanoclaw-v2-/ || $1 ~ /^nanoclaw-agent-v2-/ || $2 ~ /(^|\/)nanoclaw-agent(:|@|$|-v2-)/ {
+        print $1
+      }
+    '
 }
 
 unique_lines() {

@@ -842,9 +842,9 @@ set -euo pipefail
 if [ "${1:-}" = "ps" ]; then
   joined=" $* "
   if [[ "$joined" == *Status* ]]; then
-    printf 'nanoclaw-v2-dc-test\tUp 2 minutes\n'
+    printf 'dc-sidecar-test\tnanoclaw-agent-v2-dc-test:latest\tUp 2 minutes\n'
   else
-    printf 'nanoclaw-v2-dc-test\n'
+    printf 'dc-sidecar-test\n'
   fi
   exit 0
 fi
@@ -855,7 +855,8 @@ chmod +x "$fake_docker_bin/docker"
 
 PATH="$fake_docker_bin:$PATH" bash scripts/dc-stop-host.sh >"$TMP_DIR/dc-stop-host-docker-dry-run.out"
 assert_contains "$TMP_DIR/dc-stop-host-docker-dry-run.out" "Matching Docker containers" "dc stop host reports Docker container section"
-assert_contains "$TMP_DIR/dc-stop-host-docker-dry-run.out" "nanoclaw-v2-dc-test" "dc stop host detects NanoClaw Docker containers"
+assert_contains "$TMP_DIR/dc-stop-host-docker-dry-run.out" "dc-sidecar-test" "dc stop host detects NanoClaw Docker containers by image"
+assert_contains "$TMP_DIR/dc-stop-host-docker-dry-run.out" "nanoclaw-agent-v2-dc-test" "dc stop host reports NanoClaw Docker image"
 
 set +e
 PATH="$fake_docker_bin:$PATH" pnpm run pi:mac-preflight -- \
@@ -887,10 +888,10 @@ assert_exit_code 1 "$mac_preflight_docker_code" "mac export preflight fails when
 assert_contains "$TMP_DIR/mac-preflight-docker-running.out" "NanoClaw Docker agent containers are still running" "mac export preflight reports running Docker containers"
 assert_exit_code 1 "$docker_guard_code" "ssh start runtime refuses while Mac Docker container is running"
 assert_contains "$TMP_DIR/ssh-start-runtime-docker-guard.err" "Matching Docker containers" "ssh start runtime Docker guard reports matching containers"
-assert_contains "$TMP_DIR/ssh-start-runtime-docker-guard.err" "nanoclaw-v2-dc-test" "ssh start runtime Docker guard names matching container"
+assert_contains "$TMP_DIR/ssh-start-runtime-docker-guard.err" "dc-sidecar-test" "ssh start runtime Docker guard names image-matched container"
 assert_exit_code 1 "$admin_docker_guard_code" "ssh admin restart refuses while Mac Docker container is running"
 assert_contains "$TMP_DIR/ssh-admin-restart-docker-guard.err" "Matching Docker containers" "ssh admin Docker guard reports matching containers"
-assert_contains "$TMP_DIR/ssh-admin-restart-docker-guard.err" "nanoclaw-v2-dc-test" "ssh admin Docker guard names matching container"
+assert_contains "$TMP_DIR/ssh-admin-restart-docker-guard.err" "dc-sidecar-test" "ssh admin Docker guard names image-matched container"
 
 node -e 'setInterval(() => {}, 1000)' dist/index.js >/dev/null 2>&1 &
 MAC_GUARD_PID="$!"
