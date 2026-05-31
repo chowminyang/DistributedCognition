@@ -11,6 +11,7 @@ import {
   type DeliveryLedger,
   type DeliveryOutboundEntry,
 } from './delivery-ledger.js';
+import { loadWhatsAppPrivateModeConfig } from '../channels/whatsapp-safety.js';
 import { formatDistributedTimestamp, scrubPrivateText, SECOND_BRAIN_FOLDERS } from './notes.js';
 import { readUnifiedQueueStatus } from './queue-status.js';
 
@@ -61,6 +62,14 @@ const DEFAULT_ROOT_CANDIDATES = [
   path.join(os.homedir(), 'Library/CloudStorage/Dropbox/Distributed-Cognition'),
   path.join(os.homedir(), 'Dropbox/Distributed-Cognition'),
 ];
+
+const WHATSAPP_PRIVATE_MODE_KEYS = [
+  'WHATSAPP_PRIVATE_MODE',
+  'WHATSAPP_ALLOWED_JID',
+  'WHATSAPP_ALLOWLIST_JID',
+  'DISTRIBUTED_COGNITION_WHATSAPP_JID',
+  'WHATSAPP_ALLOW_SELF_CHAT',
+] as const;
 
 function defaultRunCommand(
   command: string,
@@ -123,6 +132,65 @@ function ensureWritableFolder(root: string, folder: string): HostHealthItem {
       label: `second-brain/${folder}`,
       status: 'error',
       detail: `Folder is not writable: ${error instanceof Error ? error.message : String(error)}`,
+    };
+  }
+}
+
+function readEnvSubset(cwd: string, keys: readonly string[]): Record<string, string> {
+  const envPath = path.join(cwd, '.env');
+  if (!fs.existsSync(envPath)) return {};
+  const wanted = new Set(keys);
+  const result: Record<string, string> = {};
+  const content = fs.readFileSync(envPath, 'utf-8');
+  for (const line of content.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+    const eq = trimmed.indexOf('=');
+    if (eq === -1) continue;
+    const key = trimmed.slice(0, eq).trim();
+    if (!wanted.has(key)) continue;
+    let value = trimmed.slice(eq + 1).trim();
+    if (
+      value.length >= 2 &&
+      ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'")))
+    ) {
+      value = value.slice(1, -1);
+    }
+    if (value) result[key] = value;
+  }
+  return result;
+}
+
+function whatsappPrivateModeItem(cwd: string): HostHealthItem {
+  try {
+    const env = readEnvSubset(cwd, WHATSAPP_PRIVATE_MODE_KEYS);
+    const config = loadWhatsAppPrivateModeConfig(env);
+    if (!config.enabled) {
+      return {
+        label: 'whatsapp private mode',
+        status: 'error',
+        detail: 'Private mode is not enabled and no allowlisted WhatsApp identity is configured.',
+      };
+    }
+    if (!config.allowedJid) {
+      return {
+        label: 'whatsapp private mode',
+        status: 'error',
+        detail: 'Private mode is enabled but the allowlisted WhatsApp identity is missing or invalid.',
+      };
+    }
+    return {
+      label: 'whatsapp private mode',
+      status: 'ok',
+      detail: `Private mode enabled with one redacted allowlisted WhatsApp identity; self-chat input ${
+        config.allowSelfChat ? 'enabled' : 'disabled'
+      }.`,
+    };
+  } catch (error) {
+    return {
+      label: 'whatsapp private mode',
+      status: 'warning',
+      detail: `Could not inspect WhatsApp private-mode config: ${error instanceof Error ? error.message : String(error)}`,
     };
   }
 }
@@ -509,6 +577,7 @@ export function buildHostHealthReport(options: HostHealthOptions): HostHealthRep
 
   addItem(items, 'second-brain root', 'ok', `Using ${root}.`);
   for (const folder of SECOND_BRAIN_FOLDERS) items.push(ensureWritableFolder(root, folder));
+  items.push(whatsappPrivateModeItem(cwd));
   items.push(cliHealthItem(cwd, runCommand));
   items.push(processHealthItem(cwd, runCommand));
   items.push(dockerHealthItem(cwd, runCommand));

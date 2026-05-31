@@ -18,6 +18,7 @@ let root: string;
 let cwd: string;
 let dataDir: string;
 let logsDir: string;
+const TEST_WHATSAPP_JID = ['6500000000', 's.whatsapp.net'].join('@');
 
 beforeEach(() => {
   tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'dc-host-health-'));
@@ -28,6 +29,10 @@ beforeEach(() => {
   fs.mkdirSync(root, { recursive: true });
   fs.mkdirSync(dataDir, { recursive: true });
   fs.mkdirSync(logsDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(cwd, '.env'),
+    ['WHATSAPP_PRIVATE_MODE=true', `WHATSAPP_ALLOWED_JID=${TEST_WHATSAPP_JID}`].join('\n'),
+  );
 });
 
 afterEach(() => {
@@ -66,9 +71,9 @@ function writeSessionDbs(pending = false): void {
     );
     outbound
       .prepare(
-        "INSERT INTO messages_out (id, seq, timestamp, kind, platform_id, channel_type, content) VALUES (?, 2, datetime('now'), 'chat', '6500000000@s.whatsapp.net', 'whatsapp', ?)",
+        "INSERT INTO messages_out (id, seq, timestamp, kind, platform_id, channel_type, content) VALUES (?, 2, datetime('now'), 'chat', ?, 'whatsapp', ?)",
       )
-      .run('out-1', JSON.stringify({ text: 'secret message that must not appear' }));
+      .run('out-1', TEST_WHATSAPP_JID, JSON.stringify({ text: 'secret message that must not appear' }));
     if (!pending) {
       inbound
         .prepare(
@@ -87,8 +92,8 @@ function writeHappyLogs(): void {
     path.join(logsDir, 'nanoclaw.screen.log'),
     [
       '[10:00:00.000] INFO Connected to WhatsApp',
-      '[10:01:00.000] INFO Message routed channelType="whatsapp" platformId="6500000000@s.whatsapp.net" content="do not leak this"',
-      '[10:02:00.000] INFO Message delivered channelType="whatsapp" platformId="6500000000@s.whatsapp.net" content="do not leak reply"',
+      `[10:01:00.000] INFO Message routed channelType="whatsapp" platformId="${TEST_WHATSAPP_JID}" content="do not leak this"`,
+      `[10:02:00.000] INFO Message delivered channelType="whatsapp" platformId="${TEST_WHATSAPP_JID}" content="do not leak reply"`,
     ].join('\n'),
   );
 }
@@ -98,7 +103,7 @@ function writeLogsWithoutDeliveredReply(): void {
     path.join(logsDir, 'nanoclaw.screen.log'),
     [
       '[10:00:00.000] INFO Connected to WhatsApp',
-      '[10:01:00.000] INFO Message routed channelType="whatsapp" platformId="6500000000@s.whatsapp.net" content="do not leak this"',
+      `[10:01:00.000] INFO Message routed channelType="whatsapp" platformId="${TEST_WHATSAPP_JID}" content="do not leak this"`,
     ].join('\n'),
   );
 }
@@ -124,11 +129,12 @@ describe('Distributed Cognition host health', () => {
 
     expect(report.overall).toBe('ok');
     expect(report.checkedAt).toBe('17-05-26, 00:00');
+    expect(report.items.some((item) => item.label === 'whatsapp private mode' && item.status === 'ok')).toBe(true);
     expect(report.items.some((item) => item.label === 'whatsapp connection' && item.status === 'ok')).toBe(true);
     expect(report.items.some((item) => item.label === 'pending outbound messages' && item.status === 'ok')).toBe(true);
     expect(markdown).toContain('# System Health - 17-05-26, 00:00');
     expect(markdown).not.toContain('secret message');
-    expect(markdown).not.toContain('6500000000@s.whatsapp.net');
+    expect(markdown).not.toContain(TEST_WHATSAPP_JID);
     expect(fs.existsSync(written.jsonPath)).toBe(true);
     expect(fs.existsSync(written.markdownPath)).toBe(true);
   });
@@ -155,9 +161,31 @@ describe('Distributed Cognition host health', () => {
     expect(replyItem?.status).toBe('ok');
     expect(replyItem?.detail).toContain('Session DB marks a WhatsApp reply delivered');
     expect(markdown).not.toContain('secret message');
-    expect(markdown).not.toContain('6500000000@s.whatsapp.net');
+    expect(markdown).not.toContain(TEST_WHATSAPP_JID);
     expect(JSON.stringify(report)).not.toContain('secret message');
-    expect(JSON.stringify(report)).not.toContain('6500000000@s.whatsapp.net');
+    expect(JSON.stringify(report)).not.toContain(TEST_WHATSAPP_JID);
+  });
+
+  it('fails health when WhatsApp private mode is enabled without an allowlisted identity', () => {
+    writeSessionDbs(false);
+    writeHappyLogs();
+    fs.writeFileSync(path.join(cwd, '.env'), 'WHATSAPP_PRIVATE_MODE=true\n');
+
+    const report = buildHostHealthReport({
+      root,
+      cwd,
+      dataDir,
+      logsDir,
+      mnemonDbPaths: [path.join(tmp, 'missing-memory.db')],
+      runCommand: fakeCommands(),
+      now: new Date('2026-05-17T00:00:00+08:00'),
+    });
+    const item = report.items.find((entry) => entry.label === 'whatsapp private mode');
+
+    expect(report.overall).toBe('error');
+    expect(item?.status).toBe('error');
+    expect(item?.detail).toContain('allowlisted WhatsApp identity is missing or invalid');
+    expect(JSON.stringify(report)).not.toContain(TEST_WHATSAPP_JID);
   });
 
   it('surfaces host socket failures and pending outbound messages', () => {
