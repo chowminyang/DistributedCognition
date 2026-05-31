@@ -1,0 +1,24 @@
+[Unit]
+Description=NanoClaw WhatsApp host ({{PROJECT_ROOT}})
+After=network-online.target docker.service
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=simple
+User={{USER}}
+WorkingDirectory={{PROJECT_ROOT}}
+ExecStartPre=/usr/bin/mkdir -p {{PROJECT_ROOT}}/logs
+ExecStart={{NODE_PATH}} {{PROJECT_ROOT}}/dist/index.js
+Restart=always
+RestartSec=10
+KillSignal=SIGINT
+TimeoutStopSec=30
+Environment=HOME={{HOME}}
+Environment=PATH={{NODE_DIR}}:{{HOME}}/.local/bin:/usr/local/bin:/usr/bin:/bin
+Environment=TZ={{TZ}}
+StandardOutput=append:{{PROJECT_ROOT}}/logs/nanoclaw.log
+StandardError=append:{{PROJECT_ROOT}}/logs/nanoclaw.error.log
+
+[Install]
+WantedBy=multi-user.target

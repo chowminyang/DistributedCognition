@@ -8,12 +8,14 @@ export type ProvenanceEventKind =
   | 'coaching_prompt'
   | 'memory_promotion'
   | 'memory_hygiene'
+  | 'memory_graph'
   | 'project_ontology'
   | 'project_status'
   | 'wiki_update'
   | 'queue_created'
   | 'queue_progress'
   | 'bridge_execution'
+  | 'delivery_event'
   | 'dashboard'
   | 'context_index';
 

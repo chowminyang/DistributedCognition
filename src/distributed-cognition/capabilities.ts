@@ -13,6 +13,7 @@ export type DistributedCapabilityId =
   | 'update_project_wiki'
   | 'calibrate_attention'
   | 'refresh_memory_hygiene'
+  | 'visualize_memory'
   | 'refresh_project_ontology'
   | 'show_provenance'
   | 'report_status'
@@ -136,6 +137,14 @@ export const DISTRIBUTED_CAPABILITIES: Record<DistributedCapabilityId, Distribut
     defaultTools: ['distributed_cognition_memory_hygiene', 'distributed_cognition_auto_upgrade_memory'],
     requiresHostBridge: false,
     risk: 'medium',
+  },
+  visualize_memory: {
+    id: 'visualize_memory',
+    label: 'Visualize memory',
+    description: 'Refresh the Mnemon memory report and Obsidian Canvas graph for durable-memory browsing.',
+    defaultTools: ['distributed_cognition_mnemon_graph'],
+    requiresHostBridge: false,
+    risk: 'low',
   },
   refresh_project_ontology: {
     id: 'refresh_project_ontology',
@@ -276,6 +285,15 @@ export function classifyDistributedCapability(
 
   if (hasAny(lower, [/\b(memory hygiene|changed my mind|obsolete memories|superseded memories|memory audit)\b/])) {
     return route('refresh_memory_hygiene', messageType, 'high', ['memory hygiene signal detected']);
+  }
+
+  if (
+    hasAny(lower, [
+      /\b(mnemon graph|memory graph|mnemon canvas|memory canvas)\b/,
+      /\b(visuali[sz]e|show|draw|map)\b.*\b(mnemon|durable memor(?:y|ies)|memory graph)\b/,
+    ])
+  ) {
+    return route('visualize_memory', messageType, 'high', ['Mnemon graph visualization signal detected']);
   }
 
   if (hasAny(lower, [/\b(project ontology|ontology|concept map|project graph)\b/])) {

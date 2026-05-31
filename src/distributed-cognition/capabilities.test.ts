@@ -36,6 +36,7 @@ describe('Distributed Cognition capabilities', () => {
     expect(classifyDistributedCapability('Refresh the project ontology.').capability.id).toBe(
       'refresh_project_ontology',
     );
+    expect(classifyDistributedCapability('Show me the Mnemon memory graph.').capability.id).toBe('visualize_memory');
     expect(classifyDistributedCapability('Run memory hygiene for changed my mind notes.').capability.id).toBe(
       'refresh_memory_hygiene',
     );

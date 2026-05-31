@@ -426,6 +426,69 @@ describe('router', () => {
     expect(wakeContainer).toHaveBeenCalled();
   });
 
+  it('mirrors Distributed Cognition WhatsApp ingress receipts after routing', async () => {
+    const oldRoot = process.env.DC_SECOND_BRAIN_ROOT;
+    const secondBrainRoot = path.join(TEST_DIR, 'Distributed-Cognition');
+    process.env.DC_SECOND_BRAIN_ROOT = secondBrainRoot;
+    fs.mkdirSync(secondBrainRoot, { recursive: true });
+
+    try {
+      createAgentGroup({
+        id: 'ag-dc',
+        name: 'Distributed Cognition',
+        folder: 'distributed-cognition',
+        agent_provider: null,
+        created_at: now(),
+      });
+      createMessagingGroup({
+        id: 'mg-wa',
+        channel_type: 'whatsapp',
+        platform_id: '6500000000@s.whatsapp.net',
+        name: 'Minyang',
+        is_group: 0,
+        unknown_sender_policy: 'public',
+        created_at: now(),
+      });
+      createMessagingGroupAgent({
+        id: 'mga-dc',
+        messaging_group_id: 'mg-wa',
+        agent_group_id: 'ag-dc',
+        engage_mode: 'pattern',
+        engage_pattern: '.',
+        sender_scope: 'all',
+        ignored_message_policy: 'drop',
+        session_mode: 'shared',
+        priority: 0,
+        created_at: now(),
+      });
+
+      const { routeInbound } = await import('./router.js');
+      await routeInbound({
+        channelType: 'whatsapp',
+        platformId: '6500000000@s.whatsapp.net',
+        threadId: null,
+        message: {
+          id: 'wa-source-1',
+          kind: 'chat',
+          content: JSON.stringify({ sender: 'Minyang', text: 'Today I realised the office needs a project memory.' }),
+          timestamp: '2026-05-17T01:23:00.000Z',
+          isMention: true,
+          isGroup: false,
+        },
+      });
+
+      const files = fs.readdirSync(path.join(secondBrainRoot, 'inbox-whatsapp'));
+      expect(files).toHaveLength(1);
+      const markdown = fs.readFileSync(path.join(secondBrainRoot, 'inbox-whatsapp', files[0]), 'utf-8');
+      expect(markdown).toContain('## Capture status\nHost-level receipt; pending agent processing.');
+      expect(markdown).toContain('## WhatsApp source message id\nwa-source-1:ag-dc');
+      expect(markdown).toContain('Today I realised the office needs a project memory.');
+    } finally {
+      if (oldRoot === undefined) delete process.env.DC_SECOND_BRAIN_ROOT;
+      else process.env.DC_SECOND_BRAIN_ROOT = oldRoot;
+    }
+  });
+
   it('auto-creates messaging group only when the bot is addressed (mention/DM)', async () => {
     // The router's no-mg branch is escalation-gated: plain chatter on an
     // unknown channel stays silent (no DB writes) so a bot that sits in

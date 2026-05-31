@@ -15,6 +15,8 @@ import Database from 'better-sqlite3';
  */
 
 const Q = path.resolve(__dirname, 'q.ts');
+const SPAWN_TIMEOUT_MS = 20_000;
+const TEST_TIMEOUT_MS = SPAWN_TIMEOUT_MS + 5_000;
 
 describe('scripts/q.ts', () => {
   let tempDir: string;
@@ -39,68 +41,98 @@ describe('scripts/q.ts', () => {
     const r = spawnSync('pnpm', ['exec', 'tsx', Q, dbPath, sql], {
       encoding: 'utf-8',
       cwd: path.resolve(__dirname, '..'),
+      timeout: SPAWN_TIMEOUT_MS,
     });
     return { stdout: r.stdout ?? '', stderr: r.stderr ?? '', status: r.status ?? -1 };
   }
 
-  it('SELECT prints pipe-separated rows in default order', () => {
-    const r = run('SELECT id, name FROM t ORDER BY id');
-    expect(r.status).toBe(0);
-    expect(r.stdout.trim()).toBe('1|alice\n2|bob');
-  });
+  it(
+    'SELECT prints pipe-separated rows in default order',
+    () => {
+      const r = run('SELECT id, name FROM t ORDER BY id');
+      expect(r.status).toBe(0);
+      expect(r.stdout.trim()).toBe('1|alice\n2|bob');
+    },
+    TEST_TIMEOUT_MS,
+  );
 
-  it('SELECT renders NULL as empty string (matches sqlite3 default mode)', () => {
-    const r = run('SELECT id, note FROM t ORDER BY id');
-    expect(r.status).toBe(0);
-    expect(r.stdout.trim()).toBe('1|hi\n2|');
-  });
+  it(
+    'SELECT renders NULL as empty string (matches sqlite3 default mode)',
+    () => {
+      const r = run('SELECT id, note FROM t ORDER BY id');
+      expect(r.status).toBe(0);
+      expect(r.stdout.trim()).toBe('1|hi\n2|');
+    },
+    TEST_TIMEOUT_MS,
+  );
 
-  it('SELECT with no rows prints nothing', () => {
-    const r = run("SELECT id FROM t WHERE name = 'nobody'");
-    expect(r.status).toBe(0);
-    expect(r.stdout).toBe('');
-  });
+  it(
+    'SELECT with no rows prints nothing',
+    () => {
+      const r = run("SELECT id FROM t WHERE name = 'nobody'");
+      expect(r.status).toBe(0);
+      expect(r.stdout).toBe('');
+    },
+    TEST_TIMEOUT_MS,
+  );
 
-  it('INSERT runs via db.exec and persists', () => {
-    const r = run("INSERT INTO t (id, name) VALUES (3, 'carol')");
-    expect(r.status).toBe(0);
-    expect(r.stdout).toBe('');
+  it(
+    'INSERT runs via db.exec and persists',
+    () => {
+      const r = run("INSERT INTO t (id, name) VALUES (3, 'carol')");
+      expect(r.status).toBe(0);
+      expect(r.stdout).toBe('');
 
-    const db = new Database(dbPath, { readonly: true });
-    const row = db.prepare('SELECT name FROM t WHERE id = 3').get() as { name: string };
-    db.close();
-    expect(row.name).toBe('carol');
-  });
+      const db = new Database(dbPath, { readonly: true });
+      const row = db.prepare('SELECT name FROM t WHERE id = 3').get() as { name: string };
+      db.close();
+      expect(row.name).toBe('carol');
+    },
+    TEST_TIMEOUT_MS,
+  );
 
-  it('compound mutation statements execute together', () => {
-    const r = run("DELETE FROM t WHERE id = 1; INSERT INTO t (id, name) VALUES (9, 'zed');");
-    expect(r.status).toBe(0);
+  it(
+    'compound mutation statements execute together',
+    () => {
+      const r = run("DELETE FROM t WHERE id = 1; INSERT INTO t (id, name) VALUES (9, 'zed');");
+      expect(r.status).toBe(0);
 
-    const db = new Database(dbPath, { readonly: true });
-    const ids = (db.prepare('SELECT id FROM t ORDER BY id').all() as { id: number }[]).map(
-      (r) => r.id,
-    );
-    db.close();
-    expect(ids).toEqual([2, 9]);
-  });
+      const db = new Database(dbPath, { readonly: true });
+      const ids = (db.prepare('SELECT id FROM t ORDER BY id').all() as { id: number }[]).map((r) => r.id);
+      db.close();
+      expect(ids).toEqual([2, 9]);
+    },
+    TEST_TIMEOUT_MS,
+  );
 
-  it('WITH...DELETE is treated as a mutation, not a query', () => {
-    const r = run("WITH stale AS (SELECT id FROM t WHERE name = 'alice') DELETE FROM t WHERE id IN (SELECT id FROM stale)");
-    expect(r.status).toBe(0);
-    expect(r.stdout).toBe('');
+  it(
+    'WITH...DELETE is treated as a mutation, not a query',
+    () => {
+      const r = run(
+        "WITH stale AS (SELECT id FROM t WHERE name = 'alice') DELETE FROM t WHERE id IN (SELECT id FROM stale)",
+      );
+      expect(r.status).toBe(0);
+      expect(r.stdout).toBe('');
 
-    const db = new Database(dbPath, { readonly: true });
-    const rows = db.prepare('SELECT name FROM t').all() as { name: string }[];
-    db.close();
-    expect(rows).toEqual([{ name: 'bob' }]);
-  });
+      const db = new Database(dbPath, { readonly: true });
+      const rows = db.prepare('SELECT name FROM t').all() as { name: string }[];
+      db.close();
+      expect(rows).toEqual([{ name: 'bob' }]);
+    },
+    TEST_TIMEOUT_MS,
+  );
 
-  it('exits 2 with usage when args are missing', () => {
-    const r = spawnSync('pnpm', ['exec', 'tsx', Q], {
-      encoding: 'utf-8',
-      cwd: path.resolve(__dirname, '..'),
-    });
-    expect(r.status).toBe(2);
-    expect(r.stderr).toMatch(/Usage/);
-  });
+  it(
+    'exits 2 with usage when args are missing',
+    () => {
+      const r = spawnSync('pnpm', ['exec', 'tsx', Q], {
+        encoding: 'utf-8',
+        cwd: path.resolve(__dirname, '..'),
+        timeout: SPAWN_TIMEOUT_MS,
+      });
+      expect(r.status).toBe(2);
+      expect(r.stderr).toMatch(/Usage/);
+    },
+    TEST_TIMEOUT_MS,
+  );
 });

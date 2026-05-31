@@ -12,7 +12,7 @@ Key additions in this fork:
 - OpenAI/Codex provider path with lightweight model routing.
 - Distributed Cognition note capture, audio transcription, context indexing, Mnemon promotion, project wiki promotion, deadline-watch tools, and an Obsidian-friendly dashboard.
 - Host-side Codex/action bridges for local project work, web research, Word documents, and PowerPoint generation.
-- Hermes-inspired capability routing, unified work queue status, append-only provenance, attention calibration, memory hygiene, project ontology, bridge progress events, and a Mnemon memory report.
+- Hermes-inspired capability routing, unified work queue status, append-only provenance, capture and delivery ledgers, attention calibration, memory hygiene, project ontology, bridge progress events, and a Mnemon memory report.
 - Optional launchd jobs for periodically running the local bridges on macOS.
 - Public-web search/read tools with private-network and sensitive-content guards.
 - Lightweight retrieval eval reports for checking what the Dropbox-backed context index can and should surface.
@@ -21,6 +21,7 @@ Key additions in this fork:
 Useful Distributed Cognition docs:
 
 - [Setup and safety model](docs/distributed-cognition.md)
+- [Raspberry Pi migration runbook](docs/raspberry-pi-migration.md)
 - [Synthetic flow demo](docs/distributed-cognition-flow-demo.md)
 - [Retrieval eval checklist](docs/distributed-cognition-retrieval-evals.md)
 - [Public LinkedIn post draft](docs/linkedin-distributed-cognition-post.md)
@@ -33,7 +34,7 @@ The intended live loop is:
 private WhatsApp text or voice note
   -> raw Markdown capture
   -> processed reflection / decision / note
-  -> provenance + attention scoring + coaching prompt
+  -> provenance + capture/delivery ledgers + attention scoring + coaching prompt
   -> selective Mnemon durable-memory upgrade
   -> project ontology, wiki, deadline, and open-question updates
   -> optional local Codex handoff
@@ -44,9 +45,11 @@ For host-side setup after configuring the selected second-brain folder:
 
 ```bash
 pnpm run dc:ensure-docker-access -- --second-brain-root "<local Distributed-Cognition folder>"
+pnpm run dc:health -- --root "<local Distributed-Cognition folder>"
 pnpm run dc:dashboard -- --root "<local Distributed-Cognition folder>"
 pnpm run dc:retrieval-eval -- --root "<local Distributed-Cognition folder>"
 pnpm run dc:memory-report -- --root "<local Distributed-Cognition folder>"
+pnpm run dc:install-launchd -- install --root "<local Distributed-Cognition folder>"
 pnpm run dc:memory-bridge -- process
 pnpm run dc:memory-bridge -- process --execute
 pnpm run dc:codex-bridge -- process
@@ -56,6 +59,84 @@ pnpm run dc:action-bridge -- process --execute
 ```
 
 The bridge commands run on the Mac host, not inside the WhatsApp container. The container may queue work, but Mnemon promotion, local Codex execution, and artifact generation remain controlled by host-side allowlists and bridge config.
+
+For always-on Mac use, install user-level launchd jobs after the manual commands work:
+
+```bash
+pnpm run dc:install-launchd -- install \
+  --root "<local Distributed-Cognition folder>" \
+  --projects-root "$HOME/Documents/Codex" \
+  --execute-bridges \
+  --load
+pnpm run dc:install-launchd -- status
+```
+
+Omit `--execute-bridges` for a dry-run scheduler. Logs are written under `logs/launchd/`, and `pnpm run dc:install-launchd -- uninstall` removes the generated LaunchAgents.
+
+For Raspberry Pi cutover, use Codex on the Mac as the SSH control plane, but run Distributed Cognition fully on the Pi. Stop the Mac launchd jobs before exporting state, restore the state bundle on the Pi, sync only the selected `Distributed-Cognition` folder with external rclone, and run NanoClaw as a Pi systemd service. See [docs/raspberry-pi-migration.md](docs/raspberry-pi-migration.md).
+
+To print a read-only cutover checklist from your current environment:
+
+```bash
+pnpm run pi:cutover-plan -- \
+  --local-root "<local Distributed-Cognition folder>" \
+  --pi-host "<pi-host-or-ip>" \
+  --pi-user "<pi-ssh-user>" \
+  --pi-path "<pi NanoClaw checkout path>" \
+  --pi-second-brain-root "<pi Distributed-Cognition path>" \
+  --repo-url "<DistributedCognition repo URL>"
+```
+
+Before pushing a public update, run the local public-boundary and Pi helper checks:
+
+```bash
+pnpm run dc:public-readiness
+pnpm run pi:test-helpers
+```
+
+Before taking the final Mac state bundle:
+
+```bash
+pnpm run dc:stop-host
+pnpm run pi:mac-preflight -- \
+  --root "<local Distributed-Cognition folder>" \
+  --out-dir "$HOME/Desktop/dc-pi-migration"
+```
+
+`dc:stop-host` is a dry run unless you pass `--execute`; use the execute form only during the final Pi cutover after stopping launchd.
+
+Once the Pi is reachable by SSH, check it from the Mac:
+
+```bash
+export NANOCLAW_PI_HOST="<pi-host-or-ip>"
+export NANOCLAW_PI_USER="<pi-ssh-user>"
+export NANOCLAW_PI_PROJECT_ROOT="<pi NanoClaw checkout path>"
+export NANOCLAW_PI_SECOND_BRAIN_ROOT="<pi Distributed-Cognition path>"
+export NANOCLAW_PI_CODEX_PROJECTS_ROOT="<pi Codex projects path>"
+export NANOCLAW_PI_RCLONE_REMOTE="dropbox:"
+
+pnpm run pi:ssh-preflight
+```
+
+Or pass the values inline:
+
+```bash
+pnpm run pi:ssh-preflight -- \
+  --host "<pi-host-or-ip>" \
+  --user "<pi-ssh-user>" \
+  --path "<pi NanoClaw checkout path>" \
+  --second-brain-root "<pi Distributed-Cognition path>" \
+  --codex-projects-root "<pi Codex projects path>" \
+  --rclone-remote dropbox:
+```
+
+After cutover, Mac Codex can operate the Pi through the SSH admin helper:
+
+```bash
+pnpm run pi:ssh-admin -- status
+pnpm run pi:ssh-admin -- health
+pnpm run pi:ssh-admin -- restart
+```
 
 ## Upstream NanoClaw
 

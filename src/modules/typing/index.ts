@@ -21,6 +21,7 @@ import fs from 'fs';
 
 import { heartbeatPath } from '../../session-manager.js';
 import { log } from '../../log.js';
+import { recordDeliveryAuditEvent } from '../../distributed-cognition/delivery-audit.js';
 
 const TYPING_REFRESH_MS = 4000;
 const VISIBLE_WORK_STATUS_DELAY_MS = Math.max(
@@ -133,14 +134,31 @@ function scheduleVisibleWorkStatus(sessionId: string, entry: TypingTarget): void
         'chat',
         JSON.stringify({ text: VISIBLE_WORK_STATUS_TEXT }),
       )
-      .then(() => {
+      .then((platformMsgId) => {
         current.pausedUntil = Date.now() + POST_DELIVERY_PAUSE_MS;
+        recordDeliveryAuditEvent({
+          phase: 'visible_work_status',
+          status: 'sent',
+          sessionId,
+          channelType: current.channelType,
+          platformId: current.platformId,
+          platformMessageId: platformMsgId,
+        });
         log.debug('Visible work-status message delivered', {
           sessionId,
           channelType: current.channelType,
+          platformMsgId,
         });
       })
       .catch((err) => {
+        recordDeliveryAuditEvent({
+          phase: 'visible_work_status',
+          status: 'failed',
+          sessionId,
+          channelType: current.channelType,
+          platformId: current.platformId,
+          reason: err instanceof Error ? err.message : String(err),
+        });
         log.debug('Visible work-status message failed', {
           sessionId,
           channelType: current.channelType,

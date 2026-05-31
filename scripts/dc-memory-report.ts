@@ -2,7 +2,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 
-import { readMnemonMemoryReport, renderMnemonMemoryReport } from '../src/distributed-cognition/memory-report.js';
+import { renderMnemonMemoryReport, writeMnemonMemoryReport } from '../src/distributed-cognition/memory-report.js';
 
 const DEFAULT_GROUP_CONFIG = path.join(process.cwd(), 'groups/dm-with-minyangchow/container.json');
 const DEFAULT_MNEMON_DB = path.join(process.cwd(), 'groups/dm-with-minyangchow/.mnemon/memory.db');
@@ -77,26 +77,19 @@ function parseArgs(argv: string[]): Args {
   return args;
 }
 
-function safeOutputPath(root: string, output?: string): string {
-  const target = output ?? path.join(root, 'project-wikis', 'mnemon-memory-report.md');
-  const resolved = path.resolve(target);
-  const rel = path.relative(path.resolve(root), resolved);
-  if (rel.startsWith('..') || path.isAbsolute(rel)) {
-    throw new Error(`Refusing to write memory report outside second-brain root: ${target}`);
-  }
-  return resolved;
-}
-
 const args = parseArgs(process.argv.slice(2));
 try {
   if (!fs.existsSync(args.root)) throw new Error(`Second-brain root does not exist: ${args.root}`);
-  const report = readMnemonMemoryReport(args.mnemonDb, { limit: args.limit });
-  const markdown = renderMnemonMemoryReport(report);
-  const output = safeOutputPath(args.root, args.output);
-  fs.mkdirSync(path.dirname(output), { recursive: true });
-  fs.writeFileSync(output, markdown);
-  console.log(markdown);
-  console.log(`\nWrote ${output}`);
+  const written = writeMnemonMemoryReport(args.root, {
+    mnemonDb: args.mnemonDb,
+    output: args.output,
+    limit: args.limit,
+  });
+  console.log(renderMnemonMemoryReport(written.report));
+  console.log(`\nWrote ${written.markdownPath}`);
+  console.log(`Wrote ${written.jsonPath}`);
+  console.log(`Wrote ${written.graphJsonPath}`);
+  console.log(`Wrote ${written.canvasPath}`);
 } catch (error) {
   console.error(error instanceof Error ? error.message : String(error));
   process.exitCode = 1;

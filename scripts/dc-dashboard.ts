@@ -3,7 +3,10 @@ import os from 'os';
 import path from 'path';
 
 import { writeAttentionCalibrationReport } from '../src/distributed-cognition/attention-report.js';
+import { writeCaptureLedger } from '../src/distributed-cognition/capture-ledger.js';
+import { formatDeliveryTimestamp, writeDeliveryLedger } from '../src/distributed-cognition/delivery-ledger.js';
 import { writeMemoryHygieneReport } from '../src/distributed-cognition/memory-hygiene.js';
+import { writeMnemonMemoryReport } from '../src/distributed-cognition/memory-report.js';
 import { writeProjectOntology } from '../src/distributed-cognition/ontology.js';
 import { appendProvenanceEvent, writeProvenanceMarkdown } from '../src/distributed-cognition/provenance.js';
 import { readUnifiedQueueStatus, writeUnifiedQueueStatus } from '../src/distributed-cognition/queue-status.js';
@@ -13,6 +16,7 @@ const DEFAULT_ROOT_CANDIDATES = [
   path.join(os.homedir(), 'Library/CloudStorage/Dropbox/Distributed-Cognition'),
   path.join(os.homedir(), 'Dropbox/Distributed-Cognition'),
 ];
+const DEFAULT_MNEMON_DB = path.join(process.cwd(), 'groups/dm-with-minyangchow/.mnemon/memory.db');
 
 type Args = {
   root?: string;
@@ -43,6 +47,68 @@ type HealthReport = {
   checkedAt?: string;
   overall?: string;
   items?: Array<{ status?: string }>;
+};
+
+type CaptureLedger = {
+  generatedAt?: string;
+  totals?: {
+    complete?: number;
+    needs_processing?: number;
+    needs_review?: number;
+    memory_promoted?: number;
+  };
+  coverage?: {
+    status?: string;
+    sessionsScanned?: number;
+    whatsappInboundRows?: number;
+    whatsappInboundCompleted?: number;
+    whatsappInboundOpen?: number;
+    hostIngressReceipts?: number;
+    sourceLinkedRawCaptures?: number;
+    possibleUnlinkedWhatsAppInbound?: number;
+  };
+  entries?: Array<{
+    capturedAt?: string;
+    messageType?: string;
+    status?: string;
+    rawPath?: string;
+    processedPath?: string;
+  }>;
+};
+
+type DeliveryLedger = {
+  generatedAt?: string;
+  sessionsScanned?: number;
+  latestWhatsAppReply?: {
+    timestamp?: string;
+    deliveredAt?: string;
+    status?: string;
+    channelType?: string | null;
+  };
+  inboundTotals?: {
+    accepted?: number;
+    processing?: number;
+    completed?: number;
+    failed?: number;
+    skipped?: number;
+  };
+  outboundTotals?: {
+    delivered?: number;
+    failed?: number;
+    due_undelivered?: number;
+    scheduled?: number;
+    internal?: number;
+  };
+};
+
+type MemoryReport = {
+  generatedAt?: string;
+  total?: number;
+  byImportanceBand?: Record<string, number>;
+  graph?: {
+    nodes?: unknown[];
+    edges?: unknown[];
+  };
 };
 
 function usage(): never {
@@ -158,6 +224,9 @@ function ensureTemplates(root: string): void {
 function renderDashboard(root: string): string {
   const now = sgtTimestamp();
   const health = readJson<HealthReport>(path.join(root, '.dc-index', 'system-health.json'));
+  const captureLedger = readJson<CaptureLedger>(path.join(root, '.dc-index', 'capture-ledger.json'));
+  const deliveryLedger = readJson<DeliveryLedger>(path.join(root, '.dc-index', 'delivery-ledger.json'));
+  const memoryReport = readJson<MemoryReport>(path.join(root, '.dc-index', 'mnemon-memory-report.json'));
   const codex = readJson<CodexStatus>(path.join(root, '.dc-index', 'codex-status.json'));
   const manifest = readJson<ContextManifest>(path.join(root, '.dc-index', 'context-index-manifest.json'));
   const indexedCount = Array.isArray(manifest?.entries) ? manifest.entries.length : (manifest?.entries ?? 0);
@@ -167,6 +236,7 @@ function renderDashboard(root: string): string {
   const healthItems = health?.items ?? [];
   const healthWarnings = healthItems.filter((item) => item.status === 'warning').length;
   const healthErrors = healthItems.filter((item) => item.status === 'error').length;
+  const latestCapture = captureLedger?.entries?.[0];
   const recent = [
     ...newestFiles(root, 'inbox-whatsapp', 3),
     ...newestFiles(root, 'pending-review', 5),
@@ -187,6 +257,17 @@ function renderDashboard(root: string): string {
     '## Runtime',
     `- Health: ${health?.overall ?? 'unknown'} (${healthErrors} error, ${healthWarnings} warning)`,
     `- Last health check: ${health?.checkedAt ?? 'not run'}`,
+    `- Capture ledger: ${captureLedger?.generatedAt ?? 'not run'}`,
+    `- Capture status: complete ${captureLedger?.totals?.complete ?? 0}, needs processing ${captureLedger?.totals?.needs_processing ?? 0}, needs review ${captureLedger?.totals?.needs_review ?? 0}, promoted ${captureLedger?.totals?.memory_promoted ?? 0}`,
+    `- Capture coverage: ${captureLedger?.coverage?.status ?? 'unknown'}; WhatsApp inbound ${captureLedger?.coverage?.whatsappInboundRows ?? 0}, completed ${captureLedger?.coverage?.whatsappInboundCompleted ?? 0}, open ${captureLedger?.coverage?.whatsappInboundOpen ?? 0}, host receipts ${captureLedger?.coverage?.hostIngressReceipts ?? 0}, source-linked raw ${captureLedger?.coverage?.sourceLinkedRawCaptures ?? 0}, possible unlinked ${captureLedger?.coverage?.possibleUnlinkedWhatsAppInbound ?? 0}`,
+    `- Delivery ledger: ${deliveryLedger?.generatedAt ?? 'not run'} (${deliveryLedger?.sessionsScanned ?? 0} session DB pair${deliveryLedger?.sessionsScanned === 1 ? '' : 's'})`,
+    `- Delivery status: inbound completed ${deliveryLedger?.inboundTotals?.completed ?? 0}, processing ${deliveryLedger?.inboundTotals?.processing ?? 0}; outbound delivered ${deliveryLedger?.outboundTotals?.delivered ?? 0}, due undelivered ${deliveryLedger?.outboundTotals?.due_undelivered ?? 0}, failed ${deliveryLedger?.outboundTotals?.failed ?? 0}`,
+    `- Last WhatsApp reply: ${formatDeliveryTimestamp(deliveryLedger?.latestWhatsAppReply?.deliveredAt ?? deliveryLedger?.latestWhatsAppReply?.timestamp) ?? 'none recorded'}`,
+    `- Mnemon memories: ${memoryReport?.total ?? 0} (${memoryReport?.byImportanceBand?.key_or_pivot ?? 0} key/pivot, ${memoryReport?.byImportanceBand?.useful_context ?? 0} useful context, ${memoryReport?.byImportanceBand?.background ?? 0} background, ${memoryReport?.byImportanceBand?.low_signal ?? 0} low signal)`,
+    `- Mnemon graph: ${memoryReport?.graph?.nodes?.length ?? 0} nodes, ${memoryReport?.graph?.edges?.length ?? 0} edges`,
+    latestCapture
+      ? `- Latest capture: ${latestCapture.capturedAt ?? 'unknown time'} ${latestCapture.messageType ?? 'unknown'} (${latestCapture.status ?? 'unknown'})`
+      : '- Latest capture: none recorded',
     `- Context index: ${indexedCount} indexed, ${manifest?.skipped?.length ?? 0} skipped`,
     `- Context generated: ${manifest?.generatedAt ?? 'not run'}`,
     `- Codex projects visible: ${codex?.projects?.length ?? 0}`,
@@ -204,9 +285,12 @@ function renderDashboard(root: string): string {
     '- [[project-wikis/codex-workbench|Codex Workbench]]',
     '- [[project-wikis/work-queue|Work Queue]]',
     '- [[project-wikis/mnemon-memory-report|Mnemon Memory Report]]',
+    '- [[project-wikis/mnemon-memory-graph.canvas|Mnemon Memory Graph Canvas]]',
     '- [[project-wikis/system-health|System Health]]',
+    '- [[project-wikis/delivery-ledger|Delivery Ledger]]',
     '- [[project-wikis/retrieval-eval-report|Retrieval Eval Report]]',
     '- [[project-wikis/provenance-ledger|Provenance Ledger]]',
+    '- [[project-wikis/capture-ledger|Capture Ledger]]',
     '- [[project-wikis/attention-calibration|Attention Calibration]]',
     '- [[project-wikis/memory-hygiene|Memory Hygiene]]',
     '- [[project-wikis/project-ontology|Project Ontology]]',
@@ -235,8 +319,13 @@ function main(): void {
   ensureDir(wikiDir);
   writeUnifiedQueueStatus(root);
   writeProvenanceMarkdown(root);
+  writeCaptureLedger(root);
+  writeDeliveryLedger(root);
   writeAttentionCalibrationReport(root);
   writeMemoryHygieneReport(root);
+  writeMnemonMemoryReport(root, {
+    mnemonDb: process.env.DC_MNEMON_DB || process.env.MNEMON_DB_PATH || DEFAULT_MNEMON_DB,
+  });
   writeProjectOntology(root);
   const dashboardPath = path.join(wikiDir, 'distributed-cognition-dashboard.md');
   fs.writeFileSync(dashboardPath, renderDashboard(root));
@@ -250,6 +339,9 @@ function main(): void {
       'project-wikis/distributed-cognition-dashboard.md',
       'project-wikis/work-queue.md',
       'project-wikis/provenance-ledger.md',
+      'project-wikis/delivery-ledger.md',
+      'project-wikis/mnemon-memory-report.md',
+      'project-wikis/mnemon-memory-graph.canvas',
       'project-wikis/attention-calibration.md',
       'project-wikis/memory-hygiene.md',
       'project-wikis/project-ontology.md',

@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import { randomBytes } from 'crypto';
+import { createHash, randomBytes } from 'crypto';
 import { spawnSync } from 'child_process';
 import { lookup } from 'dns/promises';
 import { isIP } from 'net';
@@ -12,6 +12,7 @@ import mammoth from 'mammoth';
 import { parseOffice } from 'officeparser';
 import OpenAI, { toFile } from 'openai';
 
+import { getMessageIdBySeq } from '../db/messages-out.js';
 import { registerTools } from './server.js';
 import type { McpToolDefinition } from './types.js';
 
@@ -363,6 +364,32 @@ interface ActionRequestRecord {
   notePath: string;
 }
 
+interface MnemonGraphMemoryRow {
+  id: string;
+  layer: string;
+  title?: string;
+  content: string;
+  sourceFile?: string;
+  createdAt: string;
+  confidence: number;
+  importance: number;
+  entityType?: string;
+  entityName?: string;
+}
+
+interface MnemonGraphNode {
+  id: string;
+  kind: 'system' | 'layer' | 'entity' | 'memory' | 'source';
+  label: string;
+  importance?: number;
+}
+
+interface MnemonGraphEdge {
+  from: string;
+  to: string;
+  label?: string;
+}
+
 interface WebSearchResult {
   title: string;
   url: string;
@@ -376,6 +403,7 @@ type ProvenanceEventKind =
   | 'coaching_prompt'
   | 'memory_promotion'
   | 'memory_hygiene'
+  | 'memory_graph'
   | 'project_ontology'
   | 'project_status'
   | 'wiki_update'
@@ -609,11 +637,17 @@ export function scoreAttention(text: string, type: MessageType, temporal?: Tempo
   };
 }
 
-function reflectionCoachingPrompt(text: string, type: MessageType, attention = scoreAttention(text, type)): string | undefined {
+function reflectionCoachingPrompt(
+  text: string,
+  type: MessageType,
+  attention = scoreAttention(text, type),
+): string | undefined {
   if (type === 'sensitive_data_warning') return 'Please resend a redacted version before I process this.';
   if (type === 'decision') return 'What evidence or change would make you revisit this decision?';
-  if (type === 'action_request') return 'What would a good finished output look like, and where should Codex or the action bridge work?';
-  if (type === 'forget_or_correction_request') return 'What old belief or memory should this supersede, and what should replace it?';
+  if (type === 'action_request')
+    return 'What would a good finished output look like, and where should Codex or the action bridge work?';
+  if (type === 'forget_or_correction_request')
+    return 'What old belief or memory should this supersede, and what should replace it?';
   if (attention.actionability === 'possible') {
     return 'Is there a concrete next action here, or should I keep this as thinking material for now?';
   }
@@ -1256,7 +1290,10 @@ function appendProvenanceEvent(root: string, event: ProvenanceEventInput): void 
   );
 }
 
-function readProvenanceEvents(root: string, limit = 200): Array<{
+function readProvenanceEvents(
+  root: string,
+  limit = 200,
+): Array<{
   timestamp?: string;
   kind?: string;
   title?: string;
@@ -1748,8 +1785,12 @@ function rawTemplate(
   temporal: TemporalMetadata,
   attention: AttentionMetadata,
   audioPath?: string,
+  sourceMessageId?: string,
 ): string {
   const lines = [`# Raw WhatsApp Note — ${ts}`, '', '## Source', source, ''];
+  if (sourceMessageId) {
+    lines.push('## WhatsApp source message id', scrubPrivateText(sourceMessageId), '');
+  }
   if (source === 'whatsapp-audio' && audioPath) {
     lines.push('## Audio source path', audioPath, '');
   }
@@ -1766,6 +1807,29 @@ function rawTemplate(
     '',
   );
   return lines.join('\n');
+}
+
+function sourceMessageIdFromAudioPath(inputPath: string | undefined): string | undefined {
+  const match = inputPath?.match(/\/workspace\/inbox\/([^/\s)]+)\//);
+  return match?.[1] ? scrubPrivateText(match[1]) : undefined;
+}
+
+function sourceMessageIdFromArgs(args: Record<string, unknown>, inputPath?: string): string | undefined {
+  const direct = typeof args.sourceMessageId === 'string' ? args.sourceMessageId.trim() : '';
+  if (direct) return scrubPrivateText(direct);
+
+  const seqValue = args.sourceMessageSeq;
+  const seq = typeof seqValue === 'number' ? seqValue : typeof seqValue === 'string' ? Number(seqValue) : NaN;
+  if (Number.isInteger(seq) && seq > 0) {
+    try {
+      const resolved = getMessageIdBySeq(seq);
+      if (resolved) return scrubPrivateText(resolved);
+    } catch {
+      // Capture should still work in tests or offline tooling that lacks an open session DB.
+    }
+  }
+
+  return sourceMessageIdFromAudioPath(inputPath);
 }
 
 function template(
@@ -2686,6 +2750,18 @@ function capabilityRoute(
       reason: 'memory hygiene signal detected',
     };
   }
+  if (
+    /\b(mnemon graph|memory graph|mnemon canvas|memory canvas)\b/i.test(lower) ||
+    /\b(visuali[sz]e|show|draw|map)\b.*\b(mnemon|durable memor(?:y|ies)|memory graph)\b/i.test(lower)
+  ) {
+    return {
+      capability: 'visualize_memory',
+      messageType,
+      confidence: 'high',
+      tools: ['distributed_cognition_mnemon_graph'],
+      reason: 'Mnemon graph visualization signal detected',
+    };
+  }
   if (/\b(project ontology|ontology|concept map|project graph)\b/i.test(lower)) {
     return {
       capability: 'refresh_project_ontology',
@@ -3184,6 +3260,318 @@ function storeDurableMemory(root: string, input: DurableMemoryInput, signalReaso
   return result;
 }
 
+function graphId(prefix: string, value: string): string {
+  return `${prefix}_${createHash('sha1').update(value).digest('hex').slice(0, 10)}`;
+}
+
+function compactGraphLabel(value: string, max = 80): string {
+  const clean = scrubPrivateText(value).replace(/\s+/g, ' ').trim();
+  if (clean.length <= max) return clean;
+  return `${clean.slice(0, max - 3)}...`;
+}
+
+function readMnemonGraphRows(limitInput: unknown): { dbPath: string; rows: MnemonGraphMemoryRow[] } {
+  const dbPath = resolveMnemonDbPath();
+  if (!fs.existsSync(dbPath)) return { dbPath, rows: [] };
+  const limit = Math.min(200, Math.max(1, Number.isFinite(Number(limitInput)) ? Math.floor(Number(limitInput)) : 40));
+  const db = new Database(dbPath, { readonly: true });
+  try {
+    const hasMemories = db.query("SELECT name FROM sqlite_master WHERE type='table' AND name = 'memories'").get() as
+      | { name?: string }
+      | undefined;
+    if (!hasMemories?.name) return { dbPath, rows: [] };
+    const rows = db
+      .query(
+        `
+          SELECT
+            id,
+            layer,
+            title,
+            content,
+            source_file AS sourceFile,
+            created_at AS createdAt,
+            confidence,
+            importance,
+            entity_type AS entityType,
+            entity_name AS entityName
+          FROM memories
+          WHERE superseded_by IS NULL
+            AND (
+              source LIKE 'distributed-cognition%'
+              OR scope = 'distributed-cognition'
+              OR source_file IS NOT NULL
+            )
+          ORDER BY importance DESC, confidence DESC, created_at DESC
+          LIMIT ?
+        `,
+      )
+      .all(limit) as Array<Record<string, unknown>>;
+    return {
+      dbPath,
+      rows: rows.map((row) => ({
+        id: String(row.id ?? ''),
+        layer: String(row.layer ?? 'unspecified'),
+        title: typeof row.title === 'string' ? scrubPrivateText(row.title) : undefined,
+        content: scrubPrivateText(String(row.content ?? '')),
+        sourceFile: typeof row.sourceFile === 'string' ? scrubPrivateText(row.sourceFile) : undefined,
+        createdAt: typeof row.createdAt === 'string' ? row.createdAt : '',
+        confidence: Number(row.confidence ?? 0),
+        importance: Number(row.importance ?? 0),
+        entityType: typeof row.entityType === 'string' ? scrubPrivateText(row.entityType) : undefined,
+        entityName: typeof row.entityName === 'string' ? scrubPrivateText(row.entityName) : undefined,
+      })),
+    };
+  } finally {
+    db.close();
+  }
+}
+
+function buildMnemonGraph(rows: MnemonGraphMemoryRow[]): { nodes: MnemonGraphNode[]; edges: MnemonGraphEdge[] } {
+  const nodes = new Map<string, MnemonGraphNode>();
+  const edges = new Map<string, MnemonGraphEdge>();
+  const addNode = (node: MnemonGraphNode) => {
+    if (!nodes.has(node.id)) nodes.set(node.id, node);
+  };
+  const addEdge = (edge: MnemonGraphEdge) => {
+    const key = `${edge.from}->${edge.to}:${edge.label ?? ''}`;
+    if (!edges.has(key)) edges.set(key, edge);
+  };
+  addNode({ id: 'dc', kind: 'system', label: 'Distributed Cognition' });
+  for (const row of rows) {
+    const layerId = graphId('layer', row.layer);
+    const entityType = row.entityType || 'unspecified';
+    const entityName = row.entityName || 'unspecified';
+    const entityId = graphId('entity', `${entityType}:${entityName}`);
+    const memoryId = graphId('memory', row.id);
+    addNode({ id: layerId, kind: 'layer', label: `layer: ${row.layer}` });
+    addNode({ id: entityId, kind: 'entity', label: `${entityType}: ${compactGraphLabel(entityName, 64)}` });
+    addNode({
+      id: memoryId,
+      kind: 'memory',
+      label: `${compactGraphLabel(row.title || row.id, 56)}\\nimportance ${row.importance.toFixed(2)}`,
+      importance: row.importance,
+    });
+    addEdge({ from: 'dc', to: layerId });
+    addEdge({ from: layerId, to: entityId });
+    addEdge({ from: entityId, to: memoryId });
+    if (row.sourceFile) {
+      const sourceId = graphId('source', row.sourceFile);
+      addNode({ id: sourceId, kind: 'source', label: compactGraphLabel(row.sourceFile, 72) });
+      addEdge({ from: memoryId, to: sourceId, label: 'source' });
+    }
+  }
+  return { nodes: [...nodes.values()], edges: [...edges.values()] };
+}
+
+function canvasColumn(kind: MnemonGraphNode['kind']): number {
+  if (kind === 'system') return 0;
+  if (kind === 'layer') return 1;
+  if (kind === 'entity') return 2;
+  if (kind === 'memory') return 3;
+  return 4;
+}
+
+function canvasColor(node: MnemonGraphNode): string {
+  if (node.kind === 'system') return '#2563eb';
+  if (node.kind === 'layer') return '#0891b2';
+  if (node.kind === 'entity') return '#7c3aed';
+  if (node.kind === 'source') return '#64748b';
+  if ((node.importance ?? 0) >= 0.85) return '#dc2626';
+  if ((node.importance ?? 0) >= 0.65) return '#ea580c';
+  if ((node.importance ?? 0) >= 0.45) return '#ca8a04';
+  return '#475569';
+}
+
+function canvasTitle(kind: MnemonGraphNode['kind']): string {
+  if (kind === 'system') return 'System';
+  if (kind === 'layer') return 'Layer';
+  if (kind === 'entity') return 'Entity';
+  if (kind === 'memory') return 'Memory';
+  return 'Source';
+}
+
+function mnemonGraphCanvas(graph: { nodes: MnemonGraphNode[]; edges: MnemonGraphEdge[] }): {
+  nodes: Array<Record<string, string | number>>;
+  edges: Array<Record<string, string>>;
+} {
+  const counters = new Map<number, number>();
+  const nodes = [...graph.nodes]
+    .sort((a, b) => canvasColumn(a.kind) - canvasColumn(b.kind) || a.label.localeCompare(b.label))
+    .map((node) => {
+      const column = canvasColumn(node.kind);
+      const index = counters.get(column) ?? 0;
+      counters.set(column, index + 1);
+      const importance =
+        node.kind === 'memory' && typeof node.importance === 'number'
+          ? `\n\nimportance: ${node.importance.toFixed(2)}`
+          : '';
+      return {
+        id: node.id,
+        type: 'text',
+        x: column * 420,
+        y: index * 210,
+        width: node.kind === 'memory' ? 340 : 300,
+        height: node.kind === 'memory' ? 170 : 140,
+        color: canvasColor(node),
+        text: `**${canvasTitle(node.kind)}**\n${node.label}${importance}`,
+      };
+    });
+  const edges = graph.edges.map((edge) => ({
+    id: graphId('edge', `${edge.from}->${edge.to}:${edge.label ?? ''}`),
+    fromNode: edge.from,
+    fromSide: 'right',
+    toNode: edge.to,
+    toSide: 'left',
+    color: '#94a3b8',
+    ...(edge.label ? { label: edge.label } : {}),
+  }));
+  return { nodes, edges };
+}
+
+function mermaidLabel(value: string): string {
+  return value.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\r?\n/g, '<br/>');
+}
+
+function renderMnemonMermaid(graph: { nodes: MnemonGraphNode[]; edges: MnemonGraphEdge[] }): string {
+  if (graph.nodes.length <= 1) return 'No Mnemon graph nodes found.';
+  return [
+    '```mermaid',
+    'flowchart LR',
+    ...graph.nodes.map((node) => `  ${node.id}["${mermaidLabel(node.label)}"]`),
+    ...graph.edges.map((edge) => `  ${edge.from} -->${edge.label ? `|${mermaidLabel(edge.label)}|` : ''} ${edge.to}`),
+    '```',
+  ].join('\n');
+}
+
+function formatMemoryTime(value: string): string {
+  const parsed = new Date(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(value) ? `${value.replace(' ', 'T')}Z` : value);
+  if (Number.isNaN(parsed.getTime())) return scrubPrivateText(value);
+  return timestamp(parsed);
+}
+
+function importanceBand(row: MnemonGraphMemoryRow): string {
+  if (row.importance >= 0.85) return 'key_or_pivot';
+  if (row.importance >= 0.65) return 'useful_context';
+  if (row.importance >= 0.45) return 'background';
+  return 'low_signal';
+}
+
+function countRows(rows: MnemonGraphMemoryRow[], key: (row: MnemonGraphMemoryRow) => string | undefined): string[] {
+  const counts = new Map<string, number>();
+  for (const row of rows) counts.set(key(row) || 'unspecified', (counts.get(key(row) || 'unspecified') ?? 0) + 1);
+  const entries = [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+  return entries.length > 0 ? entries.map(([label, count]) => `- ${label}: ${count}`) : ['- None'];
+}
+
+function mnemonGraphMarkdown(
+  rows: MnemonGraphMemoryRow[],
+  graph: { nodes: MnemonGraphNode[]; edges: MnemonGraphEdge[] },
+  dbPath: string,
+): string {
+  const now = timestamp(new Date());
+  return [
+    ...frontmatterBlock({
+      type: 'mnemon_memory_report',
+      generated: now,
+      tags: ['distributed-cognition/mnemon', 'distributed-cognition/memory-graph'],
+    }),
+    '',
+    `# Mnemon Memory Report — ${now}`,
+    '',
+    '## Scope',
+    `- Database: ${scrubPrivateText(dbPath)}`,
+    `- Distributed Cognition memories in view: ${rows.length}`,
+    '',
+    '## By Layer',
+    ...countRows(rows, (row) => row.layer),
+    '',
+    '## By Entity Type',
+    ...countRows(rows, (row) => row.entityType),
+    '',
+    '## By Importance Band',
+    ...countRows(rows, importanceBand),
+    '',
+    '## Mnemon Graph',
+    'Open [[mnemon-memory-graph.canvas|Mnemon Memory Graph Canvas]] in Obsidian for the visual board.',
+    '',
+    renderMnemonMermaid(graph),
+    '',
+    '## Attention Notes',
+    '- Mnemon should hold durable keys, pivots, decisions, preferences, corrections, and stable project constraints.',
+    '- Raw transcripts and ordinary meeting clutter should remain in Markdown notes.',
+    '- Key/pivot memories are the first place to look when deciding what matters.',
+    '',
+    '## Recent / High-Signal Memories',
+    rows.length > 0
+      ? rows
+          .map((row) =>
+            [
+              `### ${row.title || row.id}`,
+              `- id: ${row.id}`,
+              `- layer: ${row.layer}; importance ${row.importance.toFixed(2)}; confidence ${row.confidence.toFixed(2)}${row.entityName ? `; entity ${row.entityName}` : ''}${row.sourceFile ? `; source ${row.sourceFile}` : ''}`,
+              `- created: ${formatMemoryTime(row.createdAt)}`,
+              '',
+              row.content,
+            ].join('\n'),
+          )
+          .join('\n\n')
+      : 'No Distributed Cognition memories found.',
+    '',
+  ].join('\n');
+}
+
+function writeMnemonGraph(
+  root: string,
+  limit?: unknown,
+): {
+  markdownPath: string;
+  canvasPath: string;
+  graphJsonPath: string;
+  memoryCount: number;
+  nodeCount: number;
+  edgeCount: number;
+} {
+  const realRoot = requireRoot(root);
+  ensureFolders(realRoot);
+  const { dbPath, rows } = readMnemonGraphRows(limit);
+  const graph = buildMnemonGraph(rows);
+  const report = resolveProjectWikiPath(realRoot, 'Mnemon Memory Report', 'project-wikis/mnemon-memory-report.md');
+  const wikiDir = path.join(realRoot, 'project-wikis');
+  const canvasPath = path.join(wikiDir, 'mnemon-memory-graph.canvas');
+  const graphJsonPath = path.join(contextIndexPaths(realRoot).dir, 'mnemon-memory-graph.json');
+  assertInsideRoot(realRoot, canvasPath);
+  assertInsideRoot(realRoot, graphJsonPath);
+  fs.mkdirSync(wikiDir, { recursive: true });
+  fs.mkdirSync(path.dirname(graphJsonPath), { recursive: true });
+  fs.writeFileSync(report.filePath, mnemonGraphMarkdown(rows, graph, dbPath));
+  fs.writeFileSync(graphJsonPath, JSON.stringify(graph, null, 2));
+  fs.writeFileSync(canvasPath, JSON.stringify(mnemonGraphCanvas(graph), null, 2));
+  appendProvenanceEvent(realRoot, {
+    id: `mnemon-graph-${Date.now()}`,
+    kind: 'memory_graph',
+    title: 'Mnemon memory graph refreshed',
+    summary: `Wrote ${rows.length} memories into the Mnemon report and Obsidian Canvas graph.`,
+    outputPaths: [
+      report.relativePath,
+      relativeSecondBrainPath(realRoot, canvasPath),
+      relativeSecondBrainPath(realRoot, graphJsonPath),
+    ],
+    metadata: {
+      memoryCount: rows.length,
+      nodeCount: graph.nodes.length,
+      edgeCount: graph.edges.length,
+    },
+  });
+  return {
+    markdownPath: report.filePath,
+    canvasPath,
+    graphJsonPath,
+    memoryCount: rows.length,
+    nodeCount: graph.nodes.length,
+    edgeCount: graph.edges.length,
+  };
+}
+
 function resolveOptionalRoot(candidates: readonly string[], explicit?: unknown): string | undefined {
   if (typeof explicit === 'string' && explicit.trim()) return requireRoot(explicit.trim());
   for (const candidate of candidates) {
@@ -3674,7 +4062,13 @@ function memoryHygieneMarkdown(root: string): string {
 }
 
 function projectOntologyMarkdown(root: string): string {
-  const notes = markdownFiles(root, ['daily-reflections', 'processed-notes', 'pending-review', 'weekly-reviews', 'decision-log']);
+  const notes = markdownFiles(root, [
+    'daily-reflections',
+    'processed-notes',
+    'pending-review',
+    'weekly-reviews',
+    'decision-log',
+  ]);
   const sourcesBySignal = new Map<string, string[]>();
   for (const note of notes) {
     for (const signal of projectSignals(note.content)) {
@@ -3685,7 +4079,14 @@ function projectOntologyMarkdown(root: string): string {
   }
   const node = (label: string) => {
     const sources = sourcesBySignal.get(label) ?? [];
-    return `- **${label}** — ${sources.length > 0 ? sources.slice(0, 5).map((source) => `[[${source}]]`).join(', ') : 'not yet observed in notes'}`;
+    return `- **${label}** — ${
+      sources.length > 0
+        ? sources
+            .slice(0, 5)
+            .map((source) => `[[${source}]]`)
+            .join(', ')
+        : 'not yet observed in notes'
+    }`;
   };
   return [
     ...frontmatterBlock({
@@ -4151,6 +4552,7 @@ function captureAudioTranscript(inputPath: string, transcript: string, args: Rec
       temporal,
     );
     const file = filename(now, (args.slug as string | undefined) ?? 'redacted-audio-sensitive-warning');
+    const sourceMessageId = sourceMessageIdFromArgs(args, inputPath);
     const rawPath = writeNew(
       resolveNotePath(root, 'inbox-whatsapp', file),
       rawTemplate(
@@ -4161,6 +4563,7 @@ function captureAudioTranscript(inputPath: string, transcript: string, args: Rec
         temporal,
         attention,
         inputPath,
+        sourceMessageId,
       ),
     );
     const processedPath = writeNew(
@@ -4205,9 +4608,10 @@ function captureAudioTranscript(inputPath: string, transcript: string, args: Rec
   const temporal = extractTemporalMetadata(cleanTranscript, now, type);
   const attention = scoreAttention(cleanTranscript, type, temporal);
   const file = filename(now, (args.slug as string | undefined) ?? cleanTranscript.split(/\s+/).slice(0, 7).join(' '));
+  const sourceMessageId = sourceMessageIdFromArgs(args, inputPath);
   const rawPath = writeNew(
     resolveNotePath(root, 'inbox-whatsapp', file),
-    rawTemplate(type, ts, cleanTranscript, 'whatsapp-audio', temporal, attention, inputPath),
+    rawTemplate(type, ts, cleanTranscript, 'whatsapp-audio', temporal, attention, inputPath, sourceMessageId),
   );
   const processedMarkdown =
     typeof args.processedMarkdown === 'string' && args.processedMarkdown.trim()
@@ -4261,6 +4665,16 @@ export const captureNote: McpToolDefinition = {
         },
         slug: { type: 'string', description: 'Optional short filename slug.' },
         source: { type: 'string', description: 'whatsapp-text, whatsapp-audio, or manual.' },
+        sourceMessageSeq: {
+          type: 'number',
+          description:
+            'Optional numeric id from the incoming <message id="...">. Use this so text captures can be audited against the WhatsApp session row.',
+        },
+        sourceMessageId: {
+          type: 'string',
+          description:
+            'Optional advanced session message id if already known. Usually prefer sourceMessageSeq from the prompt.',
+        },
         audioPath: { type: 'string', description: 'Optional original audio path when source is whatsapp-audio.' },
         processedMarkdown: {
           type: 'string',
@@ -4284,6 +4698,7 @@ export const captureNote: McpToolDefinition = {
       const temporal = extractTemporalMetadata(rawText, now, type);
       const attention = scoreAttention(rawText, type, temporal);
       const file = filename(now, (args.slug as string | undefined) ?? rawText.split(/\s+/).slice(0, 7).join(' '));
+      const sourceMessageId = sourceMessageIdFromArgs(args, args.audioPath as string | undefined);
       const rawPath = writeNew(
         resolveNotePath(root, 'inbox-whatsapp', file),
         rawTemplate(
@@ -4294,6 +4709,7 @@ export const captureNote: McpToolDefinition = {
           temporal,
           attention,
           args.audioPath as string | undefined,
+          sourceMessageId,
         ),
       );
       const processedMarkdown =
@@ -4351,6 +4767,16 @@ export const transcribeAudio: McpToolDefinition = {
             'Defaults to true. Set false only for preview; normal WhatsApp audio should be captured into second-brain.',
         },
         slug: { type: 'string', description: 'Optional short filename slug when capture is true.' },
+        sourceMessageSeq: {
+          type: 'number',
+          description:
+            'Optional numeric id from the incoming <message id="...">. Use this so the raw capture can be audited against the WhatsApp session row.',
+        },
+        sourceMessageId: {
+          type: 'string',
+          description:
+            'Optional advanced session message id if already known. Usually prefer sourceMessageSeq from the prompt.',
+        },
         processedMarkdown: {
           type: 'string',
           description: 'Optional fully processed Markdown note written when capture is true.',
@@ -4404,6 +4830,16 @@ export const captureAudio: McpToolDefinition = {
         prompt: { type: 'string', description: 'Optional transcription prompt.' },
         language: { type: 'string', description: 'Optional ISO language hint.' },
         slug: { type: 'string', description: 'Optional short filename slug.' },
+        sourceMessageSeq: {
+          type: 'number',
+          description:
+            'Optional numeric id from the incoming <message id="...">. Use this so the raw capture can be audited against the WhatsApp session row.',
+        },
+        sourceMessageId: {
+          type: 'string',
+          description:
+            'Optional advanced session message id if already known. Usually prefer sourceMessageSeq from the prompt.',
+        },
         processedMarkdown: {
           type: 'string',
           description: 'Optional fully processed Markdown note written by the agent after reading the transcript.',
@@ -4951,6 +5387,40 @@ export const memoryHygiene: McpToolDefinition = {
   },
 };
 
+export const mnemonGraph: McpToolDefinition = {
+  tool: {
+    name: 'distributed_cognition_mnemon_graph',
+    description:
+      'Write an Obsidian-friendly Mnemon memory report plus a .canvas graph so durable keys, pivots, entities, and source notes can be visually inspected.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        root: { type: 'string', description: 'Optional second-brain root. Defaults to the mounted path.' },
+        limit: { type: 'number', description: 'Maximum memories to include. Default 40, max 200.' },
+      },
+    },
+  },
+  async handler(args) {
+    try {
+      const root = rootPath(args.root);
+      const written = writeMnemonGraph(root, args.limit);
+      return ok(
+        [
+          'Wrote Mnemon memory graph.',
+          `memories: ${written.memoryCount}`,
+          `nodes: ${written.nodeCount}`,
+          `edges: ${written.edgeCount}`,
+          `report: ${written.markdownPath}`,
+          `canvas: ${written.canvasPath}`,
+          `graph json: ${written.graphJsonPath}`,
+        ].join('\n'),
+      );
+    } catch (e) {
+      return err(e instanceof Error ? e.message : String(e));
+    }
+  },
+};
+
 export const projectOntology: McpToolDefinition = {
   tool: {
     name: 'distributed_cognition_project_ontology',
@@ -4985,8 +5455,7 @@ export const projectOntology: McpToolDefinition = {
 export const provenanceLedger: McpToolDefinition = {
   tool: {
     name: 'distributed_cognition_provenance_ledger',
-    description:
-      'Write a provenance ledger page from the append-only Distributed Cognition events log.',
+    description: 'Write a provenance ledger page from the append-only Distributed Cognition events log.',
     inputSchema: {
       type: 'object' as const,
       properties: {
@@ -5662,6 +6131,7 @@ registerTools([
   queueStatus,
   attentionCalibration,
   memoryHygiene,
+  mnemonGraph,
   projectOntology,
   provenanceLedger,
   buildCodexStatus,

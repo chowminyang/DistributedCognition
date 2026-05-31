@@ -32,6 +32,7 @@ import { log } from './log.js';
 import { resolveSession, writeSessionMessage, writeOutboundDirect } from './session-manager.js';
 import { wakeContainer } from './container-runner.js';
 import { getSession } from './db/sessions.js';
+import { mirrorWhatsAppIngressToSecondBrain } from './distributed-cognition/whatsapp-ingress-mirror.js';
 import type { AgentGroup, MessagingGroup, MessagingGroupAgent } from './types.js';
 import type { InboundEvent } from './channels/adapter.js';
 
@@ -447,8 +448,10 @@ async function deliverToAgent(
     }
   }
 
+  const routedMessageId = messageIdForAgent(event.message.id, agent.agent_group_id);
+
   writeSessionMessage(session.agent_group_id, session.id, {
-    id: messageIdForAgent(event.message.id, agent.agent_group_id),
+    id: routedMessageId,
     kind: event.message.kind,
     timestamp: event.message.timestamp,
     platformId: deliveryAddr.platformId,
@@ -457,6 +460,38 @@ async function deliverToAgent(
     content: event.message.content,
     trigger: wake ? 1 : 0,
   });
+
+  if (event.channelType === 'whatsapp') {
+    try {
+      const mirrored = mirrorWhatsAppIngressToSecondBrain({
+        agentGroupId: agent.agent_group_id,
+        agentGroupName: agentGroup.name,
+        sessionId: session.id,
+        messageId: routedMessageId,
+        timestamp: event.message.timestamp,
+        content: event.message.content,
+        wake,
+      });
+      if (mirrored.written) {
+        log.info('Mirrored WhatsApp ingress receipt to Distributed Cognition second-brain', {
+          sessionId: session.id,
+          agentGroupId: agent.agent_group_id,
+        });
+      } else if (mirrored.reason !== 'not_distributed_cognition' && mirrored.reason !== 'already_exists') {
+        log.debug('Skipped WhatsApp ingress mirror', {
+          sessionId: session.id,
+          agentGroupId: agent.agent_group_id,
+          reason: mirrored.reason,
+        });
+      }
+    } catch (err) {
+      log.warn('Failed to mirror WhatsApp ingress receipt', {
+        sessionId: session.id,
+        agentGroupId: agent.agent_group_id,
+        err,
+      });
+    }
+  }
 
   log.info('Message routed', {
     sessionId: session.id,

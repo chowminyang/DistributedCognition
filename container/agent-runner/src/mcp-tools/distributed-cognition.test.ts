@@ -18,6 +18,7 @@ import {
   formatReply,
   healthCheck,
   memoryHygiene,
+  mnemonGraph,
   preparePromotion,
   projectOntology,
   provenanceLedger,
@@ -110,9 +111,13 @@ describe('Distributed Cognition context index', () => {
       rawText: 'Today I realised this belongs in daily reflections.',
       messageType: 'reflection / project portfolio update',
       slug: 'daily-reflection',
+      sourceMessageId: 'whatsapp-session-row-1',
     });
 
     expect(toolText(result)).toContain('Captured reflection');
+    const rawFiles = fs.readdirSync(path.join(root, 'inbox-whatsapp'));
+    const raw = fs.readFileSync(path.join(root, 'inbox-whatsapp', rawFiles[0]), 'utf-8');
+    expect(raw).toContain('## WhatsApp source message id\nwhatsapp-session-row-1');
     const dailyFiles = fs.readdirSync(path.join(root, 'daily-reflections'));
     expect(dailyFiles.some((file) => file.endsWith('daily-reflection.md'))).toBe(true);
     const processed = fs.readFileSync(path.join(root, 'daily-reflections', dailyFiles[0]), 'utf-8');
@@ -383,6 +388,43 @@ describe('Distributed Cognition context index', () => {
       const audit = fs.readFileSync(path.join(root, 'approved-updates', audits[0]), 'utf-8');
       expect(audit).toContain('## Status\nauto_stored');
       expect(audit).toContain('Raw transcript content was not stored in Mnemon');
+    });
+  });
+
+  test('writes a Mnemon report and Obsidian Canvas graph for durable memory', async () => {
+    await withTempMnemonDb(async () => {
+      const root = tempRoot();
+      const stored = await autoUpgradeMemory.handler({
+        root,
+        memory: 'Distributed Cognition should keep raw transcripts in Markdown and only promote durable pivots.',
+        title: 'Durable memory filter',
+        messageType: 'durable_memory_candidate',
+        layer: 'procedural',
+        entityType: 'rule',
+        entityName: 'Mnemon filter',
+        importance: 0.95,
+        confidence: 0.93,
+      });
+      expect(toolText(stored)).toContain('Stored durable memory in Mnemon');
+
+      const result = await mnemonGraph.handler({ root });
+      const text = toolText(result);
+      expect(text).toContain('Wrote Mnemon memory graph.');
+      expect(text).toContain('memories: 1');
+      const report = fs.readFileSync(path.join(root, 'project-wikis', 'mnemon-memory-report.md'), 'utf-8');
+      expect(report).toContain('Durable memory filter');
+      expect(report).toContain('[[mnemon-memory-graph.canvas|Mnemon Memory Graph Canvas]]');
+      const canvas = JSON.parse(
+        fs.readFileSync(path.join(root, 'project-wikis', 'mnemon-memory-graph.canvas'), 'utf-8'),
+      ) as {
+        nodes: Array<{ text?: string; color?: string }>;
+        edges: unknown[];
+      };
+      expect(
+        canvas.nodes.some((node) => node.text?.includes('Durable memory filter') && node.color === '#dc2626'),
+      ).toBe(true);
+      expect(canvas.edges.length).toBeGreaterThan(0);
+      expect(fs.existsSync(path.join(root, '.dc-index', 'mnemon-memory-graph.json'))).toBe(true);
     });
   });
 

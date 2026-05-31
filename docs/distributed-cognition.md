@@ -530,21 +530,49 @@ It writes:
 
 ```text
 project-wikis/mnemon-memory-report.md
+project-wikis/mnemon-memory-graph.canvas
+.dc-index/mnemon-memory-report.json
+.dc-index/mnemon-memory-graph.json
 ```
 
-The report focuses on Distributed Cognition memories, grouped by memory layer and entity type, with source notes where available. It is meant to make the attention filter inspectable: keys, pivots, decisions, preferences, corrections, and stable project constraints should stand out; raw transcripts and ordinary meeting clutter should not appear there.
+The dashboard also regenerates this report automatically. The Markdown report includes an Obsidian-friendly Mermaid graph linking Distributed Cognition to memory layers, entities, memory nodes, and source notes. The Canvas file opens as a visual Mnemon board in Obsidian, with layers, entities, durable memories, and source notes separated into columns and memory nodes coloured by importance. It is meant to make the attention filter inspectable: keys, pivots, decisions, preferences, corrections, and stable project constraints should stand out; raw transcripts and ordinary meeting clutter should not appear there.
+
+From WhatsApp, requests like “show me the Mnemon graph”, “visualize my durable memory”, or “open the memory canvas” route to `distributed_cognition_mnemon_graph`, which refreshes the Markdown report, graph JSON, and Obsidian Canvas inside the mounted second-brain folder.
 
 ## macOS Bridge Automation
 
 For always-on Mac use, run the host-side bridges periodically with launchd. These jobs should live in the user's local `~/Library/LaunchAgents` folder, not inside this repository, because they contain machine-specific paths.
 
-Recommended schedule:
+Use the installer after the manual bridge commands have passed:
 
+```bash
+pnpm run dc:install-launchd -- install \
+  --root "<local Distributed-Cognition folder>" \
+  --projects-root "$HOME/Documents/Codex" \
+  --execute-bridges \
+  --load
+```
+
+The installer writes five user-level LaunchAgents:
+
+- `dc:health`: every 5 minutes, runs `pnpm run dc:health -- --root "<local Distributed-Cognition folder>" --json`.
+- `dc:dashboard`: every 5 minutes, runs `pnpm run dc:dashboard -- --root "<local Distributed-Cognition folder>"`.
 - `dc:memory-bridge`: every 5 minutes, runs `pnpm run dc:memory-bridge -- process --execute`.
 - `dc:codex-bridge`: every 5 minutes, runs `pnpm run dc:codex-bridge -- process --execute`.
 - `dc:action-bridge`: every 5 minutes, runs `pnpm run dc:action-bridge -- process --execute`.
 
-Keep the launchd jobs pointed at the local NanoClaw checkout and the host `pnpm` executable. Logs can be written under the checkout's ignored `logs/launchd/` folder. Do not commit generated LaunchAgent plists unless they have been rewritten as generic templates with placeholder paths.
+Omit `--execute-bridges` to install the bridge jobs in dry-run mode first. This is useful when testing the scheduler without letting it mutate Mnemon, run Codex tasks, or create artifacts.
+
+Useful commands:
+
+```bash
+pnpm run dc:install-launchd -- status
+pnpm run dc:install-launchd -- uninstall
+```
+
+The installer writes a machine-local runner under `~/Library/Application Support/DistributedCognition/bin/` and the generated jobs call that runner through `/bin/bash`. This avoids macOS privacy restrictions that can block LaunchAgents from executing scripts directly from `~/Documents`. The runner takes a per-job lock before running the command so a slow bridge run cannot overlap with the next scheduled tick. Logs are written under the checkout's ignored `logs/launchd/` folder.
+
+Keep the launchd jobs pointed at the local NanoClaw checkout and the host `pnpm` executable. Do not commit generated LaunchAgent plists because they contain machine-specific paths.
 
 ## Dashboard And Obsidian Templates
 
@@ -562,10 +590,14 @@ This writes:
 project-wikis/distributed-cognition-dashboard.md
 project-wikis/work-queue.md
 project-wikis/provenance-ledger.md
+project-wikis/capture-ledger.md
+project-wikis/delivery-ledger.md
 project-wikis/attention-calibration.md
 project-wikis/memory-hygiene.md
 project-wikis/project-ontology.md
 .dc-index/work-queue-status.json
+.dc-index/capture-ledger.json
+.dc-index/delivery-ledger.json
 _templates/project-wiki.md
 _templates/home-dashboard.md
 _templates/reflection.md
@@ -581,7 +613,7 @@ _templates/weekly-review.md
 _templates/queue-status.md
 ```
 
-The dashboard is intended for Obsidian. It links system health, context index freshness, Codex Workbench, retrieval evals, queue counts, deadline watch, memory report, work queue, provenance, attention calibration, memory hygiene, project ontology, and recent captures. The templates use frontmatter so future wiki pages, reflections, decisions, memory audits, action requests, handoffs, and weekly reviews are easier to scan and query.
+The dashboard is intended for Obsidian. It links system health, context index freshness, Codex Workbench, retrieval evals, queue counts, deadline watch, memory report, work queue, provenance, capture ledger, delivery ledger, attention calibration, memory hygiene, project ontology, and recent captures. The capture ledger is generated from provenance events and shows whether accepted captures have raw notes, processed notes, classification, coaching prompts, deadline-watch links, and Mnemon promotions. It also reconciles WhatsApp session rows against raw inbox Markdown files that contain local source links, so possible dropped casual captures are visible without printing WhatsApp message body text. The host additionally mirrors accepted WhatsApp messages for the `Distributed Cognition` agent group into `inbox-whatsapp/` as source-linked ingress receipts when it can resolve the configured writable second-brain mount. These receipts are marked `Host-level receipt; pending agent processing.` and let the ledger distinguish real gaps from older unlinked messages. Explicit sensitive-data cues are replaced with a redaction notice rather than mirrored verbatim. The delivery ledger is generated from session databases and delivery audit events; it shows accepted inbound rows, processing acknowledgements, final outbound replies, failed/due-undelivered messages, and direct visible work-status sends without storing message body text. The templates use frontmatter so future wiki pages, reflections, decisions, memory audits, action requests, handoffs, and weekly reviews are easier to scan and query.
 
 ## Retrieval Evals
 
@@ -851,7 +883,7 @@ Use:
 distributed_cognition_health_check
 ```
 
-to verify the local setup after Docker restarts, Mac sleep/wake, mount changes, or before a Raspberry Pi migration. It writes:
+inside the WhatsApp/container agent to verify the mounted local setup after Docker restarts, Mac sleep/wake, mount changes, or before a Raspberry Pi migration. It writes:
 
 ```text
 project-wikis/system-health.md
@@ -859,6 +891,22 @@ project-wikis/system-health.md
 ```
 
 The check reports the writable second-brain root, required folder structure, selected read-only context mounts, Codex project/memory mounts, Mnemon database visibility, context-index directory, and queue directories. Missing optional mounts are warnings; missing required second-brain write access is an error.
+
+From the Mac host, use the stronger silence/debug check:
+
+```bash
+pnpm run dc:health -- --root "<local Distributed-Cognition folder>"
+```
+
+This host-side check writes the same files, but can also inspect things the container cannot see: the NanoClaw host socket, host process, Docker agent containers, recent WhatsApp connection/routing/delivery log state, due-but-undelivered outbound rows, delivery-ledger readability, queued Codex/action work, and local Mnemon database visibility. It redacts WhatsApp JIDs, phone numbers, API keys, email addresses, and `/Users/<username>` path fragments from the report.
+
+Recommended order when WhatsApp goes quiet:
+
+1. Start Docker Desktop.
+2. Start or restart the NanoClaw host.
+3. Run `pnpm run dc:health -- --root "<local Distributed-Cognition folder>"`.
+4. If queues are active, run the relevant host bridge dry run and execute run.
+5. Run `pnpm run dc:dashboard -- --root "<local Distributed-Cognition folder>"` so Obsidian shows the latest health, queue, capture ledger, delivery ledger, provenance, memory, and project pages.
 
 ## Manual Tests
 
@@ -955,20 +1003,25 @@ Reply tag and health:
 3. Include a fake API key, phone number, and `/Users/<username>` path in a test reply and confirm they are redacted.
 4. Run `distributed_cognition_health_check`.
 5. Confirm `project-wikis/system-health.md` and `.dc-index/system-health.json` are written.
+6. Run `pnpm run dc:health -- --root "<local Distributed-Cognition folder>"` on the Mac host.
+7. Confirm the report includes host socket, host process, Docker, WhatsApp connection, last route, last reply, outbound, queue, and Mnemon checks without leaking message content.
 
 ## Raspberry Pi Migration
 
-Later migration path:
+See [Raspberry Pi migration runbook](raspberry-pi-migration.md) for the concrete handoff scripts and 24H service setup.
 
-1. Clone the repo on the Raspberry Pi.
-2. Copy only necessary non-secret configuration manually.
-3. Create a local second-brain folder.
-4. Use rclone or another external sync method to sync only the selected Dropbox `Distributed-Cognition` folder.
-5. Mount that local folder into Docker.
-6. Rebuild containers on the Raspberry Pi rather than copying Mac images.
-7. Re-pair WhatsApp if needed.
-8. Start Docker in detached mode using the repo's preferred command.
-9. Verify logs.
-10. Test the allowlist again.
+Short migration path:
+
+1. Use Codex on the Mac as the SSH control plane for the Pi.
+2. Stop the Mac launchd jobs before exporting state.
+3. Clone the repo on the Raspberry Pi.
+4. Restore only the deliberate state bundle: `.env`, `data/`, `store/`, `groups/`, and NanoClaw allowlists.
+5. Create a local second-brain folder on the Pi.
+6. Use rclone or another external sync method to sync only the selected Dropbox `Distributed-Cognition` folder.
+7. Mount that local folder into Docker.
+8. Rebuild containers on the Raspberry Pi rather than copying Mac images.
+9. Re-pair WhatsApp if needed.
+10. Start the Pi systemd service.
+11. Verify logs, health, Dropbox writes, and WhatsApp allowlist again.
 
 Do not add Dropbox sync inside NanoClaw. Dropbox or rclone belongs outside the app.

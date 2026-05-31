@@ -24,6 +24,7 @@ import { log } from './log.js';
 import { normalizeOptions } from './channels/ask-question.js';
 import { clearOutbox, openInboundDb, openOutboundDb, readOutboxFiles } from './session-manager.js';
 import { pauseTypingRefreshAfterDelivery, setTypingAdapter } from './modules/typing/index.js';
+import { recordDeliveryAuditEvent, type DeliveryAuditPhase } from './distributed-cognition/delivery-audit.js';
 import type { OutboundFile } from './channels/adapter.js';
 import type { Session } from './types.js';
 
@@ -48,6 +49,16 @@ const deliveryAttempts = new Map<string, number>();
  * second caller skips will be picked up on the next poll tick (~1s).
  */
 const inflightDeliveries = new Set<string>();
+
+function deliveryAuditPhase(msg: {
+  kind: string;
+  channel_type: string | null;
+  platform_id: string | null;
+}): DeliveryAuditPhase {
+  if (msg.kind === 'system') return 'outbound_system_action';
+  if (msg.channel_type === 'whatsapp' && msg.platform_id) return 'outbound_final_reply';
+  return 'outbound_channel_message';
+}
 
 export interface ChannelDeliveryAdapter {
   deliver(
@@ -191,6 +202,15 @@ async function drainSession(session: Session): Promise<void> {
       try {
         const platformMsgId = await deliverMessage(msg, session, inDb);
         markDelivered(inDb, msg.id, platformMsgId ?? null);
+        recordDeliveryAuditEvent({
+          phase: deliveryAuditPhase(msg),
+          status: 'sent',
+          sessionId: session.id,
+          messageOutId: msg.id,
+          channelType: msg.channel_type,
+          platformId: msg.platform_id,
+          platformMessageId: platformMsgId,
+        });
         deliveryAttempts.delete(msg.id);
 
         // Pause the typing indicator after a real user-facing message
@@ -213,6 +233,15 @@ async function drainSession(session: Session): Promise<void> {
             err,
           });
           markDeliveryFailed(inDb, msg.id);
+          recordDeliveryAuditEvent({
+            phase: deliveryAuditPhase(msg),
+            status: 'failed',
+            sessionId: session.id,
+            messageOutId: msg.id,
+            channelType: msg.channel_type,
+            platformId: msg.platform_id,
+            reason: err instanceof Error ? err.message : String(err),
+          });
           deliveryAttempts.delete(msg.id);
         } else {
           log.warn('Message delivery failed, will retry', {
@@ -245,8 +274,7 @@ async function deliverMessage(
   inDb: Database.Database,
 ): Promise<string | undefined> {
   if (!deliveryAdapter) {
-    log.warn('No delivery adapter configured, dropping message', { id: msg.id });
-    return;
+    throw new Error(`No delivery adapter configured for message ${msg.id}`);
   }
 
   const content = JSON.parse(msg.content);
@@ -341,8 +369,7 @@ async function deliverMessage(
 
   // Channel delivery
   if (!msg.channel_type || !msg.platform_id) {
-    log.warn('Message missing routing fields', { id: msg.id });
-    return;
+    throw new Error(`Message missing routing fields for ${msg.id}`);
   }
 
   // Read file attachments from outbox if the content declares files.
