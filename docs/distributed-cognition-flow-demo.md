@@ -13,7 +13,7 @@ This demo proves the intended end-to-end path using synthetic data in a temporar
 5. It rejected a low-signal memory candidate.
 6. It indexed a temporary Codex project into the Codex Workbench status.
 7. It queued a handoff to `codex-local`.
-8. The host-side Codex bridge executed the handoff with local Codex on this Mac.
+8. The host-side Codex bridge executed the handoff with local Codex on this host.
 9. Local Codex edited the temporary project and ran its test command.
 10. The handoff moved from `queued/` to `completed/` and the handoff note was updated.
 
@@ -126,7 +126,7 @@ The handoff note was updated:
 ```text
 Status: completed
 Completed at: 17-05-26, 12:24
-Executor: local Codex on this Mac
+Executor: local Codex on this host
 ```
 
 ## Local Codex Result

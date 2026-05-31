@@ -308,21 +308,25 @@ else
   print_command "pnpm run pi:verify-cutover -- --local-root <mac Distributed-Cognition folder> --host $(quote_shell "${PI_HOST:-<pi-host>}") --user $(quote_shell "${PI_USER:-<pi-user>}") --path $(quote_shell "${PI_PROJECT_ROOT:-<pi NanoClaw path>}") --second-brain-root $(quote_shell "${PI_SECOND_BRAIN_ROOT:-<pi Distributed-Cognition path>}") --proof-text \"\$PROOF_TEXT\" --proof-since-minutes 30 --execute"
 fi
 
-section "8. Resume Mac-Side Bridges Only"
+section "8. Post-Cutover Bridge Work"
 cat <<'EOF'
-  Do this only after WhatsApp replies are proven to come from the Pi.
-  These launchd jobs do not start the Mac NanoClaw/WhatsApp host; they only let
-  the Mac maintain dashboards and process queued Mnemon, Codex, and action work
-  from the synced Distributed-Cognition folder.
+  Default for the Pi migration: keep the Mac NanoClaw/WhatsApp host stopped and
+  use Mac Codex only as an SSH operator. Process queued Mnemon, Codex, and
+  action work on the Pi:
 EOF
 if [ -n "$LOCAL_SECOND_BRAIN_ROOT" ]; then
-  print_command "pnpm run dc:install-launchd -- install --root $(quote_shell "$LOCAL_SECOND_BRAIN_ROOT") --projects-root \"\$HOME/Documents/Codex\" --execute-bridges --load"
-  print_command "pnpm run dc:codex-bridge -- process --root $(quote_shell "$LOCAL_SECOND_BRAIN_ROOT") --projects-root \"\$HOME/Documents/Codex\""
+  print_command "pnpm run pi:ssh-admin -- process-bridges"
+  print_command "pnpm run pi:ssh-admin -- process-bridges --execute-bridges"
 else
-  print_command "pnpm run dc:install-launchd -- install --root <mac Distributed-Cognition folder> --projects-root \"\$HOME/Documents/Codex\" --execute-bridges --load"
-  print_command "pnpm run dc:codex-bridge -- process --root <mac Distributed-Cognition folder> --projects-root \"\$HOME/Documents/Codex\""
+  print_command "pnpm run pi:ssh-admin -- process-bridges"
+  print_command "pnpm run pi:ssh-admin -- process-bridges --execute-bridges"
 fi
-print_command "pnpm run dc:install-launchd -- status"
+cat <<'EOF'
+
+  Optional tradeoff: if you specifically need Codex Desktop/App-visible local
+  handoff work on the Mac, you may install only the Mac bridge launchd jobs
+  after the Pi WhatsApp runtime is proven. Do not restart the Mac NanoClaw host.
+EOF
 
 section "Rollback"
 print_command "ssh ${PI_USER:-<pi-user>}@${PI_HOST:-<pi-host>} \"sudo systemctl stop 'nanoclaw-v2-*.service'\""

@@ -91,7 +91,7 @@ function usage(): never {
       'Usage: pnpm run dc:codex-bridge -- [process|init] [options]',
       '',
       'Options:',
-      '  --execute                Execute queued codex-local handoffs on this Mac. Omit for dry-run.',
+      '  --execute                Execute queued codex-local handoffs on this host. Omit for dry-run.',
       '  --submit                 Submit queued codex-cloud handoffs to Codex Cloud. Non-default.',
       '  --root <path>            Distributed Cognition second-brain root.',
       '  --projects-root <path>   Local Codex projects root.',
@@ -798,7 +798,7 @@ async function processQueue(args: Args, configPath: string): Promise<void> {
           skipped += 1;
           continue;
         }
-        recordProgress(args.root, record, 'running', 'Local Codex execution started on this Mac.');
+        recordProgress(args.root, record, 'running', 'Local Codex execution started on this host.');
         const result = await runLocalCodex(args.root, record, projectPath, config);
         if (!result.ok) {
           moveRecord(args.root, item.filePath, record, 'failed', {
@@ -830,7 +830,7 @@ async function processQueue(args: Args, configPath: string): Promise<void> {
         });
         updateNote(args.root, record, 'completed', [
           `- Completed at: ${sgtTimestamp()}`,
-          '- Executor: local Codex on this Mac',
+          '- Executor: local Codex on this host',
           result.threadId ? `- Codex thread: ${result.threadId}` : '- Codex thread: not reported',
           result.lastMessagePath ? `- Last message: ${result.lastMessagePath}` : '- Last message: not written',
         ]);

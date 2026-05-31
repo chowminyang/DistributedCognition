@@ -84,7 +84,7 @@ function usage(): never {
       'Usage: pnpm run dc:action-bridge -- [process|init] [options]',
       '',
       'Options:',
-      '  --execute        Execute queued action requests locally on this Mac. Omit for dry-run.',
+      '  --execute        Execute queued action requests locally on this host. Omit for dry-run.',
       '  --root <path>    Distributed Cognition second-brain root.',
       '  --config <path>  Action bridge config path.',
       '  --limit <n>      Maximum queued actions to process. Default: 5.',
@@ -645,7 +645,7 @@ async function processQueue(args: Args, configPath: string): Promise<void> {
       }
 
       if (action.target === 'codex-local') {
-        recordProgress(args.root, record, 'running', 'Local Codex action execution started on this Mac.');
+        recordProgress(args.root, record, 'running', 'Local Codex action execution started on this host.');
         const local = runLocalCodexAction(args.root, config, record);
         if (!local.ok) {
           moveRecord(args.root, item.filePath, record, 'failed', {
@@ -673,7 +673,7 @@ async function processQueue(args: Args, configPath: string): Promise<void> {
         });
         updateNote(args.root, record, 'completed', [
           `- Completed at: ${sgtTimestamp()}`,
-          '- Executor: local Codex on this Mac',
+          '- Executor: local Codex on this host',
           local.lastMessagePath ? `- Last message: ${local.lastMessagePath}` : '- Last message: not written',
           `- Output folder: ${config.outputRoot || 'action-outputs'}`,
         ]);

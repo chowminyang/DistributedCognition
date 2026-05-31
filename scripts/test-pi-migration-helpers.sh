@@ -114,7 +114,7 @@ assert_contains "$goal_out" "pnpm run pi:ssh-start-runtime" "codex goal includes
 assert_contains "$goal_out" "--proof-text" "codex goal includes Pi WhatsApp persistence proof"
 assert_contains "$goal_out" "Do not mark the goal complete" "codex goal includes completion guard"
 assert_contains "$goal_out" "02-06-26" "codex goal includes migration date"
-assert_contains "$goal_out" "reinstall the Mac bridge jobs only" "codex goal keeps Mac bridge-only resumption explicit"
+assert_contains "$goal_out" "process DC bridge work on the Pi" "codex goal keeps Pi-side bridge work explicit"
 
 pnpm run pi:codex-goal -- --help >"$TMP_DIR/codex-goal-help.out"
 assert_contains "$TMP_DIR/codex-goal-help.out" "paste-ready /goal prompt" "codex goal help documents purpose"
@@ -153,8 +153,8 @@ assert_contains "$plan_out" "pnpm run pi:ssh-restore-state" "cutover plan includ
 assert_contains "$plan_out" "pnpm run pi:ssh-start-runtime" "cutover plan includes SSH runtime start"
 assert_contains "$plan_out" "pnpm run pi:ssh-admin -- doctor" "cutover plan includes Pi doctor check"
 assert_contains "$plan_out" "--proof-text" "cutover plan includes Pi WhatsApp persistence proof"
-assert_contains "$plan_out" "Resume Mac-Side Bridges Only" "cutover plan includes bridge-only Mac resumption"
-assert_contains "$plan_out" "pnpm run dc:install-launchd -- install" "cutover plan re-enables only bridge jobs after Pi proof"
+assert_contains "$plan_out" "Post-Cutover Bridge Work" "cutover plan includes post-cutover bridge work"
+assert_contains "$plan_out" "pnpm run pi:ssh-admin -- process-bridges" "cutover plan defaults to Pi-side bridge processing"
 
 set +e
 pnpm run pi:cutover-plan -- --strict >"$TMP_DIR/cutover-missing.out" 2>"$TMP_DIR/cutover-missing.err"
@@ -315,6 +315,8 @@ pnpm run pi:ssh-admin -- --help >"$TMP_DIR/ssh-admin-help.out"
 assert_contains "$TMP_DIR/ssh-admin-help.out" "Required options, unless the matching environment defaults are set" "ssh admin help documents env defaults"
 assert_contains "$TMP_DIR/ssh-admin-help.out" "BatchMode=yes" "ssh admin help documents -o style ssh options"
 assert_contains "$TMP_DIR/ssh-admin-help.out" "doctor" "ssh admin help documents doctor action"
+assert_contains "$TMP_DIR/ssh-admin-help.out" "process-bridges" "ssh admin help documents Pi-side bridge processing"
+assert_contains "$TMP_DIR/ssh-admin-help.out" "--execute-bridges" "ssh admin help documents bridge execute flag"
 assert_contains "$TMP_DIR/ssh-admin-help.out" "NANOCLAW_PI_SSH_CONNECT_TIMEOUT" "ssh admin help documents SSH timeout env"
 
 pnpm run pi:ssh-preflight -- --help >"$TMP_DIR/ssh-preflight-help.out"
@@ -346,6 +348,13 @@ pnpm run pi:ssh-admin -- doctor \
   --path /home/pi/NanoClaw \
   >"$TMP_DIR/ssh-admin-doctor-missing-root.out" 2>"$TMP_DIR/ssh-admin-doctor-missing-root.err"
 doctor_missing_root_code="$?"
+pnpm run pi:ssh-admin -- process-bridges \
+  --host nanoclaw-pi.local \
+  --user pi \
+  --path /home/pi/NanoClaw \
+  --second-brain-root /home/pi/Distributed-Cognition \
+  >"$TMP_DIR/ssh-admin-bridges-missing-codex.out" 2>"$TMP_DIR/ssh-admin-bridges-missing-codex.err"
+bridges_missing_codex_code="$?"
 pnpm run pi:ssh-preflight >"$TMP_DIR/ssh-preflight-missing.out" 2>"$TMP_DIR/ssh-preflight-missing.err"
 preflight_missing_code="$?"
 pnpm run pi:ssh-bootstrap >"$TMP_DIR/ssh-bootstrap-missing.out" 2>"$TMP_DIR/ssh-bootstrap-missing.err"
@@ -357,12 +366,14 @@ start_runtime_missing_code="$?"
 set -e
 assert_exit_code 2 "$admin_missing_code" "ssh admin fails before SSH when target values are missing"
 assert_exit_code 2 "$doctor_missing_root_code" "ssh admin doctor fails before SSH when second-brain root is missing"
+assert_exit_code 2 "$bridges_missing_codex_code" "ssh admin process-bridges fails before SSH when Codex projects root is missing"
 assert_exit_code 2 "$preflight_missing_code" "ssh preflight fails before SSH when target values are missing"
 assert_exit_code 2 "$bootstrap_missing_code" "ssh bootstrap fails before SSH when target values are missing"
 assert_exit_code 2 "$restore_missing_code" "ssh restore fails before SSH when target values are missing"
 assert_exit_code 2 "$start_runtime_missing_code" "ssh start runtime fails before SSH when target values are missing"
 assert_contains "$TMP_DIR/ssh-admin-missing.err" "Missing required --host" "ssh admin missing host is explicit"
 assert_contains "$TMP_DIR/ssh-admin-doctor-missing-root.err" "doctor requires --second-brain-root" "ssh admin doctor missing second-brain root is explicit"
+assert_contains "$TMP_DIR/ssh-admin-bridges-missing-codex.err" "process-bridges requires --codex-projects-root" "ssh admin process-bridges missing Codex root is explicit"
 assert_contains "$TMP_DIR/ssh-preflight-missing.err" "Missing required --host" "ssh preflight missing host is explicit"
 assert_contains "$TMP_DIR/ssh-bootstrap-missing.err" "Missing required --host" "ssh bootstrap missing host is explicit"
 assert_contains "$TMP_DIR/ssh-restore-missing.err" "Missing required --host" "ssh restore missing host is explicit"

@@ -446,16 +446,30 @@ in recent Pi second-brain files without printing the note body. The visible
 WhatsApp reply still needs to be checked from the allowlisted 1:1 chat before
 the migration is complete.
 
-## Mac Bridge Jobs After Cutover
+## Bridge Work After Cutover
 
 After WhatsApp replies are proven to come from the Pi, keep the Mac
-NanoClaw/WhatsApp host stopped, but re-enable the Mac-side maintenance and
-bridge jobs if you want local Codex to keep processing queued handoffs from the
-synced `Distributed-Cognition` folder.
+NanoClaw/WhatsApp host stopped. By default, process queued Mnemon, Codex, and
+action bridge work on the Pi from Mac Codex over SSH:
+
+```bash
+cd /Users/minyangchow/Documents/NanoClaw
+pnpm run pi:ssh-admin -- process-bridges
+pnpm run pi:ssh-admin -- process-bridges --execute-bridges
+```
+
+The first command is a dry run at the bridge level. The second command adds
+`--execute` to the Pi-side `dc:memory-bridge`, `dc:codex-bridge`, and
+`dc:action-bridge` calls. This keeps the Pi as the active Distributed
+Cognition runtime while the Mac acts only as the SSH operator.
+
+Optional tradeoff: if you specifically need Codex Desktop/App-visible local
+handoff work on the Mac, install only the Mac-side maintenance and bridge jobs
+after the Pi WhatsApp runtime is proven.
 
 These launchd jobs run `dc:health`, `dc:dashboard`, `dc:memory-bridge`,
-`dc:codex-bridge`, and `dc:action-bridge`. They do not start the WhatsApp
-adapter or NanoClaw host service.
+`dc:codex-bridge`, and `dc:action-bridge` on the Mac. They do not start the
+WhatsApp adapter or NanoClaw host service.
 
 ```bash
 cd /Users/minyangchow/Documents/NanoClaw
@@ -469,7 +483,7 @@ pnpm run dc:install-launchd -- status
 
 If the synced folder is at `$HOME/Dropbox/Distributed-Cognition`, use that path
 instead. The Pi remains the capture/runtime host; the Mac is only doing
-dashboard refreshes and queued local work.
+dashboard refreshes and queued local work if you choose this optional path.
 
 ## Rollback
 
