@@ -39,6 +39,7 @@
     "pi:codex-goal": "bash scripts/pi-codex-goal.sh",
     "pi:cutover-plan": "bash scripts/pi-cutover-plan.sh",
     "pi:rehearse-cutover": "bash scripts/pi-rehearse-cutover.sh",
+    "pi:verify-cutover": "bash scripts/pi-verify-cutover.sh",
     "pi:install-systemd": "bash scripts/pi-install-systemd.sh",
     "pi:install-dropbox-sync": "bash scripts/pi-install-dropbox-sync.sh",
     "pi:ssh-admin": "bash scripts/pi-ssh-admin.sh",

@@ -55,6 +55,7 @@ helper_scripts=(
   scripts/pi-ssh-admin.sh
   scripts/pi-ssh-bootstrap.sh
   scripts/pi-ssh-preflight.sh
+  scripts/pi-verify-cutover.sh
   scripts/pi-mac-export-preflight.sh
   scripts/pi-export-state.sh
   scripts/pi-import-state.sh
@@ -210,6 +211,45 @@ set -e
 assert_exit_code 1 "$readiness_missing_code" "strict mac readiness fails when values are missing"
 assert_contains "$TMP_DIR/readiness-missing.out" "PI_MAC_READINESS=missing_values" "strict mac readiness reports missing values"
 assert_contains "$TMP_DIR/readiness-missing.out" "No SSH was opened" "strict mac readiness remains non-mutating"
+
+verify_dir="$TMP_DIR/verify-cutover"
+pnpm run pi:verify-cutover -- \
+  --local-root "$TMP_DIR/Distributed-Cognition" \
+  --out-dir "$TMP_DIR/export" \
+  --output-dir "$verify_dir" \
+  --host nanoclaw-pi.local \
+  --user pi \
+  --path /home/pi/NanoClaw \
+  --second-brain-root /home/pi/Distributed-Cognition \
+  --unit-name nanoclaw-v2-test.service \
+  --include-logs \
+  --lines 12 \
+  >"$TMP_DIR/verify-cutover.out"
+assert_contains "$TMP_DIR/verify-cutover.out" "PI_CUTOVER_VERIFY=dry_run" "cutover verification dry-run reports status"
+assert_contains "$TMP_DIR/verify-cutover.out" "No SSH was opened" "cutover verification dry-run is non-mutating"
+[ -f "$verify_dir/summary.md" ] || fail "cutover verification writes summary"
+[ -f "$verify_dir/mac-stopped-check.txt" ] || fail "cutover verification writes Mac stopped check"
+[ -f "$verify_dir/pi-status.txt" ] || fail "cutover verification writes Pi status check"
+[ -f "$verify_dir/pi-health.txt" ] || fail "cutover verification writes Pi health check"
+[ -f "$verify_dir/pi-dashboard.txt" ] || fail "cutover verification writes Pi dashboard check"
+[ -f "$verify_dir/pi-logs.txt" ] || fail "cutover verification writes optional logs check"
+[ -f "$verify_dir/manual-whatsapp-checklist.md" ] || fail "cutover verification writes WhatsApp checklist"
+assert_contains "$verify_dir/mac-stopped-check.txt" "pnpm run pi:mac-preflight" "cutover verification checks Mac stopped state"
+assert_contains "$verify_dir/pi-status.txt" "pnpm run pi:ssh-admin -- status" "cutover verification checks Pi status"
+assert_contains "$verify_dir/pi-health.txt" "pnpm run pi:ssh-admin -- health" "cutover verification checks Pi health"
+assert_contains "$verify_dir/manual-whatsapp-checklist.md" "Do not mark the migration complete" "cutover verification keeps WhatsApp proof explicit"
+
+set +e
+pnpm run pi:verify-cutover -- --strict --output-dir "$TMP_DIR/verify-missing" >"$TMP_DIR/verify-missing.out" 2>"$TMP_DIR/verify-missing.err"
+verify_missing_code="$?"
+pnpm run pi:verify-cutover -- --execute --output-dir "$TMP_DIR/verify-execute-missing" >"$TMP_DIR/verify-execute-missing.out" 2>"$TMP_DIR/verify-execute-missing.err"
+verify_execute_missing_code="$?"
+set -e
+assert_exit_code 1 "$verify_missing_code" "strict cutover verification fails when values are missing"
+assert_exit_code 2 "$verify_execute_missing_code" "execute cutover verification fails before SSH when values are missing"
+assert_contains "$TMP_DIR/verify-missing.out" "PI_CUTOVER_VERIFY=missing_values" "strict cutover verification reports missing values"
+assert_contains "$TMP_DIR/verify-missing.out" "No SSH was opened" "strict cutover verification remains non-mutating"
+assert_contains "$TMP_DIR/verify-execute-missing.out" "PI_CUTOVER_VERIFY=missing_values" "execute cutover verification reports missing values before SSH"
 
 pnpm run pi:ssh-admin -- --help >"$TMP_DIR/ssh-admin-help.out"
 assert_contains "$TMP_DIR/ssh-admin-help.out" "Required options, unless the matching environment defaults are set" "ssh admin help documents env defaults"

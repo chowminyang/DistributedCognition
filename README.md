@@ -202,6 +202,23 @@ pnpm run pi:ssh-admin -- health
 pnpm run pi:ssh-admin -- restart
 ```
 
+To gather post-cutover proof into one bundle, run the verifier in dry-run mode
+first:
+
+```bash
+pnpm run pi:verify-cutover -- \
+  --local-root "<local Distributed-Cognition folder>" \
+  --host "<pi-host-or-ip>" \
+  --user "<pi-ssh-user>" \
+  --path "<pi NanoClaw checkout path>" \
+  --second-brain-root "<pi Distributed-Cognition path>"
+```
+
+After the Mac host is stopped and the Pi service is running, add `--execute`.
+This checks the Mac stopped state plus Pi status, health, and dashboard output,
+and writes `output/pi-cutover-verification/DD-MM-YY-HHMM/`. The final WhatsApp
+reply test remains manual and is written into the bundle checklist.
+
 ## Upstream NanoClaw
 
 <p align="center">

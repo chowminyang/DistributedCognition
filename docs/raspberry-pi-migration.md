@@ -345,6 +345,46 @@ pnpm run pi:ssh-admin -- logs --lines 80
 
 The supported actions are `status`, `health`, `dashboard`, `logs`, `follow-logs`, `start`, `stop`, `restart`, and `update`. `status` avoids printing full process command lines. `logs` and `follow-logs` may include private WhatsApp/reflection content, so use them only on your own trusted Mac/Pi.
 
+## Post-Cutover Verification
+
+After the final state has been restored, the Mac host remains stopped, and the
+Pi systemd service is running, gather the verification bundle from the Mac:
+
+```bash
+cd /Users/minyangchow/Documents/NanoClaw
+pnpm run pi:verify-cutover -- \
+  --local-root "$HOME/Library/CloudStorage/Dropbox/Distributed-Cognition" \
+  --host nanoclaw-pi.local \
+  --user pi \
+  --path /home/pi/NanoClaw \
+  --second-brain-root /home/pi/Distributed-Cognition
+```
+
+The default is a dry run. Add `--execute` only after the values look right:
+
+```bash
+pnpm run pi:verify-cutover -- \
+  --local-root "$HOME/Library/CloudStorage/Dropbox/Distributed-Cognition" \
+  --host nanoclaw-pi.local \
+  --user pi \
+  --path /home/pi/NanoClaw \
+  --second-brain-root /home/pi/Distributed-Cognition \
+  --execute
+```
+
+The verifier writes `output/pi-cutover-verification/DD-MM-YY-HHMM/` with:
+
+- Mac stopped-state preflight.
+- Pi service/status output.
+- Pi `dc:health` output.
+- Pi dashboard refresh output.
+- A manual WhatsApp checklist.
+
+This helper can prove the local stopped state and Pi health path, but it cannot
+itself prove WhatsApp delivery. The migration is complete only after the
+manual WhatsApp checklist succeeds from the allowlisted 1:1 chat and the new
+capture lands in the Pi second-brain folder.
+
 ## Rollback
 
 If the Pi is not healthy:

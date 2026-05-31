@@ -284,6 +284,11 @@ print_command "pnpm run pi:ssh-admin -- status"
 print_command "pnpm run pi:ssh-admin -- health"
 print_command "pnpm run pi:ssh-admin -- dashboard"
 print_command "pnpm run pi:ssh-admin -- logs --lines 80"
+if [ -n "$LOCAL_SECOND_BRAIN_ROOT" ]; then
+  print_command "pnpm run pi:verify-cutover -- --local-root $(quote_shell "$LOCAL_SECOND_BRAIN_ROOT") --host $(quote_shell "${PI_HOST:-<pi-host>}") --user $(quote_shell "${PI_USER:-<pi-user>}") --path $(quote_shell "${PI_PROJECT_ROOT:-<pi NanoClaw path>}") --second-brain-root $(quote_shell "${PI_SECOND_BRAIN_ROOT:-<pi Distributed-Cognition path>}") --execute"
+else
+  print_command "pnpm run pi:verify-cutover -- --local-root <mac Distributed-Cognition folder> --host $(quote_shell "${PI_HOST:-<pi-host>}") --user $(quote_shell "${PI_USER:-<pi-user>}") --path $(quote_shell "${PI_PROJECT_ROOT:-<pi NanoClaw path>}") --second-brain-root $(quote_shell "${PI_SECOND_BRAIN_ROOT:-<pi Distributed-Cognition path>}") --execute"
+fi
 
 section "6. WhatsApp Test"
 cat <<'EOF'

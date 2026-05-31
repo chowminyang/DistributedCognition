@@ -238,7 +238,15 @@ Work plan:
    pnpm run pi:ssh-admin -- health
    pnpm run pi:ssh-admin -- dashboard
    pnpm run pi:ssh-admin -- logs --lines 80
-10. Run a live WhatsApp smoke test from my allowed personal chat:
+10. Gather the post-cutover verification bundle:
+   pnpm run pi:verify-cutover -- \\
+     --local-root "${MAC_SECOND_BRAIN_DISPLAY}" \\
+     --host "${PI_HOST_DISPLAY}" \\
+     --user "${PI_USER_DISPLAY}" \\
+     --path "${PI_PROJECT_DISPLAY}" \\
+     --second-brain-root "${PI_SECOND_BRAIN_DISPLAY}" \\
+     --execute
+11. Run a live WhatsApp smoke test from my allowed personal chat:
    DC, run a health check.
    DC, what can you see in the second-brain folder?
    DC, capture this as a harmless Pi cutover test reflection.
@@ -249,6 +257,7 @@ Completion evidence required:
 - Final exported state bundle sha256 verifies before import.
 - Pi systemd service is enabled and active.
 - Mac NanoClaw host remains stopped after cutover.
+- The post-cutover verification helper writes a clean verification bundle.
 - DC replies on WhatsApp from the Pi.
 - A raw note and processed note are created in the Pi Distributed-Cognition folder.
 - rclone sync is configured for only the selected Distributed-Cognition folder.
