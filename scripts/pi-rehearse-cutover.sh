@@ -26,6 +26,8 @@ Mac to review before controlling the Pi over SSH. The bundle contains:
   - codex-goal.md
   - cutover-plan.txt
   - ssh-bootstrap-dry-run.txt, or a skipped bootstrap note when values are missing
+  - ssh-restore-state-dry-run.txt, using a non-secret placeholder bundle
+  - ssh-start-runtime-dry-run.txt, or a skipped runtime note when values are missing
   - summary.md
 
 This script does not SSH, stop services, copy files, inspect secrets, export
@@ -109,6 +111,7 @@ is_missing_or_placeholder() {
 missing=()
 failures=()
 bootstrap_missing=()
+runtime_missing=()
 
 require_value() {
   local label="$1"
@@ -123,6 +126,14 @@ require_bootstrap_value() {
   local value="$2"
   if is_missing_or_placeholder "$value"; then
     bootstrap_missing+=("$label")
+  fi
+}
+
+require_runtime_value() {
+  local label="$1"
+  local value="$2"
+  if is_missing_or_placeholder "$value"; then
+    runtime_missing+=("$label")
   fi
 }
 
@@ -156,6 +167,32 @@ write_bootstrap_skipped() {
     printf 'No SSH was opened. No WhatsApp/runtime state was changed.\n\n'
     printf 'Missing values:\n'
     for item in "${bootstrap_missing[@]}"; do
+      printf -- '- %s\n' "$item"
+    done
+  } >"$output_file"
+}
+
+write_restore_skipped() {
+  local output_file="$1"
+  {
+    printf '# Pi SSH State Restore Dry Run\n\n'
+    printf 'Skipped because required Pi SSH values are missing.\n\n'
+    printf 'No SSH was opened. No WhatsApp/runtime state was changed.\n\n'
+    printf 'Missing values:\n'
+    for item in "${bootstrap_missing[@]}"; do
+      printf -- '- %s\n' "$item"
+    done
+  } >"$output_file"
+}
+
+write_runtime_skipped() {
+  local output_file="$1"
+  {
+    printf '# Pi SSH Runtime Start Dry Run\n\n'
+    printf 'Skipped because required Pi runtime values are missing.\n\n'
+    printf 'No SSH was opened. No WhatsApp/runtime state was changed.\n\n'
+    printf 'Missing values:\n'
+    for item in "${runtime_missing[@]}"; do
       printf -- '- %s\n' "$item"
     done
   } >"$output_file"
@@ -204,6 +241,8 @@ write_summary() {
     printf -- '- `codex-goal.md`\n'
     printf -- '- `cutover-plan.txt`\n'
     printf -- '- `ssh-bootstrap-dry-run.txt`\n'
+    printf -- '- `ssh-restore-state-dry-run.txt`\n'
+    printf -- '- `ssh-start-runtime-dry-run.txt`\n'
     printf -- '- `summary.md`\n\n'
 
     printf '## Next Commands\n\n'
@@ -215,8 +254,14 @@ write_summary() {
     printf '```bash\n'
     printf 'sed -n '\''1,260p'\'' %s\n' "$(quote_arg "$REHEARSAL_DIR/cutover-plan.txt")"
     printf '```\n\n'
+    printf 'Review the SSH dry-runs:\n\n'
+    printf '```bash\n'
+    printf 'sed -n '\''1,180p'\'' %s\n' "$(quote_arg "$REHEARSAL_DIR/ssh-bootstrap-dry-run.txt")"
+    printf 'sed -n '\''1,180p'\'' %s\n' "$(quote_arg "$REHEARSAL_DIR/ssh-restore-state-dry-run.txt")"
+    printf 'sed -n '\''1,180p'\'' %s\n' "$(quote_arg "$REHEARSAL_DIR/ssh-start-runtime-dry-run.txt")"
+    printf '```\n\n'
     printf 'On Tuesday, paste `codex-goal.md` into the Mac Codex thread that will control the Pi over SSH.\n\n'
-    printf 'Only after the Pi exists and the dry-run looks right should Codex rerun `pnpm run pi:ssh-bootstrap` with `--execute`.\n'
+    printf 'Only after the Pi exists and each dry-run looks right should Codex rerun the matching helper with `--execute`, one phase at a time.\n'
   } >"$summary_file"
 }
 
@@ -320,6 +365,7 @@ require_value "Pi host (--pi-host or NANOCLAW_PI_HOST)" "$PI_HOST"
 require_value "Pi SSH user (--pi-user or NANOCLAW_PI_USER)" "$PI_USER"
 require_value "Pi NanoClaw path (--pi-path or NANOCLAW_PI_PROJECT_ROOT)" "$PI_PROJECT_ROOT"
 require_value "Pi Distributed-Cognition path (--pi-second-brain-root or NANOCLAW_PI_SECOND_BRAIN_ROOT)" "$PI_SECOND_BRAIN_ROOT"
+require_value "Pi Codex projects path (--pi-codex-projects-root or NANOCLAW_PI_CODEX_PROJECTS_ROOT)" "$PI_CODEX_PROJECTS_ROOT"
 require_value "Repository URL (--repo-url or NANOCLAW_PI_REPO_URL)" "$REPO_URL"
 require_value "Branch (--branch or NANOCLAW_PI_BRANCH)" "$BRANCH"
 require_bootstrap_value "Pi host (--pi-host or NANOCLAW_PI_HOST)" "$PI_HOST"
@@ -328,6 +374,11 @@ require_bootstrap_value "Pi NanoClaw path (--pi-path or NANOCLAW_PI_PROJECT_ROOT
 require_bootstrap_value "Pi Distributed-Cognition path (--pi-second-brain-root or NANOCLAW_PI_SECOND_BRAIN_ROOT)" "$PI_SECOND_BRAIN_ROOT"
 require_bootstrap_value "Repository URL (--repo-url or NANOCLAW_PI_REPO_URL)" "$REPO_URL"
 require_bootstrap_value "Branch (--branch or NANOCLAW_PI_BRANCH)" "$BRANCH"
+require_runtime_value "Pi host (--pi-host or NANOCLAW_PI_HOST)" "$PI_HOST"
+require_runtime_value "Pi SSH user (--pi-user or NANOCLAW_PI_USER)" "$PI_USER"
+require_runtime_value "Pi NanoClaw path (--pi-path or NANOCLAW_PI_PROJECT_ROOT)" "$PI_PROJECT_ROOT"
+require_runtime_value "Pi Distributed-Cognition path (--pi-second-brain-root or NANOCLAW_PI_SECOND_BRAIN_ROOT)" "$PI_SECOND_BRAIN_ROOT"
+require_runtime_value "Pi Codex projects path (--pi-codex-projects-root or NANOCLAW_PI_CODEX_PROJECTS_ROOT)" "$PI_CODEX_PROJECTS_ROOT"
 
 mkdir -p "$REHEARSAL_DIR"
 cd "$PROJECT_ROOT"
@@ -376,6 +427,43 @@ if [ "${#bootstrap_missing[@]}" -eq 0 ]; then
   run_capture "$REHEARSAL_DIR/ssh-bootstrap-dry-run.txt" "Pi SSH Bootstrap Dry Run" "${bootstrap_cmd[@]}"
 else
   write_bootstrap_skipped "$REHEARSAL_DIR/ssh-bootstrap-dry-run.txt"
+fi
+
+placeholder_bundle="$REHEARSAL_DIR/nanoclaw-pi-state-rehearsal-placeholder.tar.gz"
+placeholder_checksum="$placeholder_bundle.sha256"
+printf 'placeholder bundle for dry-run only\n' >"$placeholder_bundle"
+printf 'placeholder checksum for dry-run only  %s\n' "$(basename "$placeholder_bundle")" >"$placeholder_checksum"
+
+if [ "${#bootstrap_missing[@]}" -eq 0 ]; then
+  restore_cmd=(
+    pnpm run pi:ssh-restore-state --
+    --host "$PI_HOST"
+    --user "$PI_USER"
+    --path "$PI_PROJECT_ROOT"
+    --bundle "$placeholder_bundle"
+    --checksum "$placeholder_checksum"
+    --force
+    --cleanup-remote
+  )
+  run_capture "$REHEARSAL_DIR/ssh-restore-state-dry-run.txt" "Pi SSH State Restore Dry Run" "${restore_cmd[@]}"
+else
+  write_restore_skipped "$REHEARSAL_DIR/ssh-restore-state-dry-run.txt"
+fi
+
+if [ "${#runtime_missing[@]}" -eq 0 ]; then
+  runtime_cmd=(
+    pnpm run pi:ssh-start-runtime --
+    --host "$PI_HOST"
+    --user "$PI_USER"
+    --path "$PI_PROJECT_ROOT"
+    --second-brain-root "$PI_SECOND_BRAIN_ROOT"
+    --codex-projects-root "$PI_CODEX_PROJECTS_ROOT"
+    --rclone-remote "$PI_RCLONE_REMOTE"
+  )
+  [ -n "$PI_UNIT_NAME" ] && runtime_cmd+=(--unit-name "$PI_UNIT_NAME")
+  run_capture "$REHEARSAL_DIR/ssh-start-runtime-dry-run.txt" "Pi SSH Runtime Start Dry Run" "${runtime_cmd[@]}"
+else
+  write_runtime_skipped "$REHEARSAL_DIR/ssh-start-runtime-dry-run.txt"
 fi
 
 status="ready"

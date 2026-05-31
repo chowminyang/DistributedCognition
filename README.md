@@ -84,6 +84,7 @@ pnpm run pi:cutover-plan -- \
   --pi-user "<pi-ssh-user>" \
   --pi-path "<pi NanoClaw checkout path>" \
   --pi-second-brain-root "<pi Distributed-Cognition path>" \
+  --pi-codex-projects-root "<pi Codex projects path>" \
   --repo-url "<DistributedCognition repo URL>"
 ```
 
@@ -168,8 +169,9 @@ pnpm run pi:rehearse-cutover -- \
 ```
 
 This creates `output/pi-cutover-rehearsal/DD-MM-YY-HHMM/` with the Codex
-`/goal`, cutover checklist, SSH bootstrap dry run, and a summary. It does not
-open SSH, stop the Mac host, export state, import state, or touch WhatsApp.
+`/goal`, cutover checklist, SSH bootstrap dry run, SSH state-restore dry run,
+SSH runtime-start dry run, and a summary. It does not open SSH, stop the Mac
+host, export state, import state, or touch WhatsApp.
 
 To produce a broader Mac-side readiness bundle before Tuesday:
 

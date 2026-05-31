@@ -174,6 +174,7 @@ require_value "Pi host (--pi-host or NANOCLAW_PI_HOST)" "$PI_HOST"
 require_value "Pi SSH user (--pi-user or NANOCLAW_PI_USER)" "$PI_USER"
 require_value "Pi NanoClaw path (--pi-path or NANOCLAW_PI_PROJECT_ROOT)" "$PI_PROJECT_ROOT"
 require_value "Pi Distributed-Cognition path (--pi-second-brain-root or NANOCLAW_PI_SECOND_BRAIN_ROOT)" "$PI_SECOND_BRAIN_ROOT"
+require_value "Pi Codex projects path (--pi-codex-projects-root or NANOCLAW_PI_CODEX_PROJECTS_ROOT)" "$PI_CODEX_PROJECTS_ROOT"
 require_value "Repository URL (--repo-url)" "$REPO_URL"
 
 cat <<EOF

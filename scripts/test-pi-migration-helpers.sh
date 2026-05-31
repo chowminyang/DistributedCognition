@@ -153,6 +153,7 @@ env \
   NANOCLAW_PI_USER=pi \
   NANOCLAW_PI_PROJECT_ROOT=/home/pi/NanoClaw \
   NANOCLAW_PI_SECOND_BRAIN_ROOT=/home/pi/Distributed-Cognition \
+  NANOCLAW_PI_CODEX_PROJECTS_ROOT=/home/pi/Codex \
   pnpm run pi:cutover-plan -- \
     --repo-url https://github.com/chowminyang/DistributedCognition.git \
     --strict \
@@ -179,10 +180,16 @@ assert_contains "$TMP_DIR/rehearsal.out" "No SSH was opened" "cutover rehearsal 
 [ -f "$rehearsal_dir/codex-goal.md" ] || fail "cutover rehearsal writes codex goal"
 [ -f "$rehearsal_dir/cutover-plan.txt" ] || fail "cutover rehearsal writes cutover plan"
 [ -f "$rehearsal_dir/ssh-bootstrap-dry-run.txt" ] || fail "cutover rehearsal writes ssh bootstrap dry-run"
+[ -f "$rehearsal_dir/ssh-restore-state-dry-run.txt" ] || fail "cutover rehearsal writes ssh state restore dry-run"
+[ -f "$rehearsal_dir/ssh-start-runtime-dry-run.txt" ] || fail "cutover rehearsal writes ssh runtime start dry-run"
 assert_contains "$rehearsal_dir/codex-goal.md" "/goal" "cutover rehearsal includes goal prompt"
 assert_contains "$rehearsal_dir/cutover-plan.txt" "CUTOVER_PLAN=ready" "cutover rehearsal includes ready cutover plan"
 assert_contains "$rehearsal_dir/ssh-bootstrap-dry-run.txt" "PI_SSH_BOOTSTRAP=dry_run" "cutover rehearsal includes bootstrap dry-run"
+assert_contains "$rehearsal_dir/ssh-restore-state-dry-run.txt" "PI_SSH_RESTORE_STATE=dry_run" "cutover rehearsal includes state restore dry-run"
+assert_contains "$rehearsal_dir/ssh-start-runtime-dry-run.txt" "PI_SSH_START_RUNTIME=dry_run" "cutover rehearsal includes runtime start dry-run"
 assert_contains "$rehearsal_dir/summary.md" "No SSH was opened" "cutover rehearsal summary states no SSH"
+assert_contains "$rehearsal_dir/summary.md" "ssh-restore-state-dry-run.txt" "cutover rehearsal summary lists state restore artifact"
+assert_contains "$rehearsal_dir/summary.md" "ssh-start-runtime-dry-run.txt" "cutover rehearsal summary lists runtime start artifact"
 
 set +e
 pnpm run pi:rehearse-cutover -- --strict --output-dir "$TMP_DIR/rehearsal-missing" >"$TMP_DIR/rehearsal-missing.out" 2>"$TMP_DIR/rehearsal-missing.err"

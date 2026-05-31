@@ -82,8 +82,9 @@ The generated prompt tells Codex to inspect current state, use dry-run helpers
 first, ask before final Mac stop/export, keep WhatsApp active on only one host,
 and verify that DC replies from the Pi before marking the goal complete.
 
-To bundle the `/goal`, the read-only cutover checklist, and the SSH bootstrap
-dry-run into one timestamped rehearsal folder:
+To bundle the `/goal`, the read-only cutover checklist, and the SSH dry-runs
+for bootstrap, state restore, and runtime start into one timestamped rehearsal
+folder:
 
 ```bash
 pnpm run pi:rehearse-cutover -- \

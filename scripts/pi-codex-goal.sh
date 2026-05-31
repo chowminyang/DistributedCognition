@@ -165,7 +165,7 @@ PI_HOST_DISPLAY="$(value_or_placeholder "$PI_HOST" "Pi host or IP")"
 PI_USER_DISPLAY="$(value_or_placeholder "$PI_USER" "Pi SSH user")"
 PI_PROJECT_DISPLAY="$(value_or_placeholder "$PI_PROJECT_ROOT" "Pi NanoClaw checkout path")"
 PI_SECOND_BRAIN_DISPLAY="$(value_or_placeholder "$PI_SECOND_BRAIN_ROOT" "Pi Distributed-Cognition path")"
-PI_CODEX_DISPLAY="$(value_or_placeholder "$PI_CODEX_PROJECTS_ROOT" "Pi Codex projects path or leave unset")"
+PI_CODEX_DISPLAY="$(value_or_placeholder "$PI_CODEX_PROJECTS_ROOT" "Pi Codex projects path")"
 PI_UNIT_DISPLAY="$(value_or_placeholder "$PI_UNIT_NAME" "auto-detect")"
 
 cat <<EOF
