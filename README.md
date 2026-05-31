@@ -58,7 +58,7 @@ pnpm run dc:action-bridge -- process
 pnpm run dc:action-bridge -- process --execute
 ```
 
-The bridge commands run on the host where you invoke them, not inside the WhatsApp container. The container may queue work, but Mnemon promotion, local Codex execution, and artifact generation remain controlled by host-side allowlists and bridge config. Before Pi migration this is usually the Mac; after Pi migration, prefer running bridge work on the Pi through the SSH admin helper unless you deliberately want Mac-visible Codex Desktop/App handoffs.
+The bridge commands run on the host where you invoke them, not inside the WhatsApp container. The container may queue work, but Mnemon promotion, local Codex execution, and artifact generation remain controlled by host-side allowlists and bridge config. Before Pi migration this is usually the Mac. After Pi migration, run the DC/WhatsApp runtime on the Pi; use Pi-side bridge timers for always-on maintenance, or run the Mac bridge jobs only when you deliberately want Codex Desktop/App-visible local handoffs. When the Pi operator environment is sourced, new Codex/action bridge configs include Raspberry Pi SSH context so Mac Codex threads know they are controlling the Pi rather than restarting the Mac host.
 
 For always-on Mac use, install user-level launchd jobs after the manual commands work:
 
@@ -316,8 +316,9 @@ pnpm run pi:ssh-admin -- process-bridges --execute-bridges
 
 If you specifically need Codex Desktop/App-visible local handoffs on the Mac,
 you can install only the Mac bridge launchd jobs after the Pi WhatsApp runtime
-is proven. That is a conscious tradeoff; it must not restart the Mac
-NanoClaw/WhatsApp host.
+is proven. Source the rehearsal `operator-env.sh` first so newly created bridge
+configs include Pi SSH context. That is a conscious tradeoff; it must not
+restart the Mac NanoClaw/WhatsApp host.
 
 ## Upstream NanoClaw
 

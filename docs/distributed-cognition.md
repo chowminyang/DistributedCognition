@@ -411,6 +411,8 @@ DC should not pass the owner's raw WhatsApp wording straight through when the ta
 
 The WhatsApp container does not submit local shell jobs. A host-side bridge executes queued `codex-local` items with local Codex on the Mac, using `danger-full-access` by default so Codex can perform real local work across files and tools. The default local launch mode is `app-server`, which creates Codex desktop/app-visible local threads for the target project; `exec` remains available as an explicit fallback but those noninteractive sessions may not appear in the desktop chat list. Codex Cloud is non-default and should only be used if a handoff explicitly targets `codex-cloud` and the host config has a matching environment id.
 
+After Raspberry Pi migration, DC/WhatsApp should run on the Pi, while Mac Codex can still create app-visible local threads from synced queue items. Source the Pi rehearsal `operator-env.sh` before creating the bridge config so `.dc-index/codex-bridge.config.json` and `.dc-index/action-bridge.config.json` can include a non-secret `remoteRuntime` section. When enabled, the generated Codex prompt says that the Pi is the active DC runtime, the Mac is the SSH control plane, and the Mac NanoClaw/WhatsApp host must not be restarted unless Minyang explicitly rolls back.
+
 Run the bridge on the Mac host:
 
 ```bash

@@ -508,7 +508,11 @@ Cognition runtime while the Mac acts only as the SSH operator.
 
 Optional tradeoff: if you specifically need Codex Desktop/App-visible local
 handoff work on the Mac, install only the Mac-side maintenance and bridge jobs
-after the Pi WhatsApp runtime is proven.
+after the Pi WhatsApp runtime is proven. Source the rehearsal `operator-env.sh`
+before creating the bridge configs; the Codex/action bridge config templates
+will then include a non-secret `remoteRuntime` section so app-visible Mac Codex
+threads know DC is running on the Pi and should use SSH/admin helpers rather
+than restarting the Mac NanoClaw host.
 
 These launchd jobs run `dc:health`, `dc:dashboard`, `dc:memory-bridge`,
 `dc:codex-bridge`, and `dc:action-bridge` on the Mac. They do not start the

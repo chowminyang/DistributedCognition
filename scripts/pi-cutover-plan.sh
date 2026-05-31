@@ -328,7 +328,9 @@ cat <<'EOF'
 
   Optional tradeoff: if you specifically need Codex Desktop/App-visible local
   handoff work on the Mac, you may install only the Mac bridge launchd jobs
-  after the Pi WhatsApp runtime is proven. Do not restart the Mac NanoClaw host.
+  after the Pi WhatsApp runtime is proven. Source the rehearsal operator-env.sh
+  before creating the bridge configs so their prompts include Pi SSH runtime
+  context. Do not restart the Mac NanoClaw host.
 EOF
 
 section "Rollback"

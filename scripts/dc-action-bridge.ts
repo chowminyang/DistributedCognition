@@ -6,6 +6,11 @@ import { createRequire } from 'module';
 
 import { Document, HeadingLevel, Packer, Paragraph, TextRun } from 'docx';
 import { appendProgressEvent, type DistributedQueueStatus } from '../src/distributed-cognition/queue-status.js';
+import {
+  defaultRemoteRuntimeConfigFromEnv,
+  renderRemoteRuntimeContext,
+  type RemoteRuntimeConfig,
+} from '../src/distributed-cognition/remote-runtime-context.js';
 
 const DEFAULT_SECOND_BRAIN_ROOT = path.join(os.homedir(), 'Library/CloudStorage/Dropbox/Distributed-Cognition');
 const CONFIG_VERSION = 1;
@@ -44,6 +49,7 @@ interface ActionBridgeConfig {
     timeoutMs?: number;
     openApp?: boolean;
   };
+  remoteRuntime?: RemoteRuntimeConfig;
   actions: Record<ActionType, ActionConfig>;
 }
 
@@ -206,6 +212,7 @@ function defaultConfig(): ActionBridgeConfig {
       timeoutMs: 600_000,
       openApp: false,
     },
+    remoteRuntime: defaultRemoteRuntimeConfigFromEnv(process.env, process.cwd()),
     actions: {
       word_document: { enabled: true, target: 'codex-local' },
       powerpoint: { enabled: true, target: 'codex-local' },
@@ -232,6 +239,7 @@ function loadConfig(configPath: string): ActionBridgeConfig {
     ...parsed,
     outputRoot: parsed.outputRoot || defaults.outputRoot,
     codexLocal: { ...defaults.codexLocal, ...(parsed.codexLocal ?? {}) },
+    remoteRuntime: { ...defaults.remoteRuntime, ...(parsed.remoteRuntime ?? {}) },
     actions: { ...defaults.actions, ...parsed.actions },
   };
 }
@@ -402,7 +410,7 @@ async function createPptx(
   return result;
 }
 
-function codexPrompt(record: ActionRequestRecord): string {
+function codexPrompt(record: ActionRequestRecord, config?: ActionBridgeConfig): string {
   const requestedOutput =
     record.actionType === 'word_document'
       ? 'Create a polished .docx artifact under action-outputs/ unless the brief explicitly asks for a different safe path.'
@@ -411,6 +419,7 @@ function codexPrompt(record: ActionRequestRecord): string {
         : record.actionType === 'web_research'
           ? 'Produce a source-grounded Markdown research note under action-outputs/ with dated source URLs.'
           : 'Produce the requested local output under action-outputs/ when an artifact is needed.';
+  const remoteContext = renderRemoteRuntimeContext(config?.remoteRuntime);
   return [
     'Task requested via Distributed Cognition WhatsApp.',
     '',
@@ -421,6 +430,7 @@ function codexPrompt(record: ActionRequestRecord): string {
     `Title: ${record.title}`,
     `Queued at: ${record.createdAt}`,
     record.notePath ? `Action note: ${record.notePath}` : 'Action note: not supplied',
+    ...(remoteContext ? ['', remoteContext] : []),
     '',
     'Brief:',
     record.brief,
@@ -437,7 +447,7 @@ function codexPrompt(record: ActionRequestRecord): string {
     '- For documents and decks, create the actual file rather than only describing it.',
     '',
     'Boundaries:',
-    "- This is local Codex work on the owner's Mac, not Codex Cloud.",
+    '- This is local Codex work on this host, not Codex Cloud.',
     '- Do not print, request, or commit secrets.',
     '- Do not process patient-identifiable, learner-identifiable, HR, exam, or confidential institutional data.',
     '- If this is web research, provide concise findings with dated sources and uncertainty notes.',
@@ -495,7 +505,7 @@ function runLocalCodexAction(root: string, config: ActionBridgeConfig, record: A
   fs.mkdirSync(localOutputDir, { recursive: true });
   const lastMessagePath = path.join(localOutputDir, `${record.id}-last-message.md`);
   const prompt = [
-    codexPrompt(record),
+    codexPrompt(record, config),
     '',
     `Distributed Cognition root: ${root}`,
     `Required output folder: ${outputDir}`,

@@ -11,6 +11,11 @@ import {
   type AppServer,
   type JsonRpcNotification,
 } from '../container/agent-runner/src/providers/codex-app-server.ts';
+import {
+  defaultRemoteRuntimeConfigFromEnv,
+  renderRemoteRuntimeContext,
+  type RemoteRuntimeConfig,
+} from '../src/distributed-cognition/remote-runtime-context.js';
 
 const DEFAULT_SECOND_BRAIN_ROOT = path.join(os.homedir(), 'Library/CloudStorage/Dropbox/Distributed-Cognition');
 const DEFAULT_PROJECTS_ROOT = path.join(os.homedir(), 'Documents/Codex');
@@ -51,6 +56,7 @@ interface BridgeConfig {
     timeoutMs?: number;
     openApp?: boolean;
   };
+  remoteRuntime?: RemoteRuntimeConfig;
   projects: Record<string, BridgeProjectConfig>;
 }
 
@@ -230,6 +236,7 @@ function defaultBridgeConfig(projectsRoot: string): BridgeConfig {
       timeoutMs: 900_000,
       openApp: false,
     },
+    remoteRuntime: defaultRemoteRuntimeConfigFromEnv(process.env, process.cwd()),
     projects: discoverProjects(projectsRoot),
   };
 }
@@ -250,6 +257,7 @@ function loadConfig(configPath: string): BridgeConfig {
     ...defaults,
     ...parsed,
     localCodex: { ...defaults.localCodex, ...(parsed.localCodex ?? {}) },
+    remoteRuntime: { ...defaults.remoteRuntime, ...(parsed.remoteRuntime ?? {}) },
     projects: Object.fromEntries(
       Object.entries({ ...defaults.projects, ...parsed.projects }).map(([name, project]) => [
         name,
@@ -352,8 +360,9 @@ function cloudPrompt(record: CodexHandoffRecord, projectPath: string): string {
   ].join('\n');
 }
 
-function localCodexPrompt(record: CodexHandoffRecord, projectPath: string): string {
+function localCodexPrompt(record: CodexHandoffRecord, projectPath: string, config: BridgeConfig): string {
   const sourceNotes = record.sourceNotePaths?.length ? record.sourceNotePaths.join('\n') : 'No source note supplied.';
+  const remoteContext = renderRemoteRuntimeContext(config.remoteRuntime);
   return [
     'Task requested via Distributed Cognition WhatsApp.',
     '',
@@ -364,6 +373,7 @@ function localCodexPrompt(record: CodexHandoffRecord, projectPath: string): stri
     `Local project path: ${projectPath}`,
     `Queued at: ${record.createdAt}`,
     record.notePath ? `Handoff note: ${record.notePath}` : 'Handoff note: not supplied',
+    ...(remoteContext ? ['', remoteContext] : []),
     '',
     'Source notes:',
     sourceNotes,
@@ -387,7 +397,7 @@ function localCodexPrompt(record: CodexHandoffRecord, projectPath: string): stri
       : '- Use project-appropriate verification and report changed files, tests, and residual risk.',
     '',
     'Boundaries:',
-    "- This is local Codex work on the owner's Mac, not Codex Cloud.",
+    '- This is local Codex work on this host, not Codex Cloud.',
     '- Respect the repository conventions and existing user changes.',
     '- Do not print, request, or commit secrets.',
     '- Do not process patient-identifiable, learner-identifiable, HR, exam, or confidential institutional data.',
@@ -538,7 +548,7 @@ async function runLocalCodexAppServer(
       'turn/start',
       {
         threadId,
-        input: [{ type: 'text', text: localCodexPrompt(record, projectPath), text_elements: [] }],
+        input: [{ type: 'text', text: localCodexPrompt(record, projectPath, config), text_elements: [] }],
         cwd: projectPath,
         approvalPolicy: config.localCodex?.approvalPolicy ?? 'never',
         model: config.localCodex?.model ?? record.model ?? 'gpt-5.4-mini',
@@ -609,7 +619,7 @@ function runLocalCodexExec(
   args.push('-');
   const result = spawnSync('codex', args, {
     cwd: projectPath,
-    input: localCodexPrompt(record, projectPath),
+    input: localCodexPrompt(record, projectPath, config),
     encoding: 'utf-8',
     timeout: config.localCodex?.timeoutMs ?? 900_000,
     maxBuffer: 4_000_000,

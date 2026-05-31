@@ -276,7 +276,8 @@ Work plan:
    pnpm run pi:ssh-admin -- status --expected-commit "\$EXPECTED_COMMIT"
    pnpm run pi:ssh-admin -- process-bridges
    pnpm run pi:ssh-admin -- process-bridges --execute-bridges
-   Do not restart the Mac NanoClaw/WhatsApp host unless I explicitly roll back. If I later choose Mac-visible Codex Desktop/App handoffs, explain the tradeoff and install only the Mac bridge jobs, never the Mac WhatsApp host.
+   Do not restart the Mac NanoClaw/WhatsApp host unless I explicitly roll back.
+14. If I choose Mac-visible Codex Desktop/App handoffs after the Pi runtime is proven, source the rehearsal operator-env.sh, initialize/review the Mac bridge configs, and install only the Mac bridge jobs. The generated Codex/action prompts should include Pi SSH runtime context so Mac Codex controls the Pi instead of reviving the Mac WhatsApp host.
 
 Completion evidence required:
 - Pi SSH bootstrap succeeds or gives clear remaining actions.
@@ -292,7 +293,7 @@ Completion evidence required:
 - The proof phrase from the live WhatsApp test is found in recent Pi second-brain files by running pnpm run pi:verify-cutover -- --proof-text ... --execute.
 - A raw note and processed note are created in the Pi Distributed-Cognition folder.
 - rclone sync is configured for only the selected Distributed-Cognition folder.
-- DC bridge work is either processed on the Pi through pnpm run pi:ssh-admin -- process-bridges, or Mac bridge jobs are intentionally enabled only after I accept the Mac-visible Codex handoff tradeoff.
+- DC bridge work is either processed on the Pi through pnpm run pi:ssh-admin -- process-bridges, or Mac bridge jobs are intentionally enabled only after the Pi runtime is proven and their prompts include Pi SSH runtime context.
 - No secrets are printed, committed, or synced to Dropbox.
 - Rollback command is documented before the final switch.
 
