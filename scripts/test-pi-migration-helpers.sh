@@ -326,6 +326,7 @@ assert_contains "$rehearsal_dir/operator-env.sh" "export NANOCLAW_PI_HOST=nanocl
 assert_contains "$rehearsal_dir/operator-env.sh" "export NANOCLAW_PI_CODEX_PROJECTS_ROOT=/home/pi/Codex" "cutover rehearsal operator env includes Codex projects root"
 assert_contains "$rehearsal_dir/operator-env.sh" "export NANOCLAW_PI_SSH_CONNECT_TIMEOUT=10" "cutover rehearsal operator env includes SSH timeout"
 assert_contains "$rehearsal_dir/operator-env.sh" "export NANOCLAW_PI_BRIDGE_EXECUTE_MODE=memory" "cutover rehearsal operator env defaults bridge mode to memory"
+assert_contains "$rehearsal_dir/operator-env.sh" "export NANOCLAW_PI_EXPECTED_BRIDGE_EXECUTE_MODE=memory" "cutover rehearsal operator env records expected bridge timer mode"
 assert_contains "$rehearsal_dir/operator-env.sh" "export NANOCLAW_PI_EXPECTED_COMMIT=" "cutover rehearsal operator env includes expected Pi commit"
 assert_not_contains "$rehearsal_dir/operator-env.sh" "OPENAI_API_KEY" "cutover rehearsal operator env excludes API keys"
 assert_not_contains "$rehearsal_dir/operator-env.sh" "WHATSAPP_" "cutover rehearsal operator env excludes WhatsApp env vars"
@@ -388,6 +389,7 @@ assert_contains "$readiness_dir/summary.md" "git-revision-check.txt" "mac readin
 assert_contains "$readiness_dir/summary.md" "ssh-preflight.txt" "mac readiness summary lists ssh preflight artifact"
 assert_contains "$readiness_dir/summary.md" "Expected Pi commit" "mac readiness summary records expected Pi commit"
 assert_contains "$readiness_dir/rehearsal/operator-env.sh" "export NANOCLAW_PI_BRIDGE_EXECUTE_MODE=memory" "mac readiness nested rehearsal carries bridge memory mode"
+assert_contains "$readiness_dir/rehearsal/operator-env.sh" "export NANOCLAW_PI_EXPECTED_BRIDGE_EXECUTE_MODE=memory" "mac readiness nested rehearsal carries expected bridge timer mode"
 assert_contains "$readiness_dir/rehearsal/operator-env.sh" "export NANOCLAW_PI_EXPECTED_COMMIT=" "mac readiness nested rehearsal carries expected commit"
 assert_contains "$readiness_dir/rehearsal/summary.md" "Status: \`ready\`" "mac readiness nested rehearsal is ready with complete values"
 
@@ -464,11 +466,13 @@ assert_contains "$verify_dir/pi-status.txt" "pnpm run pi:ssh-admin -- status" "c
 assert_contains "$verify_dir/pi-status.txt" "--expected-commit" "cutover verification checks expected Pi commit"
 [ -f "$verify_dir/pi-bridge-timers.txt" ] || fail "cutover verification writes Pi bridge timer check"
 assert_contains "$verify_dir/pi-bridge-timers.txt" "pnpm run pi:ssh-admin -- bridge-timers" "cutover verification checks Pi bridge timers"
+assert_contains "$verify_dir/pi-bridge-timers.txt" "--expected-bridge-execute-mode memory" "cutover verification checks Pi bridge timer mode"
 assert_contains "$verify_dir/pi-health.txt" "pnpm run pi:ssh-admin -- health" "cutover verification checks Pi health"
 assert_contains "$verify_dir/pi-whatsapp-proof.txt" "Status: \`dry_run\`" "cutover verification can dry-run WhatsApp proof"
 assert_contains "$verify_dir/pi-whatsapp-proof.txt" "DC Pi cutover proof 02-06-26-1200" "cutover verification records proof phrase"
 assert_contains "$verify_dir/summary.md" "pi-bridge-timers.txt" "cutover verification summary lists bridge timer proof"
 assert_contains "$verify_dir/summary.md" "Expected Pi commit" "cutover verification summary records expected Pi commit"
+assert_contains "$verify_dir/summary.md" "Expected Pi bridge timer mode: \`memory\`" "cutover verification summary records expected bridge timer mode"
 assert_contains "$verify_dir/summary.md" "pi-whatsapp-proof.txt" "cutover verification summary lists WhatsApp proof"
 assert_contains "$verify_dir/manual-whatsapp-checklist.md" "Do not mark the migration complete" "cutover verification keeps WhatsApp proof explicit"
 assert_contains "$verify_dir/manual-whatsapp-checklist.md" "--proof-text" "cutover verification checklist explains proof rerun"
@@ -489,6 +493,7 @@ pnpm run pi:verify-cutover -- --help >"$TMP_DIR/verify-cutover-help.out"
 assert_contains "$TMP_DIR/verify-cutover-help.out" "--proof-text" "cutover verification help documents proof text"
 assert_contains "$TMP_DIR/verify-cutover-help.out" "--proof-since-minutes" "cutover verification help documents proof window"
 assert_contains "$TMP_DIR/verify-cutover-help.out" "--expected-commit" "cutover verification help documents expected commit"
+assert_contains "$TMP_DIR/verify-cutover-help.out" "--expected-bridge-execute-mode" "cutover verification help documents expected bridge timer mode"
 assert_contains "$TMP_DIR/verify-cutover-help.out" "NANOCLAW_PI_SSH_CONNECT_TIMEOUT" "cutover verification help documents SSH timeout env"
 
 pnpm run pi:ssh-admin -- --help >"$TMP_DIR/ssh-admin-help.out"
@@ -498,12 +503,14 @@ assert_contains "$TMP_DIR/ssh-admin-help.out" "doctor" "ssh admin help documents
 assert_contains "$TMP_DIR/ssh-admin-help.out" "bridge-timers" "ssh admin help documents bridge timer action"
 assert_contains "$TMP_DIR/ssh-admin-help.out" "process-bridges" "ssh admin help documents Pi-side bridge processing"
 assert_contains "$TMP_DIR/ssh-admin-help.out" "--bridge-execute-mode" "ssh admin help documents bridge mode option"
+assert_contains "$TMP_DIR/ssh-admin-help.out" "--expected-bridge-execute-mode" "ssh admin help documents expected bridge timer mode option"
 assert_contains "$TMP_DIR/ssh-admin-help.out" "--execute-memory-bridge" "ssh admin help documents memory-only bridge execution"
 assert_contains "$TMP_DIR/ssh-admin-help.out" "--execute-bridges" "ssh admin help documents bridge execute flag"
 assert_contains "$TMP_DIR/ssh-admin-help.out" "--expected-commit" "ssh admin help documents expected commit"
 assert_contains "$TMP_DIR/ssh-admin-help.out" "--allow-mac-host-running" "ssh admin help documents Mac host guard override"
 assert_contains "$TMP_DIR/ssh-admin-help.out" "NANOCLAW_PI_SSH_CONNECT_TIMEOUT" "ssh admin help documents SSH timeout env"
 assert_contains "$TMP_DIR/ssh-admin-help.out" "NANOCLAW_PI_BRIDGE_EXECUTE_MODE" "ssh admin help documents bridge mode env"
+assert_contains "$TMP_DIR/ssh-admin-help.out" "NANOCLAW_PI_EXPECTED_BRIDGE_EXECUTE_MODE" "ssh admin help documents expected bridge timer mode env"
 
 pnpm run pi:ssh-preflight -- --help >"$TMP_DIR/ssh-preflight-help.out"
 assert_contains "$TMP_DIR/ssh-preflight-help.out" "Required options, unless the matching environment defaults are set" "ssh preflight help documents env defaults"
@@ -595,6 +602,103 @@ PATH="$fake_admin_bin:$PATH" pnpm run pi:ssh-admin -- process-bridges \
 assert_contains "$TMP_DIR/ssh-admin-memory-mode.out" "Bridge execute mode: memory" "ssh admin reports memory bridge mode"
 assert_contains "$TMP_DIR/ssh-admin-memory-mode.out" "Bridge limit: 2" "ssh admin reports bridge limit"
 assert_contains "$TMP_DIR/ssh-admin-memory-mode.out" "MOCK_SSH_ADMIN=ok" "ssh admin opens SSH after local memory-mode validation"
+
+fake_bridge_admin_bin="$TMP_DIR/fake-bridge-admin-bin"
+mkdir -p "$fake_bridge_admin_bin"
+fake_bridge_runner="$TMP_DIR/fake-dc-bridge-runner.sh"
+cat >"$fake_bridge_runner" <<'FAKE_BRIDGE_RUNNER'
+#!/usr/bin/env bash
+set -euo pipefail
+BRIDGE_EXECUTE_MODE=memory
+FAKE_BRIDGE_RUNNER
+cat >"$fake_bridge_admin_bin/ssh" <<'FAKE_BRIDGE_SSH'
+#!/usr/bin/env bash
+set -euo pipefail
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    -o)
+      shift 2
+      ;;
+    *@*)
+      shift
+      break
+      ;;
+    *)
+      shift
+      ;;
+  esac
+done
+[ "${1:-}" = "bash -s" ] && shift
+[ "${1:-}" = "--" ] && shift
+bash -s -- "$@"
+FAKE_BRIDGE_SSH
+cat >"$fake_bridge_admin_bin/systemctl" <<'FAKE_BRIDGE_SYSTEMCTL'
+#!/usr/bin/env bash
+set -euo pipefail
+case "${1:-}" in
+  list-timers)
+    printf 'dc-bridge-test-memory-bridge.timer\n'
+    printf 'dc-bridge-test-codex-bridge.timer\n'
+    printf 'dc-bridge-test-action-bridge.timer\n'
+    ;;
+  list-unit-files)
+    printf 'dc-bridge-test-memory-bridge.timer enabled\n'
+    printf 'dc-bridge-test-codex-bridge.timer enabled\n'
+    printf 'dc-bridge-test-action-bridge.timer enabled\n'
+    ;;
+  show)
+    unit="${2:-}"
+    service="${unit%.timer}.service"
+    value="false"
+    for arg in "$@"; do
+      [ "$arg" = "--value" ] && value="true"
+    done
+    if [ "$value" = "true" ]; then
+      printf '%s\n' "$service"
+    else
+      printf 'Unit=%s\n' "$service"
+      printf 'Result=success\n'
+    fi
+    ;;
+  cat)
+    service="${2:-}"
+    job="${service#dc-bridge-test-}"
+    job="${job%.service}"
+    printf 'ExecStart=/bin/bash %s %s\n' "${FAKE_DC_BRIDGE_RUNNER:?}" "$job"
+    ;;
+  is-enabled)
+    printf 'enabled\n'
+    ;;
+  is-active)
+    printf 'active\n'
+    ;;
+  *)
+    exit 0
+    ;;
+esac
+FAKE_BRIDGE_SYSTEMCTL
+chmod +x "$fake_bridge_runner" "$fake_bridge_admin_bin/ssh" "$fake_bridge_admin_bin/systemctl"
+PATH="$fake_bridge_admin_bin:$PATH" FAKE_DC_BRIDGE_RUNNER="$fake_bridge_runner" pnpm run pi:ssh-admin -- bridge-timers \
+  --host nanoclaw-pi.local \
+  --user pi \
+  --path /home/pi/NanoClaw \
+  --expected-bridge-execute-mode memory \
+  >"$TMP_DIR/ssh-admin-bridge-timers-memory.out"
+assert_contains "$TMP_DIR/ssh-admin-bridge-timers-memory.out" "PI_BRIDGE_EXECUTE_MODE=ok expected=memory actual=memory" "ssh admin verifies installed bridge timer memory mode"
+assert_contains "$TMP_DIR/ssh-admin-bridge-timers-memory.out" "PI_BRIDGE_TIMERS=ok count=3" "ssh admin verifies bridge timer count through remote systemctl"
+
+set +e
+PATH="$fake_bridge_admin_bin:$PATH" FAKE_DC_BRIDGE_RUNNER="$fake_bridge_runner" pnpm run pi:ssh-admin -- bridge-timers \
+  --host nanoclaw-pi.local \
+  --user pi \
+  --path /home/pi/NanoClaw \
+  --expected-bridge-execute-mode all \
+  >"$TMP_DIR/ssh-admin-bridge-timers-wrong-mode.out" \
+  2>"$TMP_DIR/ssh-admin-bridge-timers-wrong-mode.err"
+bridge_wrong_mode_code="$?"
+set -e
+assert_exit_code 1 "$bridge_wrong_mode_code" "ssh admin bridge timer check fails on wrong installed mode"
+assert_contains "$TMP_DIR/ssh-admin-bridge-timers-wrong-mode.out" "PI_BRIDGE_EXECUTE_MODE=fail expected=all actual=memory" "ssh admin bridge timer wrong mode is explicit"
 
 set +e
 pnpm run pi:ssh-admin -- process-bridges \

@@ -188,7 +188,9 @@ host, export state, import state, or touch WhatsApp. The generated operator
 environment also sets `NANOCLAW_PI_SSH_CONNECT_TIMEOUT=10` so SSH helpers fail
 quickly if the Pi hostname or IP is stale,
 `NANOCLAW_PI_BRIDGE_EXECUTE_MODE=memory` so the Pi rehearses Mnemon promotion
-without hiding Codex/action handoffs from Mac Codex, and
+without hiding Codex/action handoffs from Mac Codex,
+`NANOCLAW_PI_EXPECTED_BRIDGE_EXECUTE_MODE=memory` so post-cutover checks prove
+the installed systemd bridge timers match that mode, and
 `NANOCLAW_PI_EXPECTED_COMMIT` so Pi status/doctor checks prove the runtime
 checkout matches the rehearsed Mac commit.
 
@@ -271,7 +273,7 @@ After cutover, Mac Codex can operate the Pi through the SSH admin helper:
 
 ```bash
 pnpm run pi:ssh-admin -- status --expected-commit "$NANOCLAW_PI_EXPECTED_COMMIT"
-pnpm run pi:ssh-admin -- bridge-timers
+pnpm run pi:ssh-admin -- bridge-timers --expected-bridge-execute-mode memory
 pnpm run pi:ssh-admin -- health
 pnpm run pi:ssh-admin -- doctor --expected-commit "$NANOCLAW_PI_EXPECTED_COMMIT"
 pnpm run pi:ssh-admin -- process-bridges
@@ -299,10 +301,11 @@ pnpm run pi:verify-cutover -- \
 ```
 
 After the Mac host is stopped and the Pi service is running, add `--execute`.
-This checks the Mac stopped state plus Pi status, health, and dashboard output,
-and writes `output/pi-cutover-verification/DD-MM-YY-HHMM/`. If
-`--expected-commit` is omitted, the verifier uses the current local `HEAD`
-when available.
+This checks the Mac stopped state plus Pi status, bridge timers, bridge timer
+mode, health, and dashboard output, and writes
+`output/pi-cutover-verification/DD-MM-YY-HHMM/`. If `--expected-commit` is
+omitted, the verifier uses the current local `HEAD` when available. The bridge
+timer mode check defaults to `memory`, matching the recommended Pi runtime.
 
 For the final live proof, send one unique harmless WhatsApp phrase from the
 allowlisted chat, then rerun the verifier with that phrase:

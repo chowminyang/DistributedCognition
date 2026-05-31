@@ -15,6 +15,7 @@ ALLOW_MAC_HOST_RUNNING="${NANOCLAW_PI_ALLOW_MAC_HOST_RUNNING:-false}"
 LINES="120"
 BRIDGE_LIMIT="5"
 BRIDGE_EXECUTE_MODE="${NANOCLAW_PI_BRIDGE_EXECUTE_MODE:-dry-run}"
+EXPECTED_BRIDGE_EXECUTE_MODE="${NANOCLAW_PI_EXPECTED_BRIDGE_EXECUTE_MODE:-}"
 SSH_OPTIONS=()
 
 usage() {
@@ -59,6 +60,9 @@ Optional:
   --lines <count>                Log lines for logs action. Default: 120.
   --limit <count>                Bridge queue limit. Default: 5.
   --bridge-execute-mode <mode>   dry-run, memory, or all. Default: dry-run.
+  --expected-bridge-execute-mode <mode>
+                                 For bridge-timers, fail unless installed bridge
+                                 timer runners are dry-run, memory, or all.
   --execute-memory-bridge        Execute only the Mnemon memory bridge.
   --execute-bridges              Execute memory, Codex, and action bridge work.
   --allow-mac-host-running       Allow start/restart/update even if this Mac
@@ -79,12 +83,13 @@ Environment defaults:
   NANOCLAW_PI_SSH_CONNECT_TIMEOUT
   NANOCLAW_PI_EXPECTED_COMMIT
   NANOCLAW_PI_BRIDGE_EXECUTE_MODE
+  NANOCLAW_PI_EXPECTED_BRIDGE_EXECUTE_MODE
   NANOCLAW_PI_ALLOW_MAC_HOST_RUNNING
 
 Examples:
   bash scripts/pi-ssh-admin.sh doctor --host nanoclaw-pi.local --user pi --path /home/pi/NanoClaw --second-brain-root /home/pi/Distributed-Cognition
   bash scripts/pi-ssh-admin.sh status --host nanoclaw-pi.local --user pi --path /home/pi/NanoClaw
-  bash scripts/pi-ssh-admin.sh bridge-timers --host nanoclaw-pi.local --user pi --path /home/pi/NanoClaw
+  bash scripts/pi-ssh-admin.sh bridge-timers --expected-bridge-execute-mode memory --host nanoclaw-pi.local --user pi --path /home/pi/NanoClaw
   bash scripts/pi-ssh-admin.sh health --host nanoclaw-pi.local --user pi --path /home/pi/NanoClaw --second-brain-root /home/pi/Distributed-Cognition
   bash scripts/pi-ssh-admin.sh process-bridges --host nanoclaw-pi.local --user pi --path /home/pi/NanoClaw --second-brain-root /home/pi/Distributed-Cognition --codex-projects-root /home/pi/Codex
   bash scripts/pi-ssh-admin.sh process-bridges --bridge-execute-mode memory --host nanoclaw-pi.local --user pi --path /home/pi/NanoClaw --second-brain-root /home/pi/Distributed-Cognition --codex-projects-root /home/pi/Codex
@@ -306,6 +311,11 @@ while [ "$#" -gt 0 ]; do
       [ -n "$BRIDGE_EXECUTE_MODE" ] || { echo "Missing value for --bridge-execute-mode" >&2; exit 2; }
       shift 2
       ;;
+    --expected-bridge-execute-mode)
+      EXPECTED_BRIDGE_EXECUTE_MODE="${2:-}"
+      [ -n "$EXPECTED_BRIDGE_EXECUTE_MODE" ] || { echo "Missing value for --expected-bridge-execute-mode" >&2; exit 2; }
+      shift 2
+      ;;
     --execute-memory-bridge)
       BRIDGE_EXECUTE_MODE="memory"
       shift
@@ -351,6 +361,14 @@ case "$BRIDGE_EXECUTE_MODE" in
     exit 2
     ;;
 esac
+case "$EXPECTED_BRIDGE_EXECUTE_MODE" in
+  ""|dry-run|memory|all)
+    ;;
+  *)
+    echo "--expected-bridge-execute-mode must be dry-run, memory, or all" >&2
+    exit 2
+    ;;
+esac
 case "$ACTION" in
   doctor|health|dashboard|memory-bridge|action-bridge|process-bridges)
     [ -n "$SECOND_BRAIN_ROOT" ] || { echo "$ACTION requires --second-brain-root" >&2; exit 2; }
@@ -374,6 +392,7 @@ echo "NanoClaw path: $REMOTE_PROJECT_ROOT"
 [ -n "$UNIT_NAME" ] && echo "Service unit: $UNIT_NAME"
 [ -n "$SSH_CONNECT_TIMEOUT" ] && echo "SSH connect timeout: ${SSH_CONNECT_TIMEOUT}s"
 [ -n "$EXPECTED_COMMIT" ] && echo "Expected commit: $EXPECTED_COMMIT"
+[ -n "$EXPECTED_BRIDGE_EXECUTE_MODE" ] && echo "Expected bridge timer mode: $EXPECTED_BRIDGE_EXECUTE_MODE"
 case "$ACTION" in
   memory-bridge|codex-bridge|action-bridge|process-bridges)
     echo "Bridge execute mode: $BRIDGE_EXECUTE_MODE"
@@ -392,7 +411,8 @@ ssh "${SSH_OPTIONS[@]}" "$TARGET" 'bash -s' -- \
   "$LINES" \
   "$BRIDGE_LIMIT" \
   "$BRIDGE_EXECUTE_MODE" \
-  "$EXPECTED_COMMIT" <<'REMOTE'
+  "$EXPECTED_COMMIT" \
+  "$EXPECTED_BRIDGE_EXECUTE_MODE" <<'REMOTE'
 set -euo pipefail
 
 ACTION="$1"
@@ -405,6 +425,7 @@ LINES="$7"
 BRIDGE_LIMIT="$8"
 BRIDGE_EXECUTE_MODE="$9"
 EXPECTED_COMMIT="${10}"
+EXPECTED_BRIDGE_EXECUTE_MODE="${11}"
 
 expand_remote_path() {
   case "$1" in
@@ -563,22 +584,76 @@ show_bridge_timers() {
   fi
 
   local count=0
+  local bridge_count=0
+  local missing_mode_count=0
+  local wrong_mode_count=0
+  local actual_modes=""
   while IFS= read -r timer; do
     [ -n "$timer" ] || continue
     count=$((count + 1))
+    local service runner mode
+    service="$(systemctl show "$timer" -p Unit --value --no-pager 2>/dev/null || true)"
+    [ -n "$service" ] || service="${timer%.timer}.service"
+    runner="$(systemctl cat "$service" 2>/dev/null | awk '/^ExecStart=\/bin\/bash / {print $2; exit}' || true)"
+    mode=""
+    if [ -n "$runner" ] && [ -r "$runner" ]; then
+      mode="$(sed -n 's/^BRIDGE_EXECUTE_MODE=//p' "$runner" 2>/dev/null | head -n 1 || true)"
+      mode="${mode#\'}"
+      mode="${mode%\'}"
+      mode="${mode#\"}"
+      mode="${mode%\"}"
+    fi
+
     echo
     echo "timer: $timer"
+    echo "service: $service"
     echo "enabled: $(systemctl is-enabled "$timer" 2>/dev/null || true)"
     echo "active: $(systemctl is-active "$timer" 2>/dev/null || true)"
+    [ -n "$runner" ] && echo "runner: $runner"
+    [ -n "$mode" ] && echo "bridge_execute_mode: $mode"
     systemctl show "$timer" \
       -p Unit \
       -p NextElapseUSecRealtime \
       -p LastTriggerUSec \
       -p Result \
       --no-pager 2>/dev/null || true
+
+    case "$service" in
+      *-memory-bridge.service|*-codex-bridge.service|*-action-bridge.service)
+        bridge_count=$((bridge_count + 1))
+        if [ -z "$mode" ]; then
+          missing_mode_count=$((missing_mode_count + 1))
+        else
+          if ! printf '%s\n' "$actual_modes" | grep -Fxq "$mode"; then
+            actual_modes="${actual_modes}${actual_modes:+$'\n'}$mode"
+          fi
+          if [ -n "$EXPECTED_BRIDGE_EXECUTE_MODE" ] && [ "$mode" != "$EXPECTED_BRIDGE_EXECUTE_MODE" ]; then
+            wrong_mode_count=$((wrong_mode_count + 1))
+          fi
+        fi
+        ;;
+    esac
   done <<<"$timers"
 
+  local actual_modes_csv
+  actual_modes_csv="$(printf '%s\n' "$actual_modes" | awk 'NF {printf "%s%s", sep, $0; sep=","}')"
+  [ -n "$actual_modes_csv" ] || actual_modes_csv="unknown"
+
   echo
+  if [ -n "$EXPECTED_BRIDGE_EXECUTE_MODE" ]; then
+    if [ "$bridge_count" -eq 0 ]; then
+      echo "PI_BRIDGE_EXECUTE_MODE=fail expected=$EXPECTED_BRIDGE_EXECUTE_MODE actual=missing"
+      echo "No memory/codex/action bridge timer services were found."
+      return 1
+    fi
+    if [ "$missing_mode_count" -gt 0 ] || [ "$wrong_mode_count" -gt 0 ]; then
+      echo "PI_BRIDGE_EXECUTE_MODE=fail expected=$EXPECTED_BRIDGE_EXECUTE_MODE actual=$actual_modes_csv missing=$missing_mode_count wrong=$wrong_mode_count"
+      return 1
+    fi
+    echo "PI_BRIDGE_EXECUTE_MODE=ok expected=$EXPECTED_BRIDGE_EXECUTE_MODE actual=$actual_modes_csv"
+  else
+    echo "PI_BRIDGE_EXECUTE_MODE=unchecked actual=$actual_modes_csv"
+  fi
   echo "PI_BRIDGE_TIMERS=ok count=$count"
 }
 

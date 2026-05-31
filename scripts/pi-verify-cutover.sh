@@ -10,6 +10,7 @@ REMOTE_PROJECT_ROOT="${NANOCLAW_PI_PROJECT_ROOT:-}"
 SECOND_BRAIN_ROOT="${NANOCLAW_PI_SECOND_BRAIN_ROOT:-}"
 UNIT_NAME="${NANOCLAW_PI_UNIT_NAME:-}"
 EXPECTED_COMMIT="${NANOCLAW_PI_EXPECTED_COMMIT:-}"
+EXPECTED_BRIDGE_EXECUTE_MODE="${NANOCLAW_PI_EXPECTED_BRIDGE_EXECUTE_MODE:-${NANOCLAW_PI_BRIDGE_EXECUTE_MODE:-memory}}"
 VERIFY_DIR=""
 LINES="80"
 EXECUTE="false"
@@ -49,6 +50,9 @@ Optional:
   --unit-name <name>             systemd unit name. Auto-detects nanoclaw-v2-*.
   --expected-commit <sha>        Pi checkout commit expected during status checks.
                                   Default: current local HEAD, when available.
+  --expected-bridge-execute-mode <mode>
+                                  Expected installed Pi bridge timer mode:
+                                  dry-run, memory, or all. Default: memory.
   --output-dir <path>            Exact verification bundle directory.
                                   Default: output/pi-cutover-verification/DD-MM-YY-HHMM
   --lines <count>                Log lines if --include-logs is supplied. Default: 80.
@@ -73,6 +77,8 @@ Environment defaults:
   NANOCLAW_PI_SECOND_BRAIN_ROOT
   NANOCLAW_PI_UNIT_NAME
   NANOCLAW_PI_EXPECTED_COMMIT
+  NANOCLAW_PI_EXPECTED_BRIDGE_EXECUTE_MODE
+  NANOCLAW_PI_BRIDGE_EXECUTE_MODE
   NANOCLAW_PI_WHATSAPP_PROOF_TEXT
   NANOCLAW_PI_WHATSAPP_PROOF_SINCE_MINUTES
   NANOCLAW_PI_SSH_CONNECT_TIMEOUT
@@ -349,6 +355,11 @@ while [ "$#" -gt 0 ]; do
       [ -n "$EXPECTED_COMMIT" ] || { echo "Missing value for --expected-commit" >&2; exit 2; }
       shift 2
       ;;
+    --expected-bridge-execute-mode)
+      EXPECTED_BRIDGE_EXECUTE_MODE="${2:-}"
+      [ -n "$EXPECTED_BRIDGE_EXECUTE_MODE" ] || { echo "Missing value for --expected-bridge-execute-mode" >&2; exit 2; }
+      shift 2
+      ;;
     --output-dir)
       VERIFY_DIR="${2:-}"
       [ -n "$VERIFY_DIR" ] || { echo "Missing value for --output-dir" >&2; exit 2; }
@@ -415,6 +426,14 @@ if ! [[ "$PROOF_SINCE_MINUTES" =~ ^[0-9]+$ ]] || [ "$PROOF_SINCE_MINUTES" -le 0 
   echo "NANOCLAW_PI_WHATSAPP_PROOF_SINCE_MINUTES must be a positive integer" >&2
   exit 2
 fi
+case "$EXPECTED_BRIDGE_EXECUTE_MODE" in
+  dry-run|memory|all)
+    ;;
+  *)
+    echo "--expected-bridge-execute-mode must be dry-run, memory, or all" >&2
+    exit 2
+    ;;
+esac
 
 if [ -z "$VERIFY_DIR" ]; then
   timestamp="$(date '+%d-%m-%y-%H%M')"
@@ -444,7 +463,7 @@ if [ "${#SSH_OPTIONS[@]}" -gt 0 ]; then
 fi
 
 status_cmd=("${admin_base[@]}" status "${admin_common[@]}")
-bridge_timers_cmd=("${admin_base[@]}" bridge-timers "${admin_common[@]}")
+bridge_timers_cmd=("${admin_base[@]}" bridge-timers "${admin_common[@]}" --expected-bridge-execute-mode "$EXPECTED_BRIDGE_EXECUTE_MODE")
 health_cmd=("${admin_base[@]}" health "${admin_common[@]}" --second-brain-root "$SECOND_BRAIN_ROOT")
 dashboard_cmd=("${admin_base[@]}" dashboard "${admin_common[@]}" --second-brain-root "$SECOND_BRAIN_ROOT")
 logs_cmd=("${admin_base[@]}" logs "${admin_common[@]}" --lines "$LINES")
@@ -533,6 +552,7 @@ fi
   printf -- '- Pi NanoClaw path: `%s`\n' "${REMOTE_PROJECT_ROOT:-<missing>}"
   printf -- '- Pi Distributed-Cognition folder: `%s`\n' "${SECOND_BRAIN_ROOT:-<missing>}"
   printf -- '- Expected Pi commit: `%s`\n' "${EXPECTED_COMMIT:-<not checked>}"
+  printf -- '- Expected Pi bridge timer mode: `%s`\n' "$EXPECTED_BRIDGE_EXECUTE_MODE"
   printf -- '- Pi systemd unit: `%s`\n\n' "${UNIT_NAME:-<auto-detect>}"
   [ -n "$SSH_CONNECT_TIMEOUT" ] && printf -- '- SSH connect timeout: `%ss`\n' "$SSH_CONNECT_TIMEOUT"
   printf -- '- WhatsApp persistence proof: `%s`\n' "$PROOF_RESULT"

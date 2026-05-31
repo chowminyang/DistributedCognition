@@ -209,6 +209,7 @@ write_operator_env() {
     write_export_line "NANOCLAW_PI_UNIT_NAME" "$PI_UNIT_NAME" "Pi NanoClaw systemd unit name" "optional"
     write_export_line "NANOCLAW_PI_SSH_CONNECT_TIMEOUT" "$PI_SSH_CONNECT_TIMEOUT" "Pi SSH connect timeout in seconds"
     write_export_line "NANOCLAW_PI_BRIDGE_EXECUTE_MODE" "$PI_BRIDGE_EXECUTE_MODE" "Pi bridge execute mode"
+    write_export_line "NANOCLAW_PI_EXPECTED_BRIDGE_EXECUTE_MODE" "$PI_BRIDGE_EXECUTE_MODE" "expected installed Pi bridge timer mode"
     write_export_line "NANOCLAW_PI_EXPECTED_COMMIT" "$EXPECTED_COMMIT" "expected Pi checkout commit"
     write_export_line "NANOCLAW_PI_REPO_URL" "$REPO_URL" "DistributedCognition repo URL"
     write_export_line "NANOCLAW_PI_BRANCH" "$BRANCH" "DistributedCognition branch"

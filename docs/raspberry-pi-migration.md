@@ -108,7 +108,10 @@ Source it from the Mac Codex shell before running the cutover helpers. By
 default it sets `NANOCLAW_PI_SSH_CONNECT_TIMEOUT=10`, which keeps Codex from
 waiting forever if the Pi hostname or IP is wrong,
 `NANOCLAW_PI_BRIDGE_EXECUTE_MODE=memory`, which keeps Mnemon promotion running
-on the Pi while Codex/action queues remain reviewable from Mac Codex, and
+on the Pi while Codex/action queues remain reviewable from Mac Codex,
+`NANOCLAW_PI_EXPECTED_BRIDGE_EXECUTE_MODE=memory`, which makes post-cutover
+verification fail if the installed systemd bridge timers are not in that mode,
+and
 `NANOCLAW_PI_EXPECTED_COMMIT`, which lets Pi status/doctor checks prove the
 runtime checkout matches the rehearsed Mac commit.
 
@@ -436,7 +439,7 @@ After cutover, use the SSH admin helper for routine operations from the Mac:
 
 ```bash
 pnpm run pi:ssh-admin -- status --expected-commit "$NANOCLAW_PI_EXPECTED_COMMIT"
-pnpm run pi:ssh-admin -- bridge-timers
+pnpm run pi:ssh-admin -- bridge-timers --expected-bridge-execute-mode memory
 pnpm run pi:ssh-admin -- health
 pnpm run pi:ssh-admin -- doctor --expected-commit "$NANOCLAW_PI_EXPECTED_COMMIT"
 pnpm run pi:ssh-admin -- process-bridges
@@ -451,7 +454,9 @@ The supported actions are `doctor`, `status`, `bridge-timers`, `health`,
 the common "is DC really alive on the Pi?" check; it runs status, health, and
 dashboard in one SSH session. `status` avoids printing full process command
 lines and also lists bridge timers; `bridge-timers` fails explicitly if the Pi
-timer loop is missing. The `start`, `restart`, and `update` admin actions also
+timer loop is missing, and `--expected-bridge-execute-mode memory` also fails
+if the installed bridge runner is not configured for memory-only execution. The
+`start`, `restart`, and `update` admin actions also
 refuse to run if this Mac checkout still appears to be running NanoClaw or has
 running NanoClaw Docker agent containers, unless you explicitly pass
 `--allow-mac-host-running` for rollback or emergency work.

@@ -416,11 +416,12 @@ After Raspberry Pi migration, DC/WhatsApp should run on the Pi, while Mac Codex 
 For the recommended Pi cutover, let the Pi run Mnemon promotion in bridge `memory` mode and keep Codex/action queues visible to Mac Codex:
 
 ```bash
+pnpm run pi:ssh-admin -- bridge-timers --expected-bridge-execute-mode memory
 pnpm run pi:ssh-admin -- process-bridges
 pnpm run pi:ssh-admin -- process-bridges --bridge-execute-mode memory
 ```
 
-Use `--execute-bridges` only when you intentionally want memory, Codex, and action work to execute on the Pi instead of leaving heavier handoffs reviewable from the Mac Codex app.
+Use `--execute-bridges` only when you intentionally want memory, Codex, and action work to execute on the Pi instead of leaving heavier handoffs reviewable from the Mac Codex app. The bridge timer check above proves the installed systemd runner is actually in memory mode, not merely that timer files exist.
 
 Run the bridge on the Mac host:
 
