@@ -866,6 +866,11 @@ PATH="$fake_docker_bin:$PATH" pnpm run pi:mac-preflight -- \
   >"$TMP_DIR/mac-preflight-docker-running.out" \
   2>"$TMP_DIR/mac-preflight-docker-running.err"
 mac_preflight_docker_code="$?"
+PATH="$fake_docker_bin:$PATH" pnpm run pi:export -- \
+  --out-dir "$TMP_DIR/export-docker-running" \
+  >"$TMP_DIR/pi-export-docker-running.out" \
+  2>"$TMP_DIR/pi-export-docker-running.err"
+pi_export_docker_code="$?"
 PATH="$fake_docker_bin:$PATH" pnpm run pi:ssh-start-runtime -- \
   --host nanoclaw-pi.local \
   --user pi \
@@ -886,6 +891,9 @@ admin_docker_guard_code="$?"
 set -e
 assert_exit_code 1 "$mac_preflight_docker_code" "mac export preflight fails when NanoClaw Docker container is running and stopped state is required"
 assert_contains "$TMP_DIR/mac-preflight-docker-running.out" "NanoClaw Docker agent containers are still running" "mac export preflight reports running Docker containers"
+assert_exit_code 1 "$pi_export_docker_code" "pi export refuses while NanoClaw Docker container is running"
+assert_contains "$TMP_DIR/pi-export-docker-running.err" "NanoClaw Docker agent containers are still running" "pi export reports running Docker containers"
+assert_contains "$TMP_DIR/pi-export-docker-running.err" "dc-sidecar-test" "pi export names image-matched Docker container"
 assert_exit_code 1 "$docker_guard_code" "ssh start runtime refuses while Mac Docker container is running"
 assert_contains "$TMP_DIR/ssh-start-runtime-docker-guard.err" "Matching Docker containers" "ssh start runtime Docker guard reports matching containers"
 assert_contains "$TMP_DIR/ssh-start-runtime-docker-guard.err" "dc-sidecar-test" "ssh start runtime Docker guard names image-matched container"

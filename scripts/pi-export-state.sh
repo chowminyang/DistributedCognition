@@ -59,10 +59,28 @@ while [ "$#" -gt 0 ]; do
   esac
 done
 
+have() {
+  command -v "$1" >/dev/null 2>&1
+}
+
 is_nanoclaw_running() {
   pgrep -f "$PROJECT_ROOT/dist/index.js" >/dev/null 2>&1 && return 0
+  pgrep -f "$PROJECT_ROOT.*dist/index.js" >/dev/null 2>&1 && return 0
+  pgrep -f "node .*dist/index.js" >/dev/null 2>&1 && return 0
   pgrep -f "$PROJECT_ROOT/src/index.ts" >/dev/null 2>&1 && return 0
+  pgrep -f "tsx .*src/index.ts" >/dev/null 2>&1 && return 0
   return 1
+}
+
+find_docker_containers() {
+  have docker || return 0
+
+  docker ps --format '{{.Names}}\t{{.Image}}\t{{.Status}}' 2>/dev/null |
+    awk -F '\t' '
+      $1 ~ /^nanoclaw-v2-/ || $1 ~ /^nanoclaw-agent-v2-/ || $2 ~ /(^|\/)nanoclaw-agent(:|@|$|-v2-)/ {
+        print $1 "\t" $2 "\t" $3
+      }
+    '
 }
 
 copy_path() {
@@ -91,10 +109,41 @@ write_runtime_lock() {
   chmod 600 "$RUNTIME_LOCK"
 }
 
-if [ "$ALLOW_RUNNING" != "true" ] && is_nanoclaw_running; then
+DOCKER_CONTAINERS="$(find_docker_containers || true)"
+HOST_RUNNING="false"
+if is_nanoclaw_running; then
+  HOST_RUNNING="true"
+fi
+
+if [ "$ALLOW_RUNNING" != "true" ] && { [ "$HOST_RUNNING" = "true" ] || [ -n "$DOCKER_CONTAINERS" ]; }; then
   cat >&2 <<EOF
-NanoClaw appears to be running from:
+NanoClaw appears to be running on this Mac.
+
+Project:
   $PROJECT_ROOT
+EOF
+
+  if [ "$HOST_RUNNING" = "true" ]; then
+    cat >&2 <<'EOF'
+
+Matching host process detected for dist/index.js or src/index.ts.
+EOF
+  fi
+
+  if [ -n "$DOCKER_CONTAINERS" ]; then
+    cat >&2 <<'EOF'
+
+NanoClaw Docker agent containers are still running:
+EOF
+    while IFS=$'\t' read -r name image status; do
+      [ -n "$name" ] || continue
+      printf '  - %s image=%s status=%s\n' "$name" "${image:-unknown}" "${status:-unknown}" >&2
+    done <<EOF
+$DOCKER_CONTAINERS
+EOF
+  fi
+
+  cat >&2 <<'EOF'
 
 Stop the service first so SQLite and WhatsApp auth are quiet, then rerun.
 Use --allow-running only for an emergency best-effort export.

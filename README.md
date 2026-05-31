@@ -238,11 +238,12 @@ stops running NanoClaw Docker agent containers detected by NanoClaw container
 name or `nanoclaw-agent` image, so final export is quiet even if an agent was
 mid-task.
 
-`pi:export` writes `logs/pi-cutover/mac-runtime-disabled.lock` after creating
-the secret bundle. From then on, `pnpm start` / `pnpm dev` in this Mac checkout
-will refuse to start the WhatsApp runtime unless you intentionally roll back by
-removing that lock, or temporarily set
-`NANOCLAW_ALLOW_MAC_RUNTIME_AFTER_PI_EXPORT=true`.
+`pi:export` also refuses to create the secret bundle if a matching Mac
+NanoClaw host process or NanoClaw Docker agent container is still running, then
+writes `logs/pi-cutover/mac-runtime-disabled.lock` after a successful export.
+From then on, `pnpm start` / `pnpm dev` in this Mac checkout will refuse to
+start the WhatsApp runtime unless you intentionally roll back by removing that
+lock, or temporarily set `NANOCLAW_ALLOW_MAC_RUNTIME_AFTER_PI_EXPORT=true`.
 
 Once the Pi is reachable by SSH, check it from the Mac:
 
