@@ -206,7 +206,16 @@ Work plan:
 1. On the Mac, inspect repo status and verify the public branch is current.
    Set the expected Pi runtime version from the current Mac checkout:
    EXPECTED_COMMIT="\$(git rev-parse HEAD)"
-2. Generate and show the read-only cutover plan:
+2. Ask me for any missing Pi values before continuing. Then set the non-secret Pi control-plane environment for this Codex thread, replacing any placeholder values first:
+   export NANOCLAW_PI_HOST="${PI_HOST_DISPLAY}"
+   export NANOCLAW_PI_USER="${PI_USER_DISPLAY}"
+   export NANOCLAW_PI_PROJECT_ROOT="${PI_PROJECT_DISPLAY}"
+   export NANOCLAW_PI_SECOND_BRAIN_ROOT="${PI_SECOND_BRAIN_DISPLAY}"
+   export NANOCLAW_PI_CODEX_PROJECTS_ROOT="${PI_CODEX_DISPLAY}"
+   export NANOCLAW_PI_RCLONE_REMOTE="${PI_RCLONE_REMOTE}"
+   export NANOCLAW_PI_EXPECTED_COMMIT="\$EXPECTED_COMMIT"
+   Do not run commands with unresolved <placeholder> values.
+3. Generate and show the read-only cutover plan:
    pnpm run pi:cutover-plan -- \\
      --local-root "${MAC_SECOND_BRAIN_DISPLAY}" \\
      --out-dir "${OUT_DIR}" \\
@@ -216,7 +225,7 @@ Work plan:
      --pi-second-brain-root "${PI_SECOND_BRAIN_DISPLAY}" \\
      --pi-codex-projects-root "${PI_CODEX_DISPLAY}" \\
      --repo-url "${REPO_URL}"
-3. Run the Pi SSH bootstrap first as a dry run:
+4. Run the Pi SSH bootstrap first as a dry run:
    pnpm run pi:ssh-bootstrap -- \\
      --host "${PI_HOST_DISPLAY}" \\
      --user "${PI_USER_DISPLAY}" \\
@@ -225,31 +234,31 @@ Work plan:
      --codex-projects-root "${PI_CODEX_DISPLAY}" \\
      --repo-url "${REPO_URL}" \\
      --branch "${BRANCH}"
-4. If the dry-run output is correct and I approve, rerun the bootstrap with --execute.
-5. Run:
-   pnpm run pi:ssh-preflight
-6. Before final cutover, stop Mac launchd and host only after I confirm:
+5. If the dry-run output is correct and I approve, rerun the bootstrap with --execute.
+6. Run Pi SSH preflight with explicit values:
+   pnpm run pi:ssh-preflight -- --host "${PI_HOST_DISPLAY}" --user "${PI_USER_DISPLAY}" --path "${PI_PROJECT_DISPLAY}" --second-brain-root "${PI_SECOND_BRAIN_DISPLAY}" --codex-projects-root "${PI_CODEX_DISPLAY}" --rclone-remote "${PI_RCLONE_REMOTE}"
+7. Before final cutover, stop Mac launchd and host only after I confirm:
    pnpm run dc:install-launchd -- uninstall
    pnpm run dc:stop-host -- --execute
-7. Run Mac export preflight and export the secret state bundle:
+8. Run Mac export preflight and export the secret state bundle:
    pnpm run pi:mac-preflight -- --root "${MAC_SECOND_BRAIN_DISPLAY}" --out-dir "${OUT_DIR}" --require-stopped
    pnpm run pi:export -- --out-dir "${OUT_DIR}"
    Confirm the export wrote a Mac runtime lock under logs/pi-cutover/ so accidental Mac host restarts are blocked after cutover.
-8. Restore the final state bundle from the Mac control plane using the dry-run helper first:
+9. Restore the final state bundle from the Mac control plane using the dry-run helper first:
    STATE_BUNDLE="\$(ls -t "${OUT_DIR}"/nanoclaw-pi-state-*.tar.gz | head -n 1)"
    pnpm run pi:inspect-state-bundle -- --bundle "\$STATE_BUNDLE"
    pnpm run pi:ssh-restore-state -- --host "${PI_HOST_DISPLAY}" --user "${PI_USER_DISPLAY}" --path "${PI_PROJECT_DISPLAY}" --bundle "\$STATE_BUNDLE" --force --cleanup-remote
    If the dry run is correct, rerun the same command with --execute. This must verify sha256 on the Pi before importing.
-9. Configure rclone sync, update Docker mount access, install/start systemd, install/start Pi bridge timers, and run health using the dry-run helper first:
+10. Configure rclone sync, update Docker mount access, install/start systemd, install/start Pi bridge timers, and run health using the dry-run helper first:
    pnpm run pi:ssh-start-runtime -- --host "${PI_HOST_DISPLAY}" --user "${PI_USER_DISPLAY}" --path "${PI_PROJECT_DISPLAY}" --second-brain-root "${PI_SECOND_BRAIN_DISPLAY}" --codex-projects-root "${PI_CODEX_DISPLAY}" --rclone-remote "${PI_RCLONE_REMOTE}" --bridge-execute-mode memory
    If the dry run is correct, rerun the same command with --execute. The execute path must refuse to start while the Mac NanoClaw host is still running or while Mac NanoClaw Docker agent containers are still running, unless I explicitly approve rollback/emergency override.
-10. Verify from the Mac:
+11. Verify from the Mac:
    pnpm run pi:ssh-admin -- status --expected-commit "\$EXPECTED_COMMIT"
    pnpm run pi:ssh-admin -- bridge-timers --expected-bridge-execute-mode memory
    pnpm run pi:ssh-admin -- health
    pnpm run pi:ssh-admin -- dashboard
    pnpm run pi:ssh-admin -- logs --lines 80
-11. Gather the post-cutover verification bundle:
+12. Gather the post-cutover verification bundle:
    pnpm run pi:verify-cutover -- \\
      --local-root "${MAC_SECOND_BRAIN_DISPLAY}" \\
      --host "${PI_HOST_DISPLAY}" \\
@@ -258,7 +267,7 @@ Work plan:
      --second-brain-root "${PI_SECOND_BRAIN_DISPLAY}" \\
      --expected-commit "\$EXPECTED_COMMIT" \\
      --execute
-12. Run a live WhatsApp smoke test from my allowed personal chat, using one unique harmless proof phrase:
+13. Run a live WhatsApp smoke test from my allowed personal chat, using one unique harmless proof phrase:
    PROOF_TEXT="DC Pi cutover proof \$(date '+%d-%m-%y-%H%M')"
    DC, run a health check.
    DC, what can you see in the second-brain folder?
@@ -274,14 +283,14 @@ Work plan:
      --proof-text "\$PROOF_TEXT" \\
      --proof-since-minutes 30 \\
      --execute
-13. After WhatsApp is proven to be replying from the Pi, keep the Mac NanoClaw host stopped. Confirm Pi bridge timers are installed in memory mode, then process DC bridge work on the Pi with one manual bridge dry-run/memory-only execution from Mac Codex over SSH:
+14. After WhatsApp is proven to be replying from the Pi, keep the Mac NanoClaw host stopped. Confirm Pi bridge timers are installed in memory mode, then process DC bridge work on the Pi with one manual bridge dry-run/memory-only execution from Mac Codex over SSH:
    pnpm run pi:ssh-admin -- status --expected-commit "\$EXPECTED_COMMIT"
    pnpm run pi:ssh-admin -- bridge-timers --expected-bridge-execute-mode memory
    pnpm run pi:ssh-admin -- process-bridges
    pnpm run pi:ssh-admin -- process-bridges --bridge-execute-mode memory
    Use pnpm run pi:ssh-admin -- process-bridges --execute-bridges only if I explicitly want memory, Codex, and action queues to execute on the Pi.
    Do not restart the Mac NanoClaw/WhatsApp host unless I explicitly roll back.
-14. If I choose Mac-visible Codex Desktop/App handoffs after the Pi runtime is proven, source the rehearsal operator-env.sh, initialize/review the Mac bridge configs, and install only the Mac bridge jobs. The generated Codex/action prompts should include Pi SSH runtime context so Mac Codex controls the Pi instead of reviving the Mac WhatsApp host.
+15. If I choose Mac-visible Codex Desktop/App handoffs after the Pi runtime is proven, source the rehearsal operator-env.sh, initialize/review the Mac bridge configs, and install only the Mac bridge jobs. The generated Codex/action prompts should include Pi SSH runtime context so Mac Codex controls the Pi instead of reviving the Mac WhatsApp host.
 
 Completion evidence required:
 - Pi SSH bootstrap succeeds or gives clear remaining actions.
