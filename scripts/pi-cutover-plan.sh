@@ -285,6 +285,7 @@ if [ -n "$PI_UNIT_NAME" ]; then
 fi
 print_command "PROOF_TEXT=\"DC Pi cutover proof \$(date '+%d-%m-%y-%H%M')\""
 print_command 'pnpm run pi:ssh-admin -- status --expected-commit "$NANOCLAW_PI_EXPECTED_COMMIT"'
+print_command "pnpm run pi:ssh-admin -- bridge-timers --expected-bridge-execute-mode memory"
 print_command "pnpm run pi:ssh-admin -- health"
 print_command 'pnpm run pi:ssh-admin -- doctor --expected-commit "$NANOCLAW_PI_EXPECTED_COMMIT"'
 print_command "pnpm run pi:ssh-admin -- dashboard"
@@ -319,12 +320,15 @@ cat <<'EOF'
   Default for the Pi migration: keep the Mac NanoClaw/WhatsApp host stopped and
   use Mac Codex only as an SSH operator. The Pi bridge timers handle queued
   Mnemon promotion periodically while Codex/action queues stay reviewable from
-  Mac Codex; run one manual check:
+  Mac Codex; first prove the installed timer runner is still in memory mode,
+  then run one manual bridge check:
 EOF
 if [ -n "$LOCAL_SECOND_BRAIN_ROOT" ]; then
+  print_command "pnpm run pi:ssh-admin -- bridge-timers --expected-bridge-execute-mode memory"
   print_command "pnpm run pi:ssh-admin -- process-bridges"
   print_command "pnpm run pi:ssh-admin -- process-bridges --bridge-execute-mode memory"
 else
+  print_command "pnpm run pi:ssh-admin -- bridge-timers --expected-bridge-execute-mode memory"
   print_command "pnpm run pi:ssh-admin -- process-bridges"
   print_command "pnpm run pi:ssh-admin -- process-bridges --bridge-execute-mode memory"
 fi

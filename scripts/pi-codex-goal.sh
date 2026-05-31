@@ -245,6 +245,7 @@ Work plan:
    If the dry run is correct, rerun the same command with --execute. The execute path must refuse to start while the Mac NanoClaw host is still running or while Mac NanoClaw Docker agent containers are still running, unless I explicitly approve rollback/emergency override.
 10. Verify from the Mac:
    pnpm run pi:ssh-admin -- status --expected-commit "\$EXPECTED_COMMIT"
+   pnpm run pi:ssh-admin -- bridge-timers --expected-bridge-execute-mode memory
    pnpm run pi:ssh-admin -- health
    pnpm run pi:ssh-admin -- dashboard
    pnpm run pi:ssh-admin -- logs --lines 80
@@ -273,8 +274,9 @@ Work plan:
      --proof-text "\$PROOF_TEXT" \\
      --proof-since-minutes 30 \\
      --execute
-13. After WhatsApp is proven to be replying from the Pi, keep the Mac NanoClaw host stopped. Confirm Pi bridge timers are installed, then process DC bridge work on the Pi with one manual bridge dry-run/memory-only execution from Mac Codex over SSH:
+13. After WhatsApp is proven to be replying from the Pi, keep the Mac NanoClaw host stopped. Confirm Pi bridge timers are installed in memory mode, then process DC bridge work on the Pi with one manual bridge dry-run/memory-only execution from Mac Codex over SSH:
    pnpm run pi:ssh-admin -- status --expected-commit "\$EXPECTED_COMMIT"
+   pnpm run pi:ssh-admin -- bridge-timers --expected-bridge-execute-mode memory
    pnpm run pi:ssh-admin -- process-bridges
    pnpm run pi:ssh-admin -- process-bridges --bridge-execute-mode memory
    Use pnpm run pi:ssh-admin -- process-bridges --execute-bridges only if I explicitly want memory, Codex, and action queues to execute on the Pi.
@@ -288,7 +290,7 @@ Completion evidence required:
 - Final exported state bundle passes pnpm run pi:inspect-state-bundle.
 - Pi systemd service is enabled and active.
 - Pi status proves the checkout is running the expected commit from the Mac cutover thread.
-- Pi bridge timers are installed and visible from pnpm run pi:ssh-admin -- status.
+- Pi bridge timers are installed and verified in memory mode by pnpm run pi:ssh-admin -- bridge-timers --expected-bridge-execute-mode memory.
 - Mac NanoClaw host remains stopped after cutover.
 - The post-cutover verification helper writes a clean verification bundle.
 - DC replies on WhatsApp from the Pi.
