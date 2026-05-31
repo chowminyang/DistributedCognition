@@ -12,6 +12,7 @@ PI_CODEX_PROJECTS_ROOT="${NANOCLAW_PI_CODEX_PROJECTS_ROOT:-}"
 PI_RCLONE_REMOTE="${NANOCLAW_PI_RCLONE_REMOTE:-dropbox:}"
 PI_UNIT_NAME="${NANOCLAW_PI_UNIT_NAME:-}"
 PI_SSH_CONNECT_TIMEOUT="${NANOCLAW_PI_SSH_CONNECT_TIMEOUT:-10}"
+EXPECTED_COMMIT="${NANOCLAW_PI_EXPECTED_COMMIT:-}"
 REPO_URL="${NANOCLAW_PI_REPO_URL:-https://github.com/chowminyang/DistributedCognition.git}"
 BRANCH="${NANOCLAW_PI_BRANCH:-main}"
 MIGRATION_DATE="${NANOCLAW_PI_MIGRATION_DATE:-02-06-26}"
@@ -46,6 +47,7 @@ Options:
   --pi-codex-projects-root <path> Codex projects folder on the Pi.
   --pi-rclone-remote <name:>      rclone remote name. Default: dropbox:.
   --pi-unit-name <name>           Optional NanoClaw systemd unit name.
+  --expected-commit <sha>         Expected Pi checkout commit. Default: current local HEAD.
   --repo-url <url>                Repository URL to clone on the Pi.
   --branch <name>                 Branch to use on the Pi. Default: main.
   --migration-date <DD-MM-YY>     Planned migration date. Default: 02-06-26.
@@ -64,6 +66,7 @@ Environment defaults:
   NANOCLAW_PI_RCLONE_REMOTE
   NANOCLAW_PI_UNIT_NAME
   NANOCLAW_PI_SSH_CONNECT_TIMEOUT
+  NANOCLAW_PI_EXPECTED_COMMIT
   NANOCLAW_PI_REPO_URL
   NANOCLAW_PI_BRANCH
   NANOCLAW_PI_MIGRATION_DATE
@@ -201,6 +204,7 @@ write_operator_env() {
     write_export_line "NANOCLAW_PI_RCLONE_REMOTE" "$PI_RCLONE_REMOTE" "Pi rclone remote"
     write_export_line "NANOCLAW_PI_UNIT_NAME" "$PI_UNIT_NAME" "Pi NanoClaw systemd unit name" "optional"
     write_export_line "NANOCLAW_PI_SSH_CONNECT_TIMEOUT" "$PI_SSH_CONNECT_TIMEOUT" "Pi SSH connect timeout in seconds"
+    write_export_line "NANOCLAW_PI_EXPECTED_COMMIT" "$EXPECTED_COMMIT" "expected Pi checkout commit"
     write_export_line "NANOCLAW_PI_REPO_URL" "$REPO_URL" "DistributedCognition repo URL"
     write_export_line "NANOCLAW_PI_BRANCH" "$BRANCH" "DistributedCognition branch"
     write_export_line "NANOCLAW_PI_MIGRATION_DATE" "$MIGRATION_DATE" "planned migration date"
@@ -266,6 +270,7 @@ write_summary() {
     printf -- '- Pi rclone remote: `%s`\n' "${PI_RCLONE_REMOTE:-<optional-not-set>}"
     printf -- '- Pi systemd unit: `%s`\n' "${PI_UNIT_NAME:-<auto-detect>}"
     printf -- '- Pi SSH connect timeout: `%ss`\n' "${PI_SSH_CONNECT_TIMEOUT:-<unset>}"
+    printf -- '- Expected Pi commit: `%s`\n' "${EXPECTED_COMMIT:-<not checked>}"
     printf -- '- Repo URL: `%s`\n' "${REPO_URL:-<missing>}"
     printf -- '- Branch: `%s`\n' "${BRANCH:-<missing>}"
     printf -- '- Migration date: `%s`\n\n' "$MIGRATION_DATE"
@@ -366,6 +371,11 @@ while [ "$#" -gt 0 ]; do
       [ -n "$PI_UNIT_NAME" ] || { echo "Missing value for --pi-unit-name" >&2; exit 2; }
       shift 2
       ;;
+    --expected-commit)
+      EXPECTED_COMMIT="${2:-}"
+      [ -n "$EXPECTED_COMMIT" ] || { echo "Missing value for --expected-commit" >&2; exit 2; }
+      shift 2
+      ;;
     --repo-url)
       REPO_URL="${2:-}"
       [ -n "$REPO_URL" ] || { echo "Missing value for --repo-url" >&2; exit 2; }
@@ -436,6 +446,10 @@ require_runtime_value "Pi Codex projects path (--pi-codex-projects-root or NANOC
 
 mkdir -p "$REHEARSAL_DIR"
 cd "$PROJECT_ROOT"
+
+if [ -z "$EXPECTED_COMMIT" ] && git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  EXPECTED_COMMIT="$(git rev-parse HEAD 2>/dev/null || true)"
+fi
 
 write_operator_env "$REHEARSAL_DIR/operator-env.sh"
 

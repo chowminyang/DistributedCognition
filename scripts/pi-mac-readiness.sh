@@ -11,6 +11,7 @@ PI_SECOND_BRAIN_ROOT="${NANOCLAW_PI_SECOND_BRAIN_ROOT:-}"
 PI_CODEX_PROJECTS_ROOT="${NANOCLAW_PI_CODEX_PROJECTS_ROOT:-}"
 PI_RCLONE_REMOTE="${NANOCLAW_PI_RCLONE_REMOTE:-dropbox:}"
 PI_UNIT_NAME="${NANOCLAW_PI_UNIT_NAME:-}"
+EXPECTED_COMMIT="${NANOCLAW_PI_EXPECTED_COMMIT:-}"
 REPO_URL="${NANOCLAW_PI_REPO_URL:-https://github.com/chowminyang/DistributedCognition.git}"
 BRANCH="${NANOCLAW_PI_BRANCH:-main}"
 MIGRATION_DATE="${NANOCLAW_PI_MIGRATION_DATE:-02-06-26}"
@@ -41,6 +42,7 @@ Options:
   --pi-codex-projects-root <path> Codex projects folder on the Pi.
   --pi-rclone-remote <name:>      rclone remote name. Default: dropbox:.
   --pi-unit-name <name>           Optional NanoClaw systemd unit name.
+  --expected-commit <sha>         Expected Pi checkout commit. Default: current local HEAD.
   --repo-url <url>                Repository URL to clone on the Pi.
   --branch <name>                 Branch to use on the Pi. Default: main.
   --migration-date <DD-MM-YY>     Planned migration date. Default: 02-06-26.
@@ -60,6 +62,7 @@ Environment defaults:
   NANOCLAW_PI_CODEX_PROJECTS_ROOT
   NANOCLAW_PI_RCLONE_REMOTE
   NANOCLAW_PI_UNIT_NAME
+  NANOCLAW_PI_EXPECTED_COMMIT
   NANOCLAW_PI_REPO_URL
   NANOCLAW_PI_BRANCH
   NANOCLAW_PI_MIGRATION_DATE
@@ -221,6 +224,11 @@ while [ "$#" -gt 0 ]; do
       [ -n "$PI_UNIT_NAME" ] || { echo "Missing value for --pi-unit-name" >&2; exit 2; }
       shift 2
       ;;
+    --expected-commit)
+      EXPECTED_COMMIT="${2:-}"
+      [ -n "$EXPECTED_COMMIT" ] || { echo "Missing value for --expected-commit" >&2; exit 2; }
+      shift 2
+      ;;
     --repo-url)
       REPO_URL="${2:-}"
       [ -n "$REPO_URL" ] || { echo "Missing value for --repo-url" >&2; exit 2; }
@@ -288,6 +296,10 @@ require_value "Branch (--branch or NANOCLAW_PI_BRANCH)" "$BRANCH"
 mkdir -p "$READINESS_DIR"
 cd "$PROJECT_ROOT"
 
+if [ -z "$EXPECTED_COMMIT" ] && git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  EXPECTED_COMMIT="$(git rev-parse HEAD 2>/dev/null || true)"
+fi
+
 run_capture "$READINESS_DIR/git-status.txt" "Git Status" git status --short --branch
 
 if [ "$SKIP_PUBLIC_READINESS" = "true" ]; then
@@ -323,6 +335,7 @@ rehearsal_cmd+=(--out-dir "$OUT_DIR")
 [ -n "$PI_CODEX_PROJECTS_ROOT" ] && rehearsal_cmd+=(--pi-codex-projects-root "$PI_CODEX_PROJECTS_ROOT")
 [ -n "$PI_RCLONE_REMOTE" ] && rehearsal_cmd+=(--pi-rclone-remote "$PI_RCLONE_REMOTE")
 [ -n "$PI_UNIT_NAME" ] && rehearsal_cmd+=(--pi-unit-name "$PI_UNIT_NAME")
+[ -n "$EXPECTED_COMMIT" ] && rehearsal_cmd+=(--expected-commit "$EXPECTED_COMMIT")
 [ -n "$REPO_URL" ] && rehearsal_cmd+=(--repo-url "$REPO_URL")
 [ -n "$BRANCH" ] && rehearsal_cmd+=(--branch "$BRANCH")
 rehearsal_cmd+=(--migration-date "$MIGRATION_DATE")
@@ -356,6 +369,7 @@ fi
   printf -- '- Pi Distributed-Cognition folder: `%s`\n' "${PI_SECOND_BRAIN_ROOT:-<missing>}"
   printf -- '- Pi Codex projects folder: `%s`\n' "${PI_CODEX_PROJECTS_ROOT:-<optional-not-set>}"
   printf -- '- Pi rclone remote: `%s`\n' "${PI_RCLONE_REMOTE:-<optional-not-set>}"
+  printf -- '- Expected Pi commit: `%s`\n' "${EXPECTED_COMMIT:-<not checked>}"
   printf -- '- Repo URL: `%s`\n' "${REPO_URL:-<missing>}"
   printf -- '- Branch: `%s`\n' "${BRANCH:-<missing>}"
   printf -- '- Migration date: `%s`\n\n' "$MIGRATION_DATE"

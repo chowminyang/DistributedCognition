@@ -237,6 +237,7 @@ assert_contains "$rehearsal_dir/codex-goal.md" "/goal" "cutover rehearsal includ
 assert_contains "$rehearsal_dir/operator-env.sh" "export NANOCLAW_PI_HOST=nanoclaw-pi.local" "cutover rehearsal operator env includes Pi host"
 assert_contains "$rehearsal_dir/operator-env.sh" "export NANOCLAW_PI_CODEX_PROJECTS_ROOT=/home/pi/Codex" "cutover rehearsal operator env includes Codex projects root"
 assert_contains "$rehearsal_dir/operator-env.sh" "export NANOCLAW_PI_SSH_CONNECT_TIMEOUT=10" "cutover rehearsal operator env includes SSH timeout"
+assert_contains "$rehearsal_dir/operator-env.sh" "export NANOCLAW_PI_EXPECTED_COMMIT=" "cutover rehearsal operator env includes expected Pi commit"
 assert_not_contains "$rehearsal_dir/operator-env.sh" "OPENAI_API_KEY" "cutover rehearsal operator env excludes API keys"
 assert_not_contains "$rehearsal_dir/operator-env.sh" "WHATSAPP_" "cutover rehearsal operator env excludes WhatsApp env vars"
 assert_contains "$rehearsal_dir/cutover-plan.txt" "CUTOVER_PLAN=ready" "cutover rehearsal includes ready cutover plan"
@@ -245,6 +246,7 @@ assert_contains "$rehearsal_dir/ssh-restore-state-dry-run.txt" "PI_SSH_RESTORE_S
 assert_contains "$rehearsal_dir/ssh-start-runtime-dry-run.txt" "PI_SSH_START_RUNTIME=dry_run" "cutover rehearsal includes runtime start dry-run"
 assert_contains "$rehearsal_dir/summary.md" "No SSH was opened" "cutover rehearsal summary states no SSH"
 assert_contains "$rehearsal_dir/summary.md" "operator-env.sh" "cutover rehearsal summary lists operator env artifact"
+assert_contains "$rehearsal_dir/summary.md" "Expected Pi commit" "cutover rehearsal summary records expected Pi commit"
 assert_contains "$rehearsal_dir/summary.md" "ssh-restore-state-dry-run.txt" "cutover rehearsal summary lists state restore artifact"
 assert_contains "$rehearsal_dir/summary.md" "ssh-start-runtime-dry-run.txt" "cutover rehearsal summary lists runtime start artifact"
 
