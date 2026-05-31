@@ -102,6 +102,25 @@ default. It opens no SSH connection, stops no local service, exports no state,
 and does not touch WhatsApp auth. Use this before Tuesday so the Mac Codex
 thread can start from a concrete bundle instead of improvising.
 
+For a broader one-command readiness snapshot on the Mac, run:
+
+```bash
+pnpm run pi:mac-readiness -- \
+  --local-root "$HOME/Library/CloudStorage/Dropbox/Distributed-Cognition" \
+  --pi-host nanoclaw-pi.local \
+  --pi-user pi \
+  --pi-path /home/pi/NanoClaw \
+  --pi-second-brain-root /home/pi/Distributed-Cognition \
+  --pi-codex-projects-root /home/pi/Codex \
+  --repo-url https://github.com/chowminyang/DistributedCognition.git \
+  --branch main
+```
+
+This writes `output/pi-mac-readiness/DD-MM-YY-HHMM/` with git status,
+public-readiness, DC health, Mac export preflight, and the nested rehearsal
+bundle. It is safe to run while the Mac instance is live; a warning that the
+Mac host is running is expected before final export.
+
 When you are ready to capture the final state, stop the Mac launchd jobs first so SQLite, WhatsApp auth, bridge queues, and delivery ledgers are quiet:
 
 ```bash

@@ -50,6 +50,7 @@ echo "Testing Raspberry Pi migration helpers"
 helper_scripts=(
   scripts/pi-codex-goal.sh
   scripts/pi-cutover-plan.sh
+  scripts/pi-mac-readiness.sh
   scripts/pi-rehearse-cutover.sh
   scripts/pi-ssh-admin.sh
   scripts/pi-ssh-bootstrap.sh
@@ -171,6 +172,44 @@ set -e
 assert_exit_code 1 "$rehearsal_missing_code" "strict cutover rehearsal fails when values are missing"
 assert_contains "$TMP_DIR/rehearsal-missing.out" "PI_CUTOVER_REHEARSAL=missing_values" "strict cutover rehearsal reports missing values"
 assert_contains "$TMP_DIR/rehearsal-missing.out" "No SSH was opened" "strict cutover rehearsal remains non-mutating"
+
+readiness_root="$TMP_DIR/Distributed-Cognition"
+mkdir -p "$readiness_root/.dc-index"
+readiness_dir="$TMP_DIR/readiness"
+pnpm run pi:mac-readiness -- \
+  --local-root "$readiness_root" \
+  --out-dir "$TMP_DIR/export" \
+  --output-dir "$readiness_dir" \
+  --pi-host nanoclaw-pi.local \
+  --pi-user pi \
+  --pi-path /home/pi/NanoClaw \
+  --pi-second-brain-root /home/pi/Distributed-Cognition \
+  --pi-codex-projects-root /home/pi/Codex \
+  --repo-url https://github.com/chowminyang/DistributedCognition.git \
+  --branch main \
+  --migration-date 02-06-26 \
+  --skip-health \
+  --skip-public-readiness \
+  >"$TMP_DIR/readiness.out"
+assert_contains "$TMP_DIR/readiness.out" "PI_MAC_READINESS=" "mac readiness reports status"
+assert_contains "$TMP_DIR/readiness.out" "No SSH was opened" "mac readiness is non-mutating"
+[ -f "$readiness_dir/summary.md" ] || fail "mac readiness writes summary"
+[ -f "$readiness_dir/git-status.txt" ] || fail "mac readiness writes git status"
+[ -f "$readiness_dir/public-readiness.txt" ] || fail "mac readiness writes public-readiness artifact"
+[ -f "$readiness_dir/health.json" ] || fail "mac readiness writes health artifact"
+[ -f "$readiness_dir/mac-preflight.txt" ] || fail "mac readiness writes mac preflight"
+[ -f "$readiness_dir/rehearsal/summary.md" ] || fail "mac readiness writes nested rehearsal summary"
+assert_contains "$readiness_dir/public-readiness.txt" "Skipped" "mac readiness can skip public readiness"
+assert_contains "$readiness_dir/health.json" "Skipped" "mac readiness can skip health"
+assert_contains "$readiness_dir/rehearsal/summary.md" "Status: \`ready\`" "mac readiness nested rehearsal is ready with complete values"
+
+set +e
+pnpm run pi:mac-readiness -- --strict --output-dir "$TMP_DIR/readiness-missing" --skip-health --skip-public-readiness >"$TMP_DIR/readiness-missing.out" 2>"$TMP_DIR/readiness-missing.err"
+readiness_missing_code="$?"
+set -e
+assert_exit_code 1 "$readiness_missing_code" "strict mac readiness fails when values are missing"
+assert_contains "$TMP_DIR/readiness-missing.out" "PI_MAC_READINESS=missing_values" "strict mac readiness reports missing values"
+assert_contains "$TMP_DIR/readiness-missing.out" "No SSH was opened" "strict mac readiness remains non-mutating"
 
 pnpm run pi:ssh-admin -- --help >"$TMP_DIR/ssh-admin-help.out"
 assert_contains "$TMP_DIR/ssh-admin-help.out" "Required options, unless the matching environment defaults are set" "ssh admin help documents env defaults"

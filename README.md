@@ -134,6 +134,23 @@ This creates `output/pi-cutover-rehearsal/DD-MM-YY-HHMM/` with the Codex
 `/goal`, cutover checklist, SSH bootstrap dry run, and a summary. It does not
 open SSH, stop the Mac host, export state, import state, or touch WhatsApp.
 
+To produce a broader Mac-side readiness bundle before Tuesday:
+
+```bash
+pnpm run pi:mac-readiness -- \
+  --local-root "<local Distributed-Cognition folder>" \
+  --pi-host "<pi-host-or-ip>" \
+  --pi-user "<pi-ssh-user>" \
+  --pi-path "<pi NanoClaw checkout path>" \
+  --pi-second-brain-root "<pi Distributed-Cognition path>" \
+  --pi-codex-projects-root "<pi Codex projects path>"
+```
+
+This gathers git status, public-readiness, DC health, Mac export preflight, and
+the Pi rehearsal into `output/pi-mac-readiness/DD-MM-YY-HHMM/`. It is still
+non-mutating: it does not SSH, stop the Mac host, export state, or touch
+WhatsApp auth.
+
 Before pushing a public update, run the local public-boundary and Pi helper checks:
 
 ```bash
