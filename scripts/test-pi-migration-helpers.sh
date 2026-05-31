@@ -92,6 +92,51 @@ for helper_script in "${helper_scripts[@]}"; do
 done
 ok "shell syntax is valid"
 
+pnpm run pi:install-systemd -- --help >"$TMP_DIR/pi-install-systemd-help.out"
+assert_contains "$TMP_DIR/pi-install-systemd-help.out" "Installs NanoClaw as a systemd service" "pi install systemd help accepts pnpm separator"
+
+pnpm run pi:install-dropbox-sync -- --help >"$TMP_DIR/pi-install-dropbox-sync-help.out"
+assert_contains "$TMP_DIR/pi-install-dropbox-sync-help.out" "Installs a user-level systemd timer" "pi install Dropbox sync help accepts pnpm separator"
+
+pnpm run pi:import -- --help >"$TMP_DIR/pi-import-help.out"
+assert_contains "$TMP_DIR/pi-import-help.out" "Restores a NanoClaw Raspberry Pi migration bundle" "pi import help accepts pnpm separator"
+
+fake_rclone_bin="$TMP_DIR/fake-rclone-bin"
+mkdir -p "$fake_rclone_bin"
+cat >"$fake_rclone_bin/rclone" <<'FAKE_RCLONE'
+#!/usr/bin/env bash
+set -euo pipefail
+case "${1:-}" in
+  listremotes)
+    printf 'other:\n'
+    ;;
+  config)
+    printf '__RCLONE_CONFIG_CALLED__\n'
+    exit 43
+    ;;
+  *)
+    exit 0
+    ;;
+esac
+FAKE_RCLONE
+cat >"$fake_rclone_bin/systemctl" <<'FAKE_SYSTEMCTL'
+#!/usr/bin/env bash
+set -euo pipefail
+exit 0
+FAKE_SYSTEMCTL
+chmod +x "$fake_rclone_bin/rclone" "$fake_rclone_bin/systemctl"
+HOME="$TMP_DIR/pi-home" PATH="$fake_rclone_bin:$PATH" bash scripts/pi-install-dropbox-sync.sh \
+  --local "$TMP_DIR/pi-home/Distributed-Cognition" \
+  --remote dropbox:Distributed-Cognition \
+  --interval 9min \
+  --mode copy \
+  >"$TMP_DIR/pi-install-dropbox-sync.out" \
+  2>"$TMP_DIR/pi-install-dropbox-sync.err"
+assert_contains "$TMP_DIR/pi-install-dropbox-sync.err" "Warning: rclone remote dropbox: is not configured yet." "pi Dropbox sync warns when rclone remote is missing"
+assert_contains "$TMP_DIR/pi-install-dropbox-sync.err" "Run 'rclone config'" "pi Dropbox sync prints rclone config instruction literally"
+assert_not_contains "$TMP_DIR/pi-install-dropbox-sync.err" "__RCLONE_CONFIG_CALLED__" "pi Dropbox sync warning does not execute rclone config"
+assert_contains "$TMP_DIR/pi-install-dropbox-sync.out" "Mode: copy" "pi Dropbox sync renders timer without starting it"
+
 systemd_render_dir="$TMP_DIR/systemd-render"
 bash scripts/pi-install-systemd.sh --output-dir "$systemd_render_dir" >"$TMP_DIR/systemd-render.out"
 systemd_unit="$(find "$systemd_render_dir" -name 'nanoclaw-v2-*.service' -print -quit)"

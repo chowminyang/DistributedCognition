@@ -25,6 +25,9 @@ EOF
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
+    --)
+      shift
+      ;;
     --force)
       FORCE="true"
       shift

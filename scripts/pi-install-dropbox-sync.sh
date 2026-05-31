@@ -26,6 +26,9 @@ EOF
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
+    --)
+      shift
+      ;;
     --local)
       LOCAL_DIR="${2:-}"
       [ -n "$LOCAL_DIR" ] || { echo "Missing value for --local" >&2; exit 2; }
@@ -72,7 +75,7 @@ REMOTE_NAME="${REMOTE%%:*}:"
 if ! rclone listremotes | grep -Fx "$REMOTE_NAME" >/dev/null 2>&1; then
   cat >&2 <<EOF
 Warning: rclone remote $REMOTE_NAME is not configured yet.
-Run `rclone config` and create a Dropbox remote before starting the timer.
+Run 'rclone config' and create a Dropbox remote before starting the timer.
 EOF
 fi
 

@@ -23,6 +23,9 @@ EOF
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
+    --)
+      shift
+      ;;
     --start)
       START="true"
       shift
