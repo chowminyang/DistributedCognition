@@ -18,6 +18,7 @@ Runs common Raspberry Pi operations from the Mac control plane over SSH after
 Distributed Cognition has moved to the Pi.
 
 Actions:
+  doctor          Run status, health, and dashboard checks in one SSH session.
   status          Show service, git, Docker, and runtime status.
   health          Run pnpm run dc:health on the Pi.
   dashboard       Refresh the Distributed Cognition dashboard on the Pi.
@@ -33,7 +34,7 @@ Required options, unless the matching environment defaults are set:
   --user <user>                  SSH user, for example pi.
   --path <path>                  NanoClaw checkout path on the Pi.
 
-Required for health/dashboard:
+Required for doctor/health/dashboard:
   --second-brain-root <path>     Distributed-Cognition folder on the Pi.
 
 Optional:
@@ -51,6 +52,7 @@ Environment defaults:
   NANOCLAW_PI_UNIT_NAME
 
 Examples:
+  bash scripts/pi-ssh-admin.sh doctor --host nanoclaw-pi.local --user pi --path /home/pi/NanoClaw --second-brain-root /home/pi/Distributed-Cognition
   bash scripts/pi-ssh-admin.sh status --host nanoclaw-pi.local --user pi --path /home/pi/NanoClaw
   bash scripts/pi-ssh-admin.sh health --host nanoclaw-pi.local --user pi --path /home/pi/NanoClaw --second-brain-root /home/pi/Distributed-Cognition
   bash scripts/pi-ssh-admin.sh restart --host nanoclaw-pi.local --user pi --path /home/pi/NanoClaw
@@ -69,7 +71,7 @@ add_ssh_option() {
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
-    status|health|dashboard|logs|follow-logs|start|stop|restart|update)
+    doctor|status|health|dashboard|logs|follow-logs|start|stop|restart|update)
       if [ -n "$ACTION" ]; then
         echo "Action already set: $ACTION" >&2
         exit 2
@@ -133,7 +135,7 @@ done
 [ -n "$REMOTE_USER" ] || { echo "Missing required --user" >&2; usage >&2; exit 2; }
 [ -n "$REMOTE_PROJECT_ROOT" ] || { echo "Missing required --path" >&2; usage >&2; exit 2; }
 case "$ACTION" in
-  health|dashboard)
+  doctor|health|dashboard)
     [ -n "$SECOND_BRAIN_ROOT" ] || { echo "$ACTION requires --second-brain-root" >&2; exit 2; }
     ;;
 esac
@@ -274,6 +276,19 @@ run_dashboard() {
   pnpm run dc:dashboard -- --root "$SECOND_BRAIN_ROOT"
 }
 
+run_doctor() {
+  echo "== Doctor: status =="
+  show_status
+  echo
+  echo "== Doctor: health =="
+  run_health
+  echo
+  echo "== Doctor: dashboard =="
+  run_dashboard
+  echo
+  echo "PI_SSH_DOCTOR=ok"
+}
+
 run_logs() {
   require_command systemctl
   local unit
@@ -311,6 +326,7 @@ update_and_restart() {
 }
 
 case "$ACTION" in
+  doctor) run_doctor ;;
   status) show_status ;;
   health) run_health ;;
   dashboard) run_dashboard ;;

@@ -282,6 +282,7 @@ if [ -n "$PI_UNIT_NAME" ]; then
 fi
 print_command "pnpm run pi:ssh-admin -- status"
 print_command "pnpm run pi:ssh-admin -- health"
+print_command "pnpm run pi:ssh-admin -- doctor"
 print_command "pnpm run pi:ssh-admin -- dashboard"
 print_command "pnpm run pi:ssh-admin -- logs --lines 80"
 if [ -n "$LOCAL_SECOND_BRAIN_ROOT" ]; then

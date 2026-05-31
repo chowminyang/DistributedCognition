@@ -122,6 +122,7 @@ assert_contains "$plan_out" "Distributed Cognition runs fully on the Raspberry P
 assert_contains "$plan_out" "CUTOVER_PLAN=ready" "cutover plan succeeds with complete values"
 assert_contains "$plan_out" "pnpm run dc:stop-host -- --execute" "cutover plan includes final Mac host stop"
 assert_contains "$plan_out" "pnpm run pi:ssh-preflight" "cutover plan includes SSH preflight"
+assert_contains "$plan_out" "pnpm run pi:ssh-admin -- doctor" "cutover plan includes Pi doctor check"
 assert_contains "$plan_out" "Resume Mac-Side Bridges Only" "cutover plan includes bridge-only Mac resumption"
 assert_contains "$plan_out" "pnpm run dc:install-launchd -- install" "cutover plan re-enables only bridge jobs after Pi proof"
 
@@ -257,6 +258,7 @@ assert_contains "$TMP_DIR/verify-execute-missing.out" "PI_CUTOVER_VERIFY=missing
 pnpm run pi:ssh-admin -- --help >"$TMP_DIR/ssh-admin-help.out"
 assert_contains "$TMP_DIR/ssh-admin-help.out" "Required options, unless the matching environment defaults are set" "ssh admin help documents env defaults"
 assert_contains "$TMP_DIR/ssh-admin-help.out" "BatchMode=yes" "ssh admin help documents -o style ssh options"
+assert_contains "$TMP_DIR/ssh-admin-help.out" "doctor" "ssh admin help documents doctor action"
 
 pnpm run pi:ssh-preflight -- --help >"$TMP_DIR/ssh-preflight-help.out"
 assert_contains "$TMP_DIR/ssh-preflight-help.out" "Required options, unless the matching environment defaults are set" "ssh preflight help documents env defaults"
@@ -269,15 +271,23 @@ assert_contains "$TMP_DIR/ssh-bootstrap-help.out" "--execute" "ssh bootstrap hel
 set +e
 pnpm run pi:ssh-admin -- status >"$TMP_DIR/ssh-admin-missing.out" 2>"$TMP_DIR/ssh-admin-missing.err"
 admin_missing_code="$?"
+pnpm run pi:ssh-admin -- doctor \
+  --host nanoclaw-pi.local \
+  --user pi \
+  --path /home/pi/NanoClaw \
+  >"$TMP_DIR/ssh-admin-doctor-missing-root.out" 2>"$TMP_DIR/ssh-admin-doctor-missing-root.err"
+doctor_missing_root_code="$?"
 pnpm run pi:ssh-preflight >"$TMP_DIR/ssh-preflight-missing.out" 2>"$TMP_DIR/ssh-preflight-missing.err"
 preflight_missing_code="$?"
 pnpm run pi:ssh-bootstrap >"$TMP_DIR/ssh-bootstrap-missing.out" 2>"$TMP_DIR/ssh-bootstrap-missing.err"
 bootstrap_missing_code="$?"
 set -e
 assert_exit_code 2 "$admin_missing_code" "ssh admin fails before SSH when target values are missing"
+assert_exit_code 2 "$doctor_missing_root_code" "ssh admin doctor fails before SSH when second-brain root is missing"
 assert_exit_code 2 "$preflight_missing_code" "ssh preflight fails before SSH when target values are missing"
 assert_exit_code 2 "$bootstrap_missing_code" "ssh bootstrap fails before SSH when target values are missing"
 assert_contains "$TMP_DIR/ssh-admin-missing.err" "Missing required --host" "ssh admin missing host is explicit"
+assert_contains "$TMP_DIR/ssh-admin-doctor-missing-root.err" "doctor requires --second-brain-root" "ssh admin doctor missing second-brain root is explicit"
 assert_contains "$TMP_DIR/ssh-preflight-missing.err" "Missing required --host" "ssh preflight missing host is explicit"
 assert_contains "$TMP_DIR/ssh-bootstrap-missing.err" "Missing required --host" "ssh bootstrap missing host is explicit"
 

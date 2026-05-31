@@ -339,11 +339,12 @@ After cutover, use the SSH admin helper for routine operations from the Mac:
 ```bash
 pnpm run pi:ssh-admin -- status
 pnpm run pi:ssh-admin -- health
+pnpm run pi:ssh-admin -- doctor
 pnpm run pi:ssh-admin -- restart
 pnpm run pi:ssh-admin -- logs --lines 80
 ```
 
-The supported actions are `status`, `health`, `dashboard`, `logs`, `follow-logs`, `start`, `stop`, `restart`, and `update`. `status` avoids printing full process command lines. `logs` and `follow-logs` may include private WhatsApp/reflection content, so use them only on your own trusted Mac/Pi.
+The supported actions are `doctor`, `status`, `health`, `dashboard`, `logs`, `follow-logs`, `start`, `stop`, `restart`, and `update`. Use `doctor` for the common "is DC really alive on the Pi?" check; it runs status, health, and dashboard in one SSH session. `status` avoids printing full process command lines. `logs` and `follow-logs` may include private WhatsApp/reflection content, so use them only on your own trusted Mac/Pi.
 
 ## Post-Cutover Verification
 
