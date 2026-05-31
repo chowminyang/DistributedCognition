@@ -63,6 +63,25 @@ pnpm run pi:cutover-plan -- \
 
 This command is deliberately non-mutating. It does not SSH, stop the Mac host, copy state, install packages, or start the Pi service. Use it to check the shape of the migration while the Mac instance is still live.
 
+You can also generate the paste-ready `/goal` prompt for the Codex thread that
+will control the Pi over SSH:
+
+```bash
+pnpm run pi:codex-goal -- \
+  --local-root "$HOME/Library/CloudStorage/Dropbox/Distributed-Cognition" \
+  --pi-host nanoclaw-pi.local \
+  --pi-user pi \
+  --pi-path /home/pi/NanoClaw \
+  --pi-second-brain-root /home/pi/Distributed-Cognition \
+  --pi-codex-projects-root /home/pi/Codex \
+  --repo-url https://github.com/chowminyang/DistributedCognition.git \
+  --branch main
+```
+
+The generated prompt tells Codex to inspect current state, use dry-run helpers
+first, ask before final Mac stop/export, keep WhatsApp active on only one host,
+and verify that DC replies from the Pi before marking the goal complete.
+
 When you are ready to capture the final state, stop the Mac launchd jobs first so SQLite, WhatsApp auth, bridge queues, and delivery ledgers are quiet:
 
 ```bash

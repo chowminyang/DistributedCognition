@@ -105,6 +105,19 @@ packages, clones/builds the repo, creates the selected local folders, and
 checks Docker, but it does not copy secrets, import WhatsApp auth, start
 NanoClaw, configure rclone, or install the systemd service.
 
+To generate a paste-ready `/goal` prompt for the Mac Codex thread that will
+control the Pi on migration day:
+
+```bash
+pnpm run pi:codex-goal -- \
+  --local-root "<local Distributed-Cognition folder>" \
+  --pi-host "<pi-host-or-ip>" \
+  --pi-user "<pi-ssh-user>" \
+  --pi-path "<pi NanoClaw checkout path>" \
+  --pi-second-brain-root "<pi Distributed-Cognition path>" \
+  --pi-codex-projects-root "<pi Codex projects path>"
+```
+
 Before pushing a public update, run the local public-boundary and Pi helper checks:
 
 ```bash

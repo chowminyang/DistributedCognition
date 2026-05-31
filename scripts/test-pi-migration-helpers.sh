@@ -48,6 +48,7 @@ cd "$PROJECT_ROOT"
 echo "Testing Raspberry Pi migration helpers"
 
 helper_scripts=(
+  scripts/pi-codex-goal.sh
   scripts/pi-cutover-plan.sh
   scripts/pi-ssh-admin.sh
   scripts/pi-ssh-bootstrap.sh
@@ -63,6 +64,43 @@ for helper_script in "${helper_scripts[@]}"; do
   bash -n "$helper_script"
 done
 ok "shell syntax is valid"
+
+goal_out="$TMP_DIR/codex-goal.out"
+pnpm run pi:codex-goal -- \
+  --local-root "$TMP_DIR/Distributed-Cognition" \
+  --out-dir "$TMP_DIR/export" \
+  --pi-host nanoclaw-pi.local \
+  --pi-user pi \
+  --pi-path /home/pi/NanoClaw \
+  --pi-second-brain-root /home/pi/Distributed-Cognition \
+  --pi-codex-projects-root /home/pi/Codex \
+  --repo-url https://github.com/chowminyang/DistributedCognition.git \
+  --branch main \
+  --migration-date 02-06-26 \
+  >"$goal_out"
+assert_contains "$goal_out" "/goal" "codex goal starts with slash goal"
+assert_contains "$goal_out" "Mac Codex is the control plane" "codex goal names Mac control plane"
+assert_contains "$goal_out" "Raspberry Pi is the final always-on Distributed Cognition runtime" "codex goal names Pi runtime"
+assert_contains "$goal_out" "pnpm run pi:ssh-bootstrap" "codex goal includes SSH bootstrap"
+assert_contains "$goal_out" "Do not mark the goal complete" "codex goal includes completion guard"
+assert_contains "$goal_out" "02-06-26" "codex goal includes migration date"
+
+pnpm run pi:codex-goal -- --help >"$TMP_DIR/codex-goal-help.out"
+assert_contains "$TMP_DIR/codex-goal-help.out" "paste-ready /goal prompt" "codex goal help documents purpose"
+
+env \
+  DC_SECOND_BRAIN_ROOT="$TMP_DIR/Distributed-Cognition" \
+  NANOCLAW_PI_HOST=nanoclaw-pi.local \
+  NANOCLAW_PI_USER=pi \
+  NANOCLAW_PI_PROJECT_ROOT=/home/pi/NanoClaw \
+  NANOCLAW_PI_SECOND_BRAIN_ROOT=/home/pi/Distributed-Cognition \
+  NANOCLAW_PI_CODEX_PROJECTS_ROOT=/home/pi/Codex \
+  NANOCLAW_PI_REPO_URL=https://github.com/chowminyang/DistributedCognition.git \
+  NANOCLAW_PI_BRANCH=main \
+  NANOCLAW_PI_MIGRATION_DATE=02-06-26 \
+  pnpm run pi:codex-goal -- \
+    >"$TMP_DIR/codex-goal-env.out"
+assert_contains "$TMP_DIR/codex-goal-env.out" "Pi SSH target: pi@nanoclaw-pi.local" "codex goal accepts environment defaults"
 
 plan_out="$TMP_DIR/cutover-plan.out"
 pnpm run pi:cutover-plan -- \

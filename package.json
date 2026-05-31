@@ -35,6 +35,7 @@
     "pi:export": "bash scripts/pi-export-state.sh",
     "pi:import": "bash scripts/pi-import-state.sh",
     "pi:mac-preflight": "bash scripts/pi-mac-export-preflight.sh",
+    "pi:codex-goal": "bash scripts/pi-codex-goal.sh",
     "pi:cutover-plan": "bash scripts/pi-cutover-plan.sh",
     "pi:install-systemd": "bash scripts/pi-install-systemd.sh",
     "pi:install-dropbox-sync": "bash scripts/pi-install-dropbox-sync.sh",
