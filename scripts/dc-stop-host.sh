@@ -113,12 +113,26 @@ find_screen_sessions() {
     '
 }
 
+find_docker_containers() {
+  have docker || return 0
+
+  docker ps --filter 'name=nanoclaw-v2-' --format '{{.Names}}' 2>/dev/null | awk 'NF'
+}
+
+find_docker_containers_with_status() {
+  have docker || return 0
+
+  docker ps --filter 'name=nanoclaw-v2-' --format '{{.Names}}\t{{.Status}}' 2>/dev/null | awk 'NF'
+}
+
 unique_lines() {
   awk 'NF && !seen[$0]++'
 }
 
 HOST_PIDS="$(find_host_pids | unique_lines)"
 SCREEN_SESSIONS="$(find_screen_sessions | unique_lines)"
+DOCKER_CONTAINERS="$(find_docker_containers | unique_lines)"
+DOCKER_CONTAINERS_WITH_STATUS="$(find_docker_containers_with_status | unique_lines)"
 
 echo "Mac NanoClaw host stop helper"
 echo "Project: $PROJECT_ROOT"
@@ -144,6 +158,18 @@ if [ -n "$HOST_PIDS" ]; then
     echo "pid: $pid cwd: $PROJECT_ROOT"
   done <<EOF
 $HOST_PIDS
+EOF
+else
+  echo "none"
+fi
+
+echo
+echo "== Matching Docker containers =="
+if [ -n "$DOCKER_CONTAINERS_WITH_STATUS" ]; then
+  while IFS= read -r container_line; do
+    [ -n "$container_line" ] && echo "container: $container_line"
+  done <<EOF
+$DOCKER_CONTAINERS_WITH_STATUS
 EOF
 else
   echo "none"
@@ -198,9 +224,41 @@ $HOST_PIDS
 EOF
 fi
 
+if [ -n "$DOCKER_CONTAINERS" ]; then
+  while IFS= read -r container; do
+    [ -n "$container" ] || continue
+    if docker stop --time "$TIMEOUT_SECONDS" "$container" >/dev/null 2>&1; then
+      echo "stopped container: $container"
+    else
+      echo "warn: could not stop container: $container" >&2
+    fi
+  done <<EOF
+$DOCKER_CONTAINERS
+EOF
+fi
+
 REMAINING="$(find_host_pids | unique_lines)"
-if [ -n "$REMAINING" ]; then
-  echo "HOST_STOP=warn remaining_pids=$(printf '%s' "$REMAINING" | wc -l | tr -d ' ')"
+REMAINING_DOCKER="$(find_docker_containers | unique_lines)"
+if [ -n "$REMAINING_DOCKER" ] && [ "$FORCE" = "true" ]; then
+  while IFS= read -r container; do
+    [ -n "$container" ] || continue
+    if docker kill "$container" >/dev/null 2>&1; then
+      echo "killed container: $container"
+    else
+      echo "warn: could not kill container: $container" >&2
+    fi
+  done <<EOF
+$REMAINING_DOCKER
+EOF
+  REMAINING_DOCKER="$(find_docker_containers | unique_lines)"
+fi
+
+if [ -n "$REMAINING" ] || [ -n "$REMAINING_DOCKER" ]; then
+  remaining_pids=0
+  remaining_containers=0
+  [ -n "$REMAINING" ] && remaining_pids="$(printf '%s\n' "$REMAINING" | wc -l | tr -d ' ')"
+  [ -n "$REMAINING_DOCKER" ] && remaining_containers="$(printf '%s\n' "$REMAINING_DOCKER" | wc -l | tr -d ' ')"
+  echo "HOST_STOP=warn remaining_pids=$remaining_pids remaining_containers=$remaining_containers"
   exit 1
 fi
 

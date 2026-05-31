@@ -67,6 +67,7 @@ cd "$PROJECT_ROOT"
 echo "Testing Raspberry Pi migration helpers"
 
 helper_scripts=(
+  scripts/dc-stop-host.sh
   scripts/pi-codex-goal.sh
   scripts/pi-cutover-plan.sh
   scripts/pi-mac-readiness.sh
@@ -160,6 +161,7 @@ assert_contains "$goal_out" "pnpm run pi:ssh-bootstrap" "codex goal includes SSH
 assert_contains "$goal_out" "pnpm run pi:ssh-restore-state" "codex goal includes SSH state restore"
 assert_contains "$goal_out" "pnpm run pi:ssh-start-runtime" "codex goal includes SSH runtime start"
 assert_contains "$goal_out" "execute path must refuse to start while the Mac NanoClaw host is still running" "codex goal includes Mac host runtime guard"
+assert_contains "$goal_out" "Mac NanoClaw Docker agent containers are still running" "codex goal includes Mac Docker runtime guard"
 assert_contains "$goal_out" "--proof-text" "codex goal includes Pi WhatsApp persistence proof"
 assert_contains "$goal_out" "--expected-commit" "codex goal includes expected commit verification"
 assert_contains "$goal_out" "Do not mark the goal complete" "codex goal includes completion guard"
@@ -201,7 +203,7 @@ assert_contains "$plan_out" "pnpm run dc:stop-host -- --execute" "cutover plan i
 assert_contains "$plan_out" "pnpm run pi:ssh-preflight" "cutover plan includes SSH preflight"
 assert_contains "$plan_out" "pnpm run pi:ssh-restore-state" "cutover plan includes SSH state restore"
 assert_contains "$plan_out" "pnpm run pi:ssh-start-runtime" "cutover plan includes SSH runtime start"
-assert_contains "$plan_out" "refuses to start while the Mac NanoClaw host appears to be running" "cutover plan documents Mac host runtime guard"
+assert_contains "$plan_out" "Mac NanoClaw host or NanoClaw Docker agent containers appear to be running" "cutover plan documents Mac host and Docker runtime guard"
 assert_contains "$plan_out" "pnpm run pi:ssh-admin -- doctor" "cutover plan includes Pi doctor check"
 assert_contains "$plan_out" "--proof-text" "cutover plan includes Pi WhatsApp persistence proof"
 assert_contains "$plan_out" "NANOCLAW_PI_EXPECTED_COMMIT" "cutover plan records expected Pi commit"
@@ -593,6 +595,64 @@ assert_contains "$TMP_DIR/ssh-start-runtime-dry-run.out" "dc:ensure-docker-acces
 assert_contains "$TMP_DIR/ssh-start-runtime-dry-run.out" "pi-install-systemd.sh" "ssh start runtime dry-run shows systemd install"
 assert_contains "$TMP_DIR/ssh-start-runtime-dry-run.out" "pi-install-bridge-timers.sh" "ssh start runtime dry-run shows Pi bridge timer install"
 assert_contains "$TMP_DIR/ssh-start-runtime-dry-run.out" "dc:health" "ssh start runtime dry-run shows health check"
+
+fake_docker_bin="$TMP_DIR/fake-docker-bin"
+mkdir -p "$fake_docker_bin"
+cat >"$fake_docker_bin/docker" <<'FAKE_DOCKER'
+#!/usr/bin/env bash
+set -euo pipefail
+if [ "${1:-}" = "ps" ]; then
+  joined=" $* "
+  if [[ "$joined" == *Status* ]]; then
+    printf 'nanoclaw-v2-dc-test\tUp 2 minutes\n'
+  else
+    printf 'nanoclaw-v2-dc-test\n'
+  fi
+  exit 0
+fi
+echo "unexpected fake docker call: $*" >&2
+exit 42
+FAKE_DOCKER
+chmod +x "$fake_docker_bin/docker"
+
+PATH="$fake_docker_bin:$PATH" bash scripts/dc-stop-host.sh >"$TMP_DIR/dc-stop-host-docker-dry-run.out"
+assert_contains "$TMP_DIR/dc-stop-host-docker-dry-run.out" "Matching Docker containers" "dc stop host reports Docker container section"
+assert_contains "$TMP_DIR/dc-stop-host-docker-dry-run.out" "nanoclaw-v2-dc-test" "dc stop host detects NanoClaw Docker containers"
+
+set +e
+PATH="$fake_docker_bin:$PATH" pnpm run pi:mac-preflight -- \
+  --root "$TMP_DIR/Distributed-Cognition" \
+  --out-dir "$TMP_DIR/export" \
+  --require-stopped \
+  >"$TMP_DIR/mac-preflight-docker-running.out" \
+  2>"$TMP_DIR/mac-preflight-docker-running.err"
+mac_preflight_docker_code="$?"
+PATH="$fake_docker_bin:$PATH" pnpm run pi:ssh-start-runtime -- \
+  --host nanoclaw-pi.local \
+  --user pi \
+  --path /home/pi/NanoClaw \
+  --second-brain-root /home/pi/Distributed-Cognition \
+  --codex-projects-root /home/pi/Codex \
+  --execute \
+  >"$TMP_DIR/ssh-start-runtime-docker-guard.out" \
+  2>"$TMP_DIR/ssh-start-runtime-docker-guard.err"
+docker_guard_code="$?"
+PATH="$fake_docker_bin:$PATH" pnpm run pi:ssh-admin -- restart \
+  --host nanoclaw-pi.local \
+  --user pi \
+  --path /home/pi/NanoClaw \
+  >"$TMP_DIR/ssh-admin-restart-docker-guard.out" \
+  2>"$TMP_DIR/ssh-admin-restart-docker-guard.err"
+admin_docker_guard_code="$?"
+set -e
+assert_exit_code 1 "$mac_preflight_docker_code" "mac export preflight fails when NanoClaw Docker container is running and stopped state is required"
+assert_contains "$TMP_DIR/mac-preflight-docker-running.out" "NanoClaw Docker agent containers are still running" "mac export preflight reports running Docker containers"
+assert_exit_code 1 "$docker_guard_code" "ssh start runtime refuses while Mac Docker container is running"
+assert_contains "$TMP_DIR/ssh-start-runtime-docker-guard.err" "Matching Docker containers" "ssh start runtime Docker guard reports matching containers"
+assert_contains "$TMP_DIR/ssh-start-runtime-docker-guard.err" "nanoclaw-v2-dc-test" "ssh start runtime Docker guard names matching container"
+assert_exit_code 1 "$admin_docker_guard_code" "ssh admin restart refuses while Mac Docker container is running"
+assert_contains "$TMP_DIR/ssh-admin-restart-docker-guard.err" "Matching Docker containers" "ssh admin Docker guard reports matching containers"
+assert_contains "$TMP_DIR/ssh-admin-restart-docker-guard.err" "nanoclaw-v2-dc-test" "ssh admin Docker guard names matching container"
 
 node -e 'setInterval(() => {}, 1000)' dist/index.js >/dev/null 2>&1 &
 MAC_GUARD_PID="$!"

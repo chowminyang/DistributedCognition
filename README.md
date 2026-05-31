@@ -143,8 +143,9 @@ pnpm run pi:ssh-start-runtime -- \
 
 When the dry-run output is correct, add `--execute`. The execute path refuses
 to start the Pi runtime if this Mac checkout still appears to be running
-NanoClaw, unless you explicitly pass `--allow-mac-host-running` for rollback or
-emergency work. It installs/starts the rclone timer for only the selected
+NanoClaw or has running NanoClaw Docker agent containers, unless you explicitly
+pass `--allow-mac-host-running` for rollback or emergency work. It
+installs/starts the rclone timer for only the selected
 `Distributed-Cognition` folder, updates the Docker mount allowlist and group
 mounts, installs/starts the Pi systemd service, installs/starts Pi bridge
 timers for health, dashboard, Mnemon, Codex, and action queues, and runs
@@ -225,7 +226,10 @@ pnpm run pi:mac-preflight -- \
   --out-dir "$HOME/Desktop/dc-pi-migration"
 ```
 
-`dc:stop-host` is a dry run unless you pass `--execute`; use the execute form only during the final Pi cutover after stopping launchd.
+`dc:stop-host` is a dry run unless you pass `--execute`; use the execute form
+only during the final Pi cutover after stopping launchd. It also reports and
+stops running NanoClaw Docker agent containers named `nanoclaw-v2-*`, so final
+export is quiet even if an agent was mid-task.
 
 Once the Pi is reachable by SSH, check it from the Mac:
 
@@ -267,8 +271,9 @@ pnpm run pi:ssh-admin -- restart
 
 The `start`, `restart`, and `update` admin actions use the same Mac-host guard
 as the runtime-start helper: they refuse to start the Pi WhatsApp runtime while
-this Mac checkout still appears to be running NanoClaw, unless
-`--allow-mac-host-running` is supplied for explicit rollback or emergency work.
+this Mac checkout still appears to be running NanoClaw or has running NanoClaw
+Docker agent containers, unless `--allow-mac-host-running` is supplied for
+explicit rollback or emergency work.
 
 To gather post-cutover proof into one bundle, run the verifier in dry-run mode
 first:

@@ -190,6 +190,12 @@ find_local_screen_sessions() {
     '
 }
 
+find_local_docker_containers() {
+  have docker || return 0
+
+  docker ps --filter 'name=nanoclaw-v2-' --format '{{.Names}}' 2>/dev/null | awk 'NF'
+}
+
 unique_lines() {
   awk 'NF && !seen[$0]++'
 }
@@ -200,11 +206,12 @@ require_mac_host_stopped_for_execute() {
     return 0
   }
 
-  local host_pids screen_sessions
+  local host_pids screen_sessions docker_containers
   host_pids="$(find_local_host_pids | unique_lines)"
   screen_sessions="$(find_local_screen_sessions | unique_lines)"
+  docker_containers="$(find_local_docker_containers | unique_lines)"
 
-  [ -z "$host_pids" ] && [ -z "$screen_sessions" ] && return 0
+  [ -z "$host_pids" ] && [ -z "$screen_sessions" ] && [ -z "$docker_containers" ] && return 0
 
   echo "Refusing to start the Pi runtime while the Mac NanoClaw host appears to be running." >&2
   echo "WhatsApp/Baileys must run from only one host at a time." >&2
@@ -219,6 +226,14 @@ require_mac_host_stopped_for_execute() {
       [ -n "$session" ] && echo "  screen: $session" >&2
     done <<EOF
 $screen_sessions
+EOF
+  fi
+  if [ -n "$docker_containers" ]; then
+    echo "Matching Docker containers:" >&2
+    while IFS= read -r container; do
+      [ -n "$container" ] && echo "  container: $container" >&2
+    done <<EOF
+$docker_containers
 EOF
   fi
   if [ -n "$host_pids" ]; then

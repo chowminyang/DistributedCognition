@@ -141,7 +141,14 @@ pnpm run pi:mac-preflight -- \
 pnpm run pi:export -- --out-dir "$HOME/Desktop/dc-pi-migration"
 ```
 
-`dc:stop-host` is dry-run by default; the `--execute` flag is intentional for the final cutover. It only targets NanoClaw host processes whose working directory is this checkout, and screen sessions named for NanoClaw / Distributed Cognition. The export script writes a secret bundle and a matching `.sha256` file. Treat the bundle like a password because it contains `.env` and WhatsApp auth. After exporting, do not restart the Mac NanoClaw host unless you intentionally roll back from the Pi.
+`dc:stop-host` is dry-run by default; the `--execute` flag is intentional for
+the final cutover. It only targets NanoClaw host processes whose working
+directory is this checkout, screen sessions named for NanoClaw / Distributed
+Cognition, and NanoClaw Docker agent containers named `nanoclaw-v2-*`. The
+export script writes a secret bundle and a matching `.sha256` file. Treat the
+bundle like a password because it contains `.env` and WhatsApp auth. After
+exporting, do not restart the Mac NanoClaw host unless you intentionally roll
+back from the Pi.
 
 ## First Boot On The Pi
 
@@ -238,12 +245,12 @@ pnpm run pi:ssh-start-runtime -- \
 
 When the dry-run output is correct, add `--execute`. The execute path refuses
 to start the Pi runtime if this Mac checkout still appears to be running
-NanoClaw, unless you explicitly pass `--allow-mac-host-running` for rollback or
-emergency work. It creates the selected local folders, installs and starts the
-rclone timer for `dropbox:Distributed-Cognition`, updates Docker mount access
-for Distributed Cognition, installs and starts the NanoClaw systemd service,
-installs and starts Pi-side bridge timers, and runs `pnpm run dc:health` on the
-Pi.
+NanoClaw or has running NanoClaw Docker agent containers, unless you explicitly
+pass `--allow-mac-host-running` for rollback or emergency work. It creates the
+selected local folders, installs and starts the rclone timer for
+`dropbox:Distributed-Cognition`, updates Docker mount access for Distributed
+Cognition, installs and starts the NanoClaw systemd service, installs and
+starts Pi-side bridge timers, and runs `pnpm run dc:health` on the Pi.
 
 By default the bridge timers dry-run queued Mnemon, Codex, and action work.
 Add `--execute-bridges` to `pi:ssh-start-runtime` only when you want those
@@ -435,8 +442,9 @@ the common "is DC really alive on the Pi?" check; it runs status, health, and
 dashboard in one SSH session. `status` avoids printing full process command
 lines and also lists bridge timers; `bridge-timers` fails explicitly if the Pi
 timer loop is missing. The `start`, `restart`, and `update` admin actions also
-refuse to run if this Mac checkout still appears to be running NanoClaw, unless
-you explicitly pass `--allow-mac-host-running` for rollback or emergency work.
+refuse to run if this Mac checkout still appears to be running NanoClaw or has
+running NanoClaw Docker agent containers, unless you explicitly pass
+`--allow-mac-host-running` for rollback or emergency work.
 `logs` and `follow-logs` may include private
 WhatsApp/reflection content, so use them only on your own trusted Mac/Pi.
 

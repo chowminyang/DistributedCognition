@@ -98,6 +98,12 @@ is_nanoclaw_running() {
   return 1
 }
 
+find_docker_containers() {
+  have docker || return 0
+
+  docker ps --filter 'name=nanoclaw-v2-' --format '{{.Names}}\t{{.Status}}' 2>/dev/null | awk 'NF'
+}
+
 env_has_key() {
   local key="$1"
   [ -f "$PROJECT_ROOT/.env" ] || return 1
@@ -122,6 +128,11 @@ if have shasum || have sha256sum; then
   ok "SHA-256 checksum command is available"
 else
   warn "No SHA-256 checksum command found; export can run but checksum will be skipped"
+fi
+if have docker; then
+  ok "docker found at $(command -v docker)"
+else
+  warn "docker not found; cannot check or stop NanoClaw agent containers"
 fi
 
 echo
@@ -193,6 +204,22 @@ if is_nanoclaw_running; then
   fi
 else
   ok "Mac NanoClaw host process does not appear to be running"
+fi
+
+DOCKER_CONTAINERS="$(find_docker_containers)"
+if [ -n "$DOCKER_CONTAINERS" ]; then
+  if [ "$REQUIRE_STOPPED" = "true" ]; then
+    fail "NanoClaw Docker agent containers are still running; stop them before final export"
+  else
+    warn "NanoClaw Docker agent containers are still running; this is OK before rehearsal, not OK for final export"
+  fi
+  while IFS= read -r container_line; do
+    [ -n "$container_line" ] && printf '  container: %s\n' "$container_line"
+  done <<EOF
+$DOCKER_CONTAINERS
+EOF
+else
+  ok "no running NanoClaw Docker agent containers found"
 fi
 
 if have pnpm; then
