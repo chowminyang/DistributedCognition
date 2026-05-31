@@ -261,7 +261,7 @@ systemctl list-units 'nanoclaw-v2-*.service' --no-pager
 tail -f logs/nanoclaw.log logs/nanoclaw.error.log
 ```
 
-The installer writes a unit named from the checkout path, such as `nanoclaw-v2-ab12cd34.service`, and enables it for boot.
+The installer writes a unit named from the checkout path, such as `nanoclaw-v2-ab12cd34.service`, and enables it for boot. The unit waits up to 60 seconds for `docker info` to work as the service user before starting NanoClaw. If the service keeps restarting with a Docker readiness timeout, confirm Docker is running and the Pi user can run `docker info` without `sudo`.
 
 You can render the unit without installing it when checking a fresh Pi over SSH:
 

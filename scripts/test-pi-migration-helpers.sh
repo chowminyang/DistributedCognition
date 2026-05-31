@@ -68,6 +68,14 @@ for helper_script in "${helper_scripts[@]}"; do
 done
 ok "shell syntax is valid"
 
+systemd_render_dir="$TMP_DIR/systemd-render"
+bash scripts/pi-install-systemd.sh --output-dir "$systemd_render_dir" >"$TMP_DIR/systemd-render.out"
+systemd_unit="$(find "$systemd_render_dir" -name 'nanoclaw-v2-*.service' -print -quit)"
+[ -n "$systemd_unit" ] || fail "systemd unit render writes a unit file"
+assert_contains "$systemd_unit" "docker info" "systemd unit waits for Docker readiness"
+assert_contains "$systemd_unit" "Docker is not reachable by the service user after 60s" "systemd unit reports Docker readiness timeout"
+assert_contains "$systemd_unit" "Restart=always" "systemd unit restarts NanoClaw"
+
 goal_out="$TMP_DIR/codex-goal.out"
 pnpm run pi:codex-goal -- \
   --local-root "$TMP_DIR/Distributed-Cognition" \

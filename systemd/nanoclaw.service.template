@@ -9,6 +9,7 @@ Type=simple
 User={{USER}}
 WorkingDirectory={{PROJECT_ROOT}}
 ExecStartPre=/usr/bin/mkdir -p {{PROJECT_ROOT}}/logs
+ExecStartPre=/bin/sh -lc 'i=0; until docker info >/dev/null 2>&1; do i=$$((i + 1)); if [ "$$i" -ge 30 ]; then echo "Docker is not reachable by the service user after 60s" >&2; exit 1; fi; sleep 2; done'
 ExecStart={{NODE_PATH}} {{PROJECT_ROOT}}/dist/index.js
 Restart=always
 RestartSec=10
