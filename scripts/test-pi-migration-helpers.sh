@@ -91,6 +91,8 @@ for helper_script in "${helper_scripts[@]}"; do
   bash -n "$helper_script"
 done
 ok "shell syntax is valid"
+assert_contains "docs/distributed-cognition.md" "--bridge-execute-mode memory" "Distributed Cognition guide documents Pi memory bridge mode"
+assert_contains "docs/distributed-cognition.md" "Mac Codex app-visible" "Distributed Cognition guide documents Mac-visible handoff path"
 
 pnpm run pi:install-systemd -- --help >"$TMP_DIR/pi-install-systemd-help.out"
 assert_contains "$TMP_DIR/pi-install-systemd-help.out" "Installs NanoClaw as a systemd service" "pi install systemd help accepts pnpm separator"

@@ -413,6 +413,15 @@ The WhatsApp container does not submit local shell jobs. A host-side bridge exec
 
 After Raspberry Pi migration, DC/WhatsApp should run on the Pi, while Mac Codex can still create app-visible local threads from synced queue items. Source the Pi rehearsal `operator-env.sh` before creating the bridge config so `.dc-index/codex-bridge.config.json` and `.dc-index/action-bridge.config.json` can include a non-secret `remoteRuntime` section. When enabled, the generated Codex prompt says that the Pi is the active DC runtime, the Mac is the SSH control plane, and the Mac NanoClaw/WhatsApp host must not be restarted unless Minyang explicitly rolls back.
 
+For the recommended Pi cutover, let the Pi run Mnemon promotion in bridge `memory` mode and keep Codex/action queues visible to Mac Codex:
+
+```bash
+pnpm run pi:ssh-admin -- process-bridges
+pnpm run pi:ssh-admin -- process-bridges --bridge-execute-mode memory
+```
+
+Use `--execute-bridges` only when you intentionally want memory, Codex, and action work to execute on the Pi instead of leaving heavier handoffs reviewable from the Mac Codex app.
+
 Run the bridge on the Mac host:
 
 ```bash
@@ -491,7 +500,7 @@ By default, `word_document`, `powerpoint`, and `web_research` are routed to `cod
 
 For `codex-local` action requests, the default local launch mode is also `app-server`. That means heavier delegated work such as web research, Word documents, and PowerPoint decks creates a Codex desktop/app-visible local thread and records `codexThreadId` / `codexTurnId` on completion. Set `codexLocal.launchMode` to `exec` only as an explicit fallback when you accept that the noninteractive run may not appear in the desktop chat list.
 
-After the Raspberry Pi cutover, keep WhatsApp/Baileys and the DC runtime on the Pi. If you deliberately run this action bridge on the Mac for app-visible Codex work, source the Pi `operator-env.sh` first so generated action prompts include the non-secret Pi SSH/runtime context and do not try to restart the Mac NanoClaw host.
+After the Raspberry Pi cutover, keep WhatsApp/Baileys and the DC runtime on the Pi. If you deliberately run this action bridge on the Mac for app-visible Codex work, source the Pi `operator-env.sh` first so generated action prompts include the non-secret Pi SSH/runtime context and do not try to restart the Mac NanoClaw host. The Pi bridge timers should normally run in `memory` mode, so durable-memory promotion keeps happening on the always-on Pi while these heavier action queues remain available for Mac Codex app-visible execution.
 
 The default local Codex sandbox is `danger-full-access`, with approval policy `never`, because this bridge is intended for trusted Mac-local execution after WhatsApp has only queued the action. Keep this host config private and do not enable action types you are not comfortable running locally.
 
@@ -549,6 +558,15 @@ From WhatsApp, requests like “show me the Mnemon graph”, “visualize my dur
 
 For always-on Mac use, run the host-side bridges periodically with launchd. These jobs should live in the user's local `~/Library/LaunchAgents` folder, not inside this repository, because they contain machine-specific paths.
 
+After Raspberry Pi migration, this is no longer the default always-on path. Prefer Pi bridge timers in `memory` mode for Mnemon and dashboard maintenance:
+
+```bash
+pnpm run pi:ssh-start-runtime -- ... --bridge-execute-mode memory
+pnpm run pi:ssh-admin -- process-bridges --bridge-execute-mode memory
+```
+
+Install Mac launchd bridge jobs only when you deliberately want Mac Codex Desktop/App-visible local handoffs for Codex/action queues. Keep the Mac NanoClaw/WhatsApp host stopped.
+
 Use the installer after the manual bridge commands have passed:
 
 ```bash
@@ -568,6 +586,8 @@ The installer writes five user-level LaunchAgents:
 - `dc:action-bridge`: every 5 minutes, runs `pnpm run dc:action-bridge -- process --execute`.
 
 Omit `--execute-bridges` to install the bridge jobs in dry-run mode first. This is useful when testing the scheduler without letting it mutate Mnemon, run Codex tasks, or create artifacts.
+
+For the Pi architecture, do not use Mac launchd as the always-on WhatsApp/DC runtime. The Pi owns the runtime; the Mac either acts as an SSH control plane or optionally processes synced Codex/action handoffs that should appear in the Codex app.
 
 Useful commands:
 
@@ -1027,7 +1047,8 @@ Short migration path:
 7. Mount that local folder into Docker.
 8. Rebuild containers on the Raspberry Pi rather than copying Mac images.
 9. Re-pair WhatsApp if needed.
-10. Start the Pi systemd service.
+10. Start the Pi systemd service with bridge timers in `memory` mode.
 11. Verify logs, health, Dropbox writes, and WhatsApp allowlist again.
+12. Use Mac Codex over SSH for checks and heavier app-visible Codex/action handoffs.
 
 Do not add Dropbox sync inside NanoClaw. Dropbox or rclone belongs outside the app.
