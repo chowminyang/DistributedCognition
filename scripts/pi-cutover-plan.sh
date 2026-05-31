@@ -11,6 +11,9 @@ PI_SECOND_BRAIN_ROOT="${NANOCLAW_PI_SECOND_BRAIN_ROOT:-}"
 PI_CODEX_PROJECTS_ROOT="${NANOCLAW_PI_CODEX_PROJECTS_ROOT:-}"
 PI_RCLONE_REMOTE="${NANOCLAW_PI_RCLONE_REMOTE:-dropbox:}"
 PI_UNIT_NAME="${NANOCLAW_PI_UNIT_NAME:-}"
+PI_SSH_CONNECT_TIMEOUT="${NANOCLAW_PI_SSH_CONNECT_TIMEOUT:-10}"
+PI_BRIDGE_EXECUTE_MODE="${NANOCLAW_PI_BRIDGE_EXECUTE_MODE:-memory}"
+PI_EXPECTED_BRIDGE_EXECUTE_MODE="${NANOCLAW_PI_EXPECTED_BRIDGE_EXECUTE_MODE:-$PI_BRIDGE_EXECUTE_MODE}"
 REPO_URL="<repo-url>"
 STRICT="false"
 
@@ -36,6 +39,11 @@ Options:
   --pi-codex-projects-root <path> Codex projects folder on the Pi.
   --pi-rclone-remote <name:>      rclone remote name. Default: dropbox:.
   --pi-unit-name <name>           Optional NanoClaw systemd unit name.
+  --ssh-timeout <seconds>         SSH connect timeout. Default: 10.
+  --bridge-execute-mode <mode>    Pi bridge timer execute mode. Default: memory.
+  --expected-bridge-execute-mode <mode>
+                                  Expected installed bridge timer mode.
+                                  Default: same as --bridge-execute-mode.
   --repo-url <url>                Repository URL to clone on the Pi.
   --strict                        Exit non-zero if required values are missing.
   -h, --help                      Show this help.
@@ -49,6 +57,9 @@ Environment defaults:
   NANOCLAW_PI_CODEX_PROJECTS_ROOT
   NANOCLAW_PI_RCLONE_REMOTE
   NANOCLAW_PI_UNIT_NAME
+  NANOCLAW_PI_SSH_CONNECT_TIMEOUT
+  NANOCLAW_PI_BRIDGE_EXECUTE_MODE
+  NANOCLAW_PI_EXPECTED_BRIDGE_EXECUTE_MODE
 EOF
 }
 
@@ -142,6 +153,21 @@ while [ "$#" -gt 0 ]; do
       [ -n "$PI_UNIT_NAME" ] || { echo "Missing value for --pi-unit-name" >&2; exit 2; }
       shift 2
       ;;
+    --ssh-timeout)
+      PI_SSH_CONNECT_TIMEOUT="${2:-}"
+      [ -n "$PI_SSH_CONNECT_TIMEOUT" ] || { echo "Missing value for --ssh-timeout" >&2; exit 2; }
+      shift 2
+      ;;
+    --bridge-execute-mode)
+      PI_BRIDGE_EXECUTE_MODE="${2:-}"
+      [ -n "$PI_BRIDGE_EXECUTE_MODE" ] || { echo "Missing value for --bridge-execute-mode" >&2; exit 2; }
+      shift 2
+      ;;
+    --expected-bridge-execute-mode)
+      PI_EXPECTED_BRIDGE_EXECUTE_MODE="${2:-}"
+      [ -n "$PI_EXPECTED_BRIDGE_EXECUTE_MODE" ] || { echo "Missing value for --expected-bridge-execute-mode" >&2; exit 2; }
+      shift 2
+      ;;
     --repo-url)
       REPO_URL="${2:-}"
       [ -n "$REPO_URL" ] || { echo "Missing value for --repo-url" >&2; exit 2; }
@@ -197,6 +223,9 @@ Current values:
   Pi Codex projects: ${PI_CODEX_PROJECTS_ROOT:-<missing>}
   Pi rclone remote: ${PI_RCLONE_REMOTE:-<optional-not-set>}
   Pi systemd unit: ${PI_UNIT_NAME:-<auto-detect>}
+  Pi SSH timeout: ${PI_SSH_CONNECT_TIMEOUT}s
+  Pi bridge timer mode: $PI_BRIDGE_EXECUTE_MODE
+  Expected bridge timer mode: $PI_EXPECTED_BRIDGE_EXECUTE_MODE
   Repo URL: $REPO_URL
 EOF
 
@@ -243,7 +272,11 @@ print_command "export NANOCLAW_PI_USER=$(quote_shell "${PI_USER:-<pi-user>}")"
 print_command "export NANOCLAW_PI_PROJECT_ROOT=$(quote_shell "${PI_PROJECT_ROOT:-<pi NanoClaw path>}")"
 print_command "export NANOCLAW_PI_SECOND_BRAIN_ROOT=$(quote_shell "${PI_SECOND_BRAIN_ROOT:-<pi Distributed-Cognition path>}")"
 print_command "export NANOCLAW_PI_RCLONE_REMOTE=$(quote_shell "$PI_RCLONE_REMOTE")"
+print_command "export NANOCLAW_PI_SSH_CONNECT_TIMEOUT=$(quote_shell "$PI_SSH_CONNECT_TIMEOUT")"
+print_command "export NANOCLAW_PI_BRIDGE_EXECUTE_MODE=$(quote_shell "$PI_BRIDGE_EXECUTE_MODE")"
+print_command "export NANOCLAW_PI_EXPECTED_BRIDGE_EXECUTE_MODE=$(quote_shell "$PI_EXPECTED_BRIDGE_EXECUTE_MODE")"
 print_command 'export NANOCLAW_PI_EXPECTED_COMMIT="$(git rev-parse HEAD)"'
+print_command "pnpm run pi:ssh-key-check -- --test-login"
 print_command "pnpm run pi:ssh-preflight"
 
 section "3. Final Mac Cutover And State Export"
@@ -271,11 +304,11 @@ fi
 if [ -n "$PI_UNIT_NAME" ]; then
   start_runtime_cmd="$start_runtime_cmd --unit-name $(quote_shell "$PI_UNIT_NAME")"
 fi
-start_runtime_cmd="$start_runtime_cmd --bridge-execute-mode memory"
+start_runtime_cmd="$start_runtime_cmd --bridge-execute-mode $(quote_shell "$PI_BRIDGE_EXECUTE_MODE")"
 section "5. Configure Pi Sync And Service"
 print_command "$start_runtime_cmd"
 print_command "# The --execute path refuses to start while the Mac NanoClaw host or NanoClaw Docker agent containers appear to be running."
-print_command "# This also installs Pi bridge timers in memory mode: Mnemon executes on the Pi, while Codex/action queues stay reviewable from Mac Codex."
+print_command "# This also installs Pi bridge timers in the selected mode: Mnemon executes on the Pi, while Codex/action queues stay reviewable from Mac Codex."
 print_command "# Use --execute-bridges only when all queued bridge work should execute automatically on the Pi."
 print_command "# If the dry run is correct, rerun the same command with --execute."
 
@@ -285,7 +318,7 @@ if [ -n "$PI_UNIT_NAME" ]; then
 fi
 print_command "PROOF_TEXT=\"DC Pi cutover proof \$(date '+%d-%m-%y-%H%M')\""
 print_command 'pnpm run pi:ssh-admin -- status --expected-commit "$NANOCLAW_PI_EXPECTED_COMMIT"'
-print_command "pnpm run pi:ssh-admin -- bridge-timers --expected-bridge-execute-mode memory"
+print_command 'pnpm run pi:ssh-admin -- bridge-timers --expected-bridge-execute-mode "$NANOCLAW_PI_EXPECTED_BRIDGE_EXECUTE_MODE"'
 print_command "pnpm run pi:ssh-admin -- health"
 print_command 'pnpm run pi:ssh-admin -- doctor --expected-commit "$NANOCLAW_PI_EXPECTED_COMMIT"'
 print_command "pnpm run pi:ssh-admin -- dashboard"
@@ -320,17 +353,17 @@ cat <<'EOF'
   Default for the Pi migration: keep the Mac NanoClaw/WhatsApp host stopped and
   use Mac Codex only as an SSH operator. The Pi bridge timers handle queued
   Mnemon promotion periodically while Codex/action queues stay reviewable from
-  Mac Codex; first prove the installed timer runner is still in memory mode,
+  Mac Codex; first prove the installed timer runner is still in the expected mode,
   then run one manual bridge check:
 EOF
 if [ -n "$LOCAL_SECOND_BRAIN_ROOT" ]; then
-  print_command "pnpm run pi:ssh-admin -- bridge-timers --expected-bridge-execute-mode memory"
+  print_command 'pnpm run pi:ssh-admin -- bridge-timers --expected-bridge-execute-mode "$NANOCLAW_PI_EXPECTED_BRIDGE_EXECUTE_MODE"'
   print_command "pnpm run pi:ssh-admin -- process-bridges"
-  print_command "pnpm run pi:ssh-admin -- process-bridges --bridge-execute-mode memory"
+  print_command 'pnpm run pi:ssh-admin -- process-bridges --bridge-execute-mode "$NANOCLAW_PI_BRIDGE_EXECUTE_MODE"'
 else
-  print_command "pnpm run pi:ssh-admin -- bridge-timers --expected-bridge-execute-mode memory"
+  print_command 'pnpm run pi:ssh-admin -- bridge-timers --expected-bridge-execute-mode "$NANOCLAW_PI_EXPECTED_BRIDGE_EXECUTE_MODE"'
   print_command "pnpm run pi:ssh-admin -- process-bridges"
-  print_command "pnpm run pi:ssh-admin -- process-bridges --bridge-execute-mode memory"
+  print_command 'pnpm run pi:ssh-admin -- process-bridges --bridge-execute-mode "$NANOCLAW_PI_BRIDGE_EXECUTE_MODE"'
 fi
 print_command "# Use pnpm run pi:ssh-admin -- process-bridges --execute-bridges only if you intentionally want all queued bridge work to execute on the Pi."
 cat <<'EOF'
