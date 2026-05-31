@@ -50,6 +50,7 @@ echo "Testing Raspberry Pi migration helpers"
 helper_scripts=(
   scripts/pi-codex-goal.sh
   scripts/pi-cutover-plan.sh
+  scripts/pi-rehearse-cutover.sh
   scripts/pi-ssh-admin.sh
   scripts/pi-ssh-bootstrap.sh
   scripts/pi-ssh-preflight.sh
@@ -137,6 +138,39 @@ env \
     --strict \
     >"$TMP_DIR/cutover-env.out"
 assert_contains "$TMP_DIR/cutover-env.out" "CUTOVER_PLAN=ready" "cutover plan accepts environment defaults"
+
+rehearsal_dir="$TMP_DIR/rehearsal"
+pnpm run pi:rehearse-cutover -- \
+  --local-root "$TMP_DIR/Distributed-Cognition" \
+  --out-dir "$TMP_DIR/export" \
+  --output-dir "$rehearsal_dir" \
+  --pi-host nanoclaw-pi.local \
+  --pi-user pi \
+  --pi-path /home/pi/NanoClaw \
+  --pi-second-brain-root /home/pi/Distributed-Cognition \
+  --pi-codex-projects-root /home/pi/Codex \
+  --repo-url https://github.com/chowminyang/DistributedCognition.git \
+  --branch main \
+  --migration-date 02-06-26 \
+  >"$TMP_DIR/rehearsal.out"
+assert_contains "$TMP_DIR/rehearsal.out" "PI_CUTOVER_REHEARSAL=ready" "cutover rehearsal succeeds with complete values"
+assert_contains "$TMP_DIR/rehearsal.out" "No SSH was opened" "cutover rehearsal is non-mutating"
+[ -f "$rehearsal_dir/summary.md" ] || fail "cutover rehearsal writes summary"
+[ -f "$rehearsal_dir/codex-goal.md" ] || fail "cutover rehearsal writes codex goal"
+[ -f "$rehearsal_dir/cutover-plan.txt" ] || fail "cutover rehearsal writes cutover plan"
+[ -f "$rehearsal_dir/ssh-bootstrap-dry-run.txt" ] || fail "cutover rehearsal writes ssh bootstrap dry-run"
+assert_contains "$rehearsal_dir/codex-goal.md" "/goal" "cutover rehearsal includes goal prompt"
+assert_contains "$rehearsal_dir/cutover-plan.txt" "CUTOVER_PLAN=ready" "cutover rehearsal includes ready cutover plan"
+assert_contains "$rehearsal_dir/ssh-bootstrap-dry-run.txt" "PI_SSH_BOOTSTRAP=dry_run" "cutover rehearsal includes bootstrap dry-run"
+assert_contains "$rehearsal_dir/summary.md" "No SSH was opened" "cutover rehearsal summary states no SSH"
+
+set +e
+pnpm run pi:rehearse-cutover -- --strict --output-dir "$TMP_DIR/rehearsal-missing" >"$TMP_DIR/rehearsal-missing.out" 2>"$TMP_DIR/rehearsal-missing.err"
+rehearsal_missing_code="$?"
+set -e
+assert_exit_code 1 "$rehearsal_missing_code" "strict cutover rehearsal fails when values are missing"
+assert_contains "$TMP_DIR/rehearsal-missing.out" "PI_CUTOVER_REHEARSAL=missing_values" "strict cutover rehearsal reports missing values"
+assert_contains "$TMP_DIR/rehearsal-missing.out" "No SSH was opened" "strict cutover rehearsal remains non-mutating"
 
 pnpm run pi:ssh-admin -- --help >"$TMP_DIR/ssh-admin-help.out"
 assert_contains "$TMP_DIR/ssh-admin-help.out" "Required options, unless the matching environment defaults are set" "ssh admin help documents env defaults"

@@ -82,6 +82,26 @@ The generated prompt tells Codex to inspect current state, use dry-run helpers
 first, ask before final Mac stop/export, keep WhatsApp active on only one host,
 and verify that DC replies from the Pi before marking the goal complete.
 
+To bundle the `/goal`, the read-only cutover checklist, and the SSH bootstrap
+dry-run into one timestamped rehearsal folder:
+
+```bash
+pnpm run pi:rehearse-cutover -- \
+  --local-root "$HOME/Library/CloudStorage/Dropbox/Distributed-Cognition" \
+  --pi-host nanoclaw-pi.local \
+  --pi-user pi \
+  --pi-path /home/pi/NanoClaw \
+  --pi-second-brain-root /home/pi/Distributed-Cognition \
+  --pi-codex-projects-root /home/pi/Codex \
+  --repo-url https://github.com/chowminyang/DistributedCognition.git \
+  --branch main
+```
+
+The rehearsal writes to `output/pi-cutover-rehearsal/DD-MM-YY-HHMM/` by
+default. It opens no SSH connection, stops no local service, exports no state,
+and does not touch WhatsApp auth. Use this before Tuesday so the Mac Codex
+thread can start from a concrete bundle instead of improvising.
+
 When you are ready to capture the final state, stop the Mac launchd jobs first so SQLite, WhatsApp auth, bridge queues, and delivery ledgers are quiet:
 
 ```bash

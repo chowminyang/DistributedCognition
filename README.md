@@ -118,6 +118,22 @@ pnpm run pi:codex-goal -- \
   --pi-codex-projects-root "<pi Codex projects path>"
 ```
 
+To rehearse the Mac-control-plane handoff in one non-mutating bundle:
+
+```bash
+pnpm run pi:rehearse-cutover -- \
+  --local-root "<local Distributed-Cognition folder>" \
+  --pi-host "<pi-host-or-ip>" \
+  --pi-user "<pi-ssh-user>" \
+  --pi-path "<pi NanoClaw checkout path>" \
+  --pi-second-brain-root "<pi Distributed-Cognition path>" \
+  --pi-codex-projects-root "<pi Codex projects path>"
+```
+
+This creates `output/pi-cutover-rehearsal/DD-MM-YY-HHMM/` with the Codex
+`/goal`, cutover checklist, SSH bootstrap dry run, and a summary. It does not
+open SSH, stop the Mac host, export state, import state, or touch WhatsApp.
+
 Before pushing a public update, run the local public-boundary and Pi helper checks:
 
 ```bash
