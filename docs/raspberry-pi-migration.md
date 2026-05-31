@@ -100,6 +100,29 @@ newgrp docker
 docker run hello-world
 ```
 
+Alternatively, once SSH works, Codex on the Mac can prepare the Pi with the
+dry-run-first bootstrap helper:
+
+```bash
+cd /Users/minyangchow/Documents/NanoClaw
+pnpm run pi:ssh-bootstrap -- \
+  --host nanoclaw-pi.local \
+  --user pi \
+  --path /home/pi/NanoClaw \
+  --second-brain-root /home/pi/Distributed-Cognition \
+  --codex-projects-root /home/pi/Codex \
+  --repo-url https://github.com/chowminyang/DistributedCognition.git \
+  --branch main
+```
+
+That command opens no SSH connection unless `--execute` is added. With
+`--execute`, it installs the basic apt packages, clones or updates the repo,
+creates the second-brain and Codex folders, runs `bash setup.sh`, runs
+`pnpm run build`, renders the systemd unit to `/tmp`, and checks Docker
+availability. It still does not copy secrets, import WhatsApp auth, start
+NanoClaw, configure rclone, install the rclone timer, or install the systemd
+service.
+
 ## Restore NanoClaw
 
 Clone the same repository branch on the Pi:
@@ -234,6 +257,10 @@ export NANOCLAW_PI_RCLONE_REMOTE=dropbox:
 
 pnpm run pi:ssh-preflight
 ```
+
+If the Pi is freshly imaged and only SSH is working, run
+`pnpm run pi:ssh-bootstrap` first in dry-run mode, then with `--execute`,
+before this preflight.
 
 The same values can also be passed inline:
 

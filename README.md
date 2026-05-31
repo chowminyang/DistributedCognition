@@ -87,6 +87,24 @@ pnpm run pi:cutover-plan -- \
   --repo-url "<DistributedCognition repo URL>"
 ```
 
+To let Codex on the Mac prepare a fresh Pi over SSH, run the bootstrap helper
+in dry-run mode first:
+
+```bash
+pnpm run pi:ssh-bootstrap -- \
+  --host "<pi-host-or-ip>" \
+  --user "<pi-ssh-user>" \
+  --path "<pi NanoClaw checkout path>" \
+  --second-brain-root "<pi Distributed-Cognition path>" \
+  --codex-projects-root "<pi Codex projects path>" \
+  --repo-url "https://github.com/chowminyang/DistributedCognition.git"
+```
+
+When the dry-run output looks right, add `--execute`. This installs basic
+packages, clones/builds the repo, creates the selected local folders, and
+checks Docker, but it does not copy secrets, import WhatsApp auth, start
+NanoClaw, configure rclone, or install the systemd service.
+
 Before pushing a public update, run the local public-boundary and Pi helper checks:
 
 ```bash
