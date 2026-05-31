@@ -122,6 +122,24 @@ assert_contains "$bridge_timer" "OnUnitActiveSec=5min" "bridge timer uses config
 assert_contains "$bridge_unit" "ExecStart=/bin/bash" "bridge unit calls runner"
 assert_contains "$TMP_DIR/bridge-timer-render.out" "Bridge jobs execute queued work." "bridge timer render reports execute mode"
 
+action_bridge_root="$TMP_DIR/action-bridge-root"
+mkdir -p "$action_bridge_root"
+env \
+  NANOCLAW_PI_HOST=nanoclaw-pi.local \
+  NANOCLAW_PI_USER=pi \
+  NANOCLAW_PI_PROJECT_ROOT=/home/pi/NanoClaw \
+  NANOCLAW_PI_SECOND_BRAIN_ROOT=/home/pi/Distributed-Cognition \
+  NANOCLAW_PI_CODEX_PROJECTS_ROOT=/home/pi/Codex \
+  NANOCLAW_PI_EXPECTED_COMMIT=test-expected-commit \
+  pnpm run dc:action-bridge -- init --root "$action_bridge_root" \
+    >"$TMP_DIR/action-bridge-init.out"
+action_bridge_config="$action_bridge_root/.dc-index/action-bridge.config.json"
+[ -f "$action_bridge_config" ] || fail "action bridge init writes config"
+assert_contains "$action_bridge_config" '"launchMode": "app-server"' "action bridge defaults to app-visible Codex app-server mode"
+assert_contains "$action_bridge_config" '"remoteRuntime"' "action bridge config includes remote runtime section"
+assert_contains "$action_bridge_config" '"host": "nanoclaw-pi.local"' "action bridge config captures Pi host context"
+assert_contains "$action_bridge_config" '"adminCommand": "pnpm run pi:ssh-admin"' "action bridge config captures Pi admin helper"
+
 goal_out="$TMP_DIR/codex-goal.out"
 pnpm run pi:codex-goal -- \
   --local-root "$TMP_DIR/Distributed-Cognition" \

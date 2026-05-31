@@ -11,6 +11,14 @@ import {
   renderRemoteRuntimeContext,
   type RemoteRuntimeConfig,
 } from '../src/distributed-cognition/remote-runtime-context.js';
+import {
+  attachCodexAutoApproval,
+  killCodexAppServer,
+  sendCodexRequest,
+  spawnCodexAppServer,
+  type AppServer,
+  type JsonRpcNotification,
+} from '../container/agent-runner/src/providers/codex-app-server.ts';
 
 const DEFAULT_SECOND_BRAIN_ROOT = path.join(os.homedir(), 'Library/CloudStorage/Dropbox/Distributed-Cognition');
 const CONFIG_VERSION = 1;
@@ -42,7 +50,9 @@ interface ActionBridgeConfig {
   codexLocal?: {
     enabled?: boolean;
     workingRoot?: string;
+    launchMode?: 'app-server' | 'exec';
     model?: string;
+    effort?: 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
     sandbox?: 'read-only' | 'workspace-write' | 'danger-full-access';
     approvalPolicy?: 'never' | 'on-request' | 'untrusted';
     webSearch?: boolean;
@@ -77,6 +87,8 @@ interface SubmitResult {
   cloudUrl?: string;
   cloudTaskId?: string;
   lastMessagePath?: string;
+  threadId?: string;
+  turnId?: string;
 }
 
 interface ArtifactResult {
@@ -206,6 +218,7 @@ function defaultConfig(): ActionBridgeConfig {
     codexLocal: {
       enabled: true,
       workingRoot: '.',
+      launchMode: 'app-server',
       sandbox: 'danger-full-access',
       approvalPolicy: 'never',
       webSearch: true,
@@ -496,21 +509,212 @@ function codexLocalOutputDir(root: string, config: ActionBridgeConfig): string {
   return outputDir;
 }
 
-function runLocalCodexAction(root: string, config: ActionBridgeConfig, record: ActionRequestRecord): SubmitResult {
-  if (config.codexLocal?.enabled === false)
-    throw new Error('Local Codex execution is disabled in action bridge config.');
-  const workingRoot = codexLocalWorkingRoot(root, config);
-  const outputDir = codexLocalOutputDir(root, config);
+function localCodexOutputPath(root: string, record: ActionRequestRecord): string {
   const localOutputDir = safeJoin(root, '.dc-index/action-requests/local-codex-output');
   fs.mkdirSync(localOutputDir, { recursive: true });
-  const lastMessagePath = path.join(localOutputDir, `${record.id}-last-message.md`);
-  const prompt = [
+  return path.join(localOutputDir, `${record.id}-last-message.md`);
+}
+
+function actionCodexPrompt(
+  root: string,
+  config: ActionBridgeConfig,
+  record: ActionRequestRecord,
+  outputDir: string,
+  lastMessagePath: string,
+): string {
+  return [
     codexPrompt(record, config),
     '',
     `Distributed Cognition root: ${root}`,
     `Required output folder: ${outputDir}`,
     `Last-message report path: ${lastMessagePath}`,
   ].join('\n');
+}
+
+function writeLastMessage(root: string, lastMessagePath: string, text: string): string {
+  fs.writeFileSync(lastMessagePath, text.endsWith('\n') ? text : `${text}\n`);
+  return path.relative(root, lastMessagePath).split(path.sep).join('/');
+}
+
+function createTurnCompletionWaiter(
+  server: AppServer,
+  threadId: string,
+  timeoutMs: number,
+): { promise: Promise<{ turnId?: string; finalMessage: string }>; cancel: () => void } {
+  let turnId: string | undefined;
+  let finalMessage = '';
+  let cleanup: () => void = () => undefined;
+
+  const promise = new Promise<{ turnId?: string; finalMessage: string }>((resolve, reject) => {
+    cleanup = (): void => {
+      const index = server.notificationHandlers.indexOf(handler);
+      if (index >= 0) server.notificationHandlers.splice(index, 1);
+      clearTimeout(timer);
+    };
+
+    const timer = setTimeout(() => {
+      cleanup();
+      reject(new Error(`Timeout waiting for Codex app-server turn completion (${timeoutMs}ms)`));
+    }, timeoutMs);
+
+    const handler = (notification: JsonRpcNotification): void => {
+      const params = notification.params as {
+        threadId?: string;
+        turnId?: string;
+        delta?: string;
+        turn?: { id?: string; status?: string; error?: { message?: string } | null };
+        item?: { type?: string; text?: string };
+        error?: { message?: string };
+      };
+      if (params.threadId && params.threadId !== threadId) return;
+
+      switch (notification.method) {
+        case 'turn/started':
+          turnId = params.turn?.id ?? params.turnId ?? turnId;
+          break;
+        case 'item/agentMessage/delta':
+          if (typeof params.delta === 'string') finalMessage += params.delta;
+          break;
+        case 'item/completed':
+          if (params.item?.type === 'agentMessage' && typeof params.item.text === 'string') {
+            finalMessage = params.item.text;
+          }
+          break;
+        case 'turn/completed':
+          turnId = params.turn?.id ?? params.turnId ?? turnId;
+          cleanup();
+          resolve({ turnId, finalMessage });
+          break;
+        case 'error':
+        case 'turn/failed':
+          cleanup();
+          reject(new Error(params.error?.message || params.turn?.error?.message || 'Codex app-server turn failed'));
+          break;
+        default:
+          break;
+      }
+    };
+
+    server.notificationHandlers.push(handler);
+  });
+
+  return { promise, cancel: cleanup };
+}
+
+async function initializeBridgeAppServer(server: AppServer): Promise<void> {
+  const response = await sendCodexRequest(
+    server,
+    'initialize',
+    {
+      clientInfo: {
+        name: 'distributed-cognition-action-bridge',
+        title: 'Distributed Cognition Action Bridge',
+        version: '1.0.0',
+      },
+      capabilities: { experimentalApi: true },
+    },
+    30_000,
+  );
+  if (response.error) throw new Error(`Initialize failed: ${response.error.message}`);
+}
+
+async function runLocalCodexActionAppServer(
+  root: string,
+  config: ActionBridgeConfig,
+  record: ActionRequestRecord,
+): Promise<SubmitResult> {
+  if (config.codexLocal?.enabled === false)
+    throw new Error('Local Codex execution is disabled in action bridge config.');
+  const workingRoot = codexLocalWorkingRoot(root, config);
+  const outputDir = codexLocalOutputDir(root, config);
+  const lastMessagePath = localCodexOutputPath(root, record);
+  const server = spawnCodexAppServer();
+  attachCodexAutoApproval(server);
+  const timeoutMs = config.codexLocal?.timeoutMs ?? 600_000;
+  try {
+    await initializeBridgeAppServer(server);
+    const threadResponse = await sendCodexRequest(
+      server,
+      'thread/start',
+      {
+        model: config.codexLocal?.model ?? 'gpt-5.4-mini',
+        cwd: workingRoot,
+        approvalPolicy: config.codexLocal?.approvalPolicy ?? 'never',
+        sandbox: config.codexLocal?.sandbox ?? 'danger-full-access',
+        sessionStartSource: 'startup',
+        experimentalRawEvents: false,
+        persistExtendedHistory: true,
+      },
+      120_000,
+    );
+    if (threadResponse.error) throw new Error(`thread/start failed: ${threadResponse.error.message}`);
+    const threadId = (threadResponse.result as { thread?: { id?: string } } | undefined)?.thread?.id;
+    if (!threadId) throw new Error('thread/start response missing thread id');
+
+    const completed = createTurnCompletionWaiter(server, threadId, timeoutMs);
+    const turnResponse = await sendCodexRequest(
+      server,
+      'turn/start',
+      {
+        threadId,
+        input: [
+          {
+            type: 'text',
+            text: actionCodexPrompt(root, config, record, outputDir, lastMessagePath),
+            text_elements: [],
+          },
+        ],
+        cwd: workingRoot,
+        approvalPolicy: config.codexLocal?.approvalPolicy ?? 'never',
+        model: config.codexLocal?.model ?? 'gpt-5.4-mini',
+        effort: config.codexLocal?.effort ?? 'low',
+      },
+      120_000,
+    );
+    if (turnResponse.error) {
+      completed.cancel();
+      throw new Error(`turn/start failed: ${turnResponse.error.message}`);
+    }
+    const turnId = (turnResponse.result as { turn?: { id?: string } } | undefined)?.turn?.id;
+    const result = await completed.promise;
+    const lastMessageRelativePath = writeLastMessage(
+      root,
+      lastMessagePath,
+      result.finalMessage || `Codex app-server turn completed for thread ${threadId}.`,
+    );
+
+    if (config.codexLocal?.openApp) {
+      spawnSync('codex', ['app', workingRoot], { encoding: 'utf-8', timeout: 15_000, maxBuffer: 250_000 });
+    }
+
+    return {
+      ok: true,
+      status: 0,
+      stdout: `Codex app-server thread ${threadId} completed.`,
+      stderr: '',
+      lastMessagePath: lastMessageRelativePath,
+      threadId,
+      turnId: result.turnId ?? turnId,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      status: null,
+      stdout: '',
+      stderr: error instanceof Error ? error.message : String(error),
+    };
+  } finally {
+    killCodexAppServer(server);
+  }
+}
+
+function runLocalCodexActionExec(root: string, config: ActionBridgeConfig, record: ActionRequestRecord): SubmitResult {
+  if (config.codexLocal?.enabled === false)
+    throw new Error('Local Codex execution is disabled in action bridge config.');
+  const workingRoot = codexLocalWorkingRoot(root, config);
+  const outputDir = codexLocalOutputDir(root, config);
+  const lastMessagePath = localCodexOutputPath(root, record);
+  const prompt = actionCodexPrompt(root, config, record, outputDir, lastMessagePath);
   const args = ['--ask-for-approval', config.codexLocal?.approvalPolicy ?? 'never'];
   if (config.codexLocal?.webSearch !== false) args.push('--search');
   args.push(
@@ -545,6 +749,17 @@ function runLocalCodexAction(root: string, config: ActionBridgeConfig, record: A
     stderr,
     lastMessagePath: path.relative(root, lastMessagePath).split(path.sep).join('/'),
   };
+}
+
+async function runLocalCodexAction(
+  root: string,
+  config: ActionBridgeConfig,
+  record: ActionRequestRecord,
+): Promise<SubmitResult> {
+  if ((config.codexLocal?.launchMode ?? 'app-server') === 'exec') {
+    return runLocalCodexActionExec(root, config, record);
+  }
+  return runLocalCodexActionAppServer(root, config, record);
 }
 
 function submitCodexAction(record: ActionRequestRecord, cloudEnv: string): SubmitResult {
@@ -656,7 +871,7 @@ async function processQueue(args: Args, configPath: string): Promise<void> {
 
       if (action.target === 'codex-local') {
         recordProgress(args.root, record, 'running', 'Local Codex action execution started on this host.');
-        const local = runLocalCodexAction(args.root, config, record);
+        const local = await runLocalCodexAction(args.root, config, record);
         if (!local.ok) {
           moveRecord(args.root, item.filePath, record, 'failed', {
             exitStatus: local.status,
@@ -680,10 +895,13 @@ async function processQueue(args: Args, configPath: string): Promise<void> {
           stdout: local.stdout,
           stderr: local.stderr,
           lastMessagePath: local.lastMessagePath,
+          codexThreadId: local.threadId,
+          codexTurnId: local.turnId,
         });
         updateNote(args.root, record, 'completed', [
           `- Completed at: ${sgtTimestamp()}`,
           '- Executor: local Codex on this host',
+          local.threadId ? `- Codex thread: ${local.threadId}` : '- Codex thread: not reported',
           local.lastMessagePath ? `- Last message: ${local.lastMessagePath}` : '- Last message: not written',
           `- Output folder: ${config.outputRoot || 'action-outputs'}`,
         ]);

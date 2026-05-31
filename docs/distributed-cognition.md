@@ -489,6 +489,10 @@ On first run, it creates:
 
 By default, `word_document`, `powerpoint`, and `web_research` are routed to `codex-local`. Older direct local DOCX/PPTX generation remains available only if the host config explicitly sets those action types to `target=local`.
 
+For `codex-local` action requests, the default local launch mode is also `app-server`. That means heavier delegated work such as web research, Word documents, and PowerPoint decks creates a Codex desktop/app-visible local thread and records `codexThreadId` / `codexTurnId` on completion. Set `codexLocal.launchMode` to `exec` only as an explicit fallback when you accept that the noninteractive run may not appear in the desktop chat list.
+
+After the Raspberry Pi cutover, keep WhatsApp/Baileys and the DC runtime on the Pi. If you deliberately run this action bridge on the Mac for app-visible Codex work, source the Pi `operator-env.sh` first so generated action prompts include the non-secret Pi SSH/runtime context and do not try to restart the Mac NanoClaw host.
+
 The default local Codex sandbox is `danger-full-access`, with approval policy `never`, because this bridge is intended for trusted Mac-local execution after WhatsApp has only queued the action. Keep this host config private and do not enable action types you are not comfortable running locally.
 
 The action bridge reads:
