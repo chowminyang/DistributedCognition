@@ -189,6 +189,8 @@ The readiness output also prints `operator_env=.../rehearsal/operator-env.sh`.
 If Pi values are missing, use that generated file as the non-secret fillable
 template: uncomment and set the missing `NANOCLAW_PI_*` lines, source it from
 the Mac Codex shell, run `pi:operator-env-check`, then rerun readiness.
+The bundle also includes `ssh-key-setup.txt`, a non-mutating dry-run showing
+the exact dedicated-key command to run before Pi SSH control.
 
 When you are ready to capture the final state, stop the Mac launchd jobs first so SQLite, WhatsApp auth, bridge queues, and delivery ledgers are quiet:
 

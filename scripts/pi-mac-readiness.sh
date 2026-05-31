@@ -459,6 +459,11 @@ else
   run_capture_allow_warn "$READINESS_DIR/pi-discovery.txt" "Pi Discovery" pnpm run pi:discover -- --timeout 3 --host "$PI_HOST"
 fi
 
+ssh_key_setup_cmd=(pnpm run pi:ssh-key-setup --)
+[ -n "$PI_HOST" ] && ssh_key_setup_cmd+=(--host "$PI_HOST")
+[ -n "$PI_USER" ] && ssh_key_setup_cmd+=(--user "$PI_USER")
+run_capture_allow_warn "$READINESS_DIR/ssh-key-setup.txt" "Mac SSH Key Setup Dry Run" "${ssh_key_setup_cmd[@]}"
+
 ssh_key_check_cmd=(pnpm run pi:ssh-key-check --)
 [ -n "$PI_HOST" ] && ssh_key_check_cmd+=(--host "$PI_HOST")
 [ -n "$PI_USER" ] && ssh_key_check_cmd+=(--user "$PI_USER")
@@ -617,6 +622,7 @@ fi
   printf -- '- `health.json`\n'
   printf -- '- `mac-preflight.txt`\n'
   printf -- '- `pi-discovery.txt`\n'
+  printf -- '- `ssh-key-setup.txt`\n'
   printf -- '- `ssh-key-check.txt`\n'
   printf -- '- `operator-env-check.txt`\n'
   printf -- '- `ssh-preflight.txt`\n'
