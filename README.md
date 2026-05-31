@@ -219,6 +219,20 @@ This checks the Mac stopped state plus Pi status, health, and dashboard output,
 and writes `output/pi-cutover-verification/DD-MM-YY-HHMM/`. The final WhatsApp
 reply test remains manual and is written into the bundle checklist.
 
+After WhatsApp replies are proven to come from the Pi, you can re-enable only
+the Mac-side maintenance and bridge jobs so local Codex can keep processing
+queued handoffs from the synced folder. This does not restart the Mac
+NanoClaw/WhatsApp host:
+
+```bash
+pnpm run dc:install-launchd -- install \
+  --root "<local Distributed-Cognition folder>" \
+  --projects-root "$HOME/Documents/Codex" \
+  --execute-bridges \
+  --load
+pnpm run dc:install-launchd -- status
+```
+
 ## Upstream NanoClaw
 
 <p align="center">

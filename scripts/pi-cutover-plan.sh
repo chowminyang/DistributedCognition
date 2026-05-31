@@ -304,6 +304,22 @@ cat <<'EOF'
     - The Mac host remains stopped.
 EOF
 
+section "7. Resume Mac-Side Bridges Only"
+cat <<'EOF'
+  Do this only after WhatsApp replies are proven to come from the Pi.
+  These launchd jobs do not start the Mac NanoClaw/WhatsApp host; they only let
+  the Mac maintain dashboards and process queued Mnemon, Codex, and action work
+  from the synced Distributed-Cognition folder.
+EOF
+if [ -n "$LOCAL_SECOND_BRAIN_ROOT" ]; then
+  print_command "pnpm run dc:install-launchd -- install --root $(quote_shell "$LOCAL_SECOND_BRAIN_ROOT") --projects-root \"\$HOME/Documents/Codex\" --execute-bridges --load"
+  print_command "pnpm run dc:codex-bridge -- process --root $(quote_shell "$LOCAL_SECOND_BRAIN_ROOT") --projects-root \"\$HOME/Documents/Codex\""
+else
+  print_command "pnpm run dc:install-launchd -- install --root <mac Distributed-Cognition folder> --projects-root \"\$HOME/Documents/Codex\" --execute-bridges --load"
+  print_command "pnpm run dc:codex-bridge -- process --root <mac Distributed-Cognition folder> --projects-root \"\$HOME/Documents/Codex\""
+fi
+print_command "pnpm run dc:install-launchd -- status"
+
 section "Rollback"
 print_command "ssh ${PI_USER:-<pi-user>}@${PI_HOST:-<pi-host>} \"sudo systemctl stop 'nanoclaw-v2-*.service'\""
 print_command "# Then intentionally restart the Mac service only if you are rolling back."

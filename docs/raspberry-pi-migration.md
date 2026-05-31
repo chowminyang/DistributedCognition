@@ -385,6 +385,31 @@ itself prove WhatsApp delivery. The migration is complete only after the
 manual WhatsApp checklist succeeds from the allowlisted 1:1 chat and the new
 capture lands in the Pi second-brain folder.
 
+## Mac Bridge Jobs After Cutover
+
+After WhatsApp replies are proven to come from the Pi, keep the Mac
+NanoClaw/WhatsApp host stopped, but re-enable the Mac-side maintenance and
+bridge jobs if you want local Codex to keep processing queued handoffs from the
+synced `Distributed-Cognition` folder.
+
+These launchd jobs run `dc:health`, `dc:dashboard`, `dc:memory-bridge`,
+`dc:codex-bridge`, and `dc:action-bridge`. They do not start the WhatsApp
+adapter or NanoClaw host service.
+
+```bash
+cd /Users/minyangchow/Documents/NanoClaw
+pnpm run dc:install-launchd -- install \
+  --root "$HOME/Library/CloudStorage/Dropbox/Distributed-Cognition" \
+  --projects-root "$HOME/Documents/Codex" \
+  --execute-bridges \
+  --load
+pnpm run dc:install-launchd -- status
+```
+
+If the synced folder is at `$HOME/Dropbox/Distributed-Cognition`, use that path
+instead. The Pi remains the capture/runtime host; the Mac is only doing
+dashboard refreshes and queued local work.
+
 ## Rollback
 
 If the Pi is not healthy:

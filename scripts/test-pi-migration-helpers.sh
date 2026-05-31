@@ -87,6 +87,7 @@ assert_contains "$goal_out" "Raspberry Pi is the final always-on Distributed Cog
 assert_contains "$goal_out" "pnpm run pi:ssh-bootstrap" "codex goal includes SSH bootstrap"
 assert_contains "$goal_out" "Do not mark the goal complete" "codex goal includes completion guard"
 assert_contains "$goal_out" "02-06-26" "codex goal includes migration date"
+assert_contains "$goal_out" "reinstall the Mac bridge jobs only" "codex goal keeps Mac bridge-only resumption explicit"
 
 pnpm run pi:codex-goal -- --help >"$TMP_DIR/codex-goal-help.out"
 assert_contains "$TMP_DIR/codex-goal-help.out" "paste-ready /goal prompt" "codex goal help documents purpose"
@@ -121,6 +122,8 @@ assert_contains "$plan_out" "Distributed Cognition runs fully on the Raspberry P
 assert_contains "$plan_out" "CUTOVER_PLAN=ready" "cutover plan succeeds with complete values"
 assert_contains "$plan_out" "pnpm run dc:stop-host -- --execute" "cutover plan includes final Mac host stop"
 assert_contains "$plan_out" "pnpm run pi:ssh-preflight" "cutover plan includes SSH preflight"
+assert_contains "$plan_out" "Resume Mac-Side Bridges Only" "cutover plan includes bridge-only Mac resumption"
+assert_contains "$plan_out" "pnpm run dc:install-launchd -- install" "cutover plan re-enables only bridge jobs after Pi proof"
 
 set +e
 pnpm run pi:cutover-plan -- --strict >"$TMP_DIR/cutover-missing.out" 2>"$TMP_DIR/cutover-missing.err"

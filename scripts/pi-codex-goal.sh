@@ -250,6 +250,10 @@ Work plan:
    DC, run a health check.
    DC, what can you see in the second-brain folder?
    DC, capture this as a harmless Pi cutover test reflection.
+12. After WhatsApp is proven to be replying from the Pi, reinstall the Mac bridge jobs only:
+   pnpm run dc:install-launchd -- install --root "${MAC_SECOND_BRAIN_DISPLAY}" --projects-root "\$HOME/Documents/Codex" --execute-bridges --load
+   pnpm run dc:install-launchd -- status
+   Do not restart the Mac NanoClaw/WhatsApp host unless I explicitly roll back.
 
 Completion evidence required:
 - Pi SSH bootstrap succeeds or gives clear remaining actions.
@@ -261,6 +265,7 @@ Completion evidence required:
 - DC replies on WhatsApp from the Pi.
 - A raw note and processed note are created in the Pi Distributed-Cognition folder.
 - rclone sync is configured for only the selected Distributed-Cognition folder.
+- Mac bridge jobs are either intentionally left off or re-enabled only for health/dashboard/Mnemon/Codex/action queues against the synced second-brain folder.
 - No secrets are printed, committed, or synced to Dropbox.
 - Rollback command is documented before the final switch.
 
