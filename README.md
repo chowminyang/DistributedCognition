@@ -186,9 +186,11 @@ thread, cutover checklist, SSH bootstrap dry run, SSH state-restore dry run,
 SSH runtime-start dry run, and a summary. It does not open SSH, stop the Mac
 host, export state, import state, or touch WhatsApp. The generated operator
 environment also sets `NANOCLAW_PI_SSH_CONNECT_TIMEOUT=10` so SSH helpers fail
-quickly if the Pi hostname or IP is stale, and `NANOCLAW_PI_EXPECTED_COMMIT`
-so Pi status/doctor checks prove the runtime checkout matches the rehearsed
-Mac commit.
+quickly if the Pi hostname or IP is stale,
+`NANOCLAW_PI_BRIDGE_EXECUTE_MODE=memory` so the Pi rehearses Mnemon promotion
+without hiding Codex/action handoffs from Mac Codex, and
+`NANOCLAW_PI_EXPECTED_COMMIT` so Pi status/doctor checks prove the runtime
+checkout matches the rehearsed Mac commit.
 
 To produce a broader Mac-side readiness bundle before Tuesday:
 

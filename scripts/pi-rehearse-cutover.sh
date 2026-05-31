@@ -12,6 +12,7 @@ PI_CODEX_PROJECTS_ROOT="${NANOCLAW_PI_CODEX_PROJECTS_ROOT:-}"
 PI_RCLONE_REMOTE="${NANOCLAW_PI_RCLONE_REMOTE:-dropbox:}"
 PI_UNIT_NAME="${NANOCLAW_PI_UNIT_NAME:-}"
 PI_SSH_CONNECT_TIMEOUT="${NANOCLAW_PI_SSH_CONNECT_TIMEOUT:-10}"
+PI_BRIDGE_EXECUTE_MODE="${NANOCLAW_PI_BRIDGE_EXECUTE_MODE:-memory}"
 EXPECTED_COMMIT="${NANOCLAW_PI_EXPECTED_COMMIT:-}"
 REPO_URL="${NANOCLAW_PI_REPO_URL:-https://github.com/chowminyang/DistributedCognition.git}"
 BRANCH="${NANOCLAW_PI_BRANCH:-main}"
@@ -47,6 +48,8 @@ Options:
   --pi-codex-projects-root <path> Codex projects folder on the Pi.
   --pi-rclone-remote <name:>      rclone remote name. Default: dropbox:.
   --pi-unit-name <name>           Optional NanoClaw systemd unit name.
+  --pi-bridge-execute-mode <mode> Pi bridge mode: dry-run, memory, or all.
+                                  Default: memory.
   --expected-commit <sha>         Expected Pi checkout commit. Default: current local HEAD.
   --repo-url <url>                Repository URL to clone on the Pi.
   --branch <name>                 Branch to use on the Pi. Default: main.
@@ -66,6 +69,7 @@ Environment defaults:
   NANOCLAW_PI_RCLONE_REMOTE
   NANOCLAW_PI_UNIT_NAME
   NANOCLAW_PI_SSH_CONNECT_TIMEOUT
+  NANOCLAW_PI_BRIDGE_EXECUTE_MODE
   NANOCLAW_PI_EXPECTED_COMMIT
   NANOCLAW_PI_REPO_URL
   NANOCLAW_PI_BRANCH
@@ -204,6 +208,7 @@ write_operator_env() {
     write_export_line "NANOCLAW_PI_RCLONE_REMOTE" "$PI_RCLONE_REMOTE" "Pi rclone remote"
     write_export_line "NANOCLAW_PI_UNIT_NAME" "$PI_UNIT_NAME" "Pi NanoClaw systemd unit name" "optional"
     write_export_line "NANOCLAW_PI_SSH_CONNECT_TIMEOUT" "$PI_SSH_CONNECT_TIMEOUT" "Pi SSH connect timeout in seconds"
+    write_export_line "NANOCLAW_PI_BRIDGE_EXECUTE_MODE" "$PI_BRIDGE_EXECUTE_MODE" "Pi bridge execute mode"
     write_export_line "NANOCLAW_PI_EXPECTED_COMMIT" "$EXPECTED_COMMIT" "expected Pi checkout commit"
     write_export_line "NANOCLAW_PI_REPO_URL" "$REPO_URL" "DistributedCognition repo URL"
     write_export_line "NANOCLAW_PI_BRANCH" "$BRANCH" "DistributedCognition branch"
@@ -270,6 +275,7 @@ write_summary() {
     printf -- '- Pi rclone remote: `%s`\n' "${PI_RCLONE_REMOTE:-<optional-not-set>}"
     printf -- '- Pi systemd unit: `%s`\n' "${PI_UNIT_NAME:-<auto-detect>}"
     printf -- '- Pi SSH connect timeout: `%ss`\n' "${PI_SSH_CONNECT_TIMEOUT:-<unset>}"
+    printf -- '- Pi bridge execute mode: `%s`\n' "${PI_BRIDGE_EXECUTE_MODE:-<unset>}"
     printf -- '- Expected Pi commit: `%s`\n' "${EXPECTED_COMMIT:-<not checked>}"
     printf -- '- Repo URL: `%s`\n' "${REPO_URL:-<missing>}"
     printf -- '- Branch: `%s`\n' "${BRANCH:-<missing>}"
@@ -371,6 +377,11 @@ while [ "$#" -gt 0 ]; do
       [ -n "$PI_UNIT_NAME" ] || { echo "Missing value for --pi-unit-name" >&2; exit 2; }
       shift 2
       ;;
+    --pi-bridge-execute-mode)
+      PI_BRIDGE_EXECUTE_MODE="${2:-}"
+      [ -n "$PI_BRIDGE_EXECUTE_MODE" ] || { echo "Missing value for --pi-bridge-execute-mode" >&2; exit 2; }
+      shift 2
+      ;;
     --expected-commit)
       EXPECTED_COMMIT="${2:-}"
       [ -n "$EXPECTED_COMMIT" ] || { echo "Missing value for --expected-commit" >&2; exit 2; }
@@ -423,6 +434,15 @@ if [ -z "$REHEARSAL_DIR" ]; then
   timestamp="$(date '+%d-%m-%y-%H%M')"
   REHEARSAL_DIR="$PROJECT_ROOT/output/pi-cutover-rehearsal/$timestamp"
 fi
+
+case "$PI_BRIDGE_EXECUTE_MODE" in
+  dry-run|memory|all)
+    ;;
+  *)
+    echo "--pi-bridge-execute-mode must be dry-run, memory, or all" >&2
+    exit 2
+    ;;
+esac
 
 require_value "Mac Distributed-Cognition folder (--local-root or DC_SECOND_BRAIN_ROOT)" "$LOCAL_SECOND_BRAIN_ROOT"
 require_value "Pi host (--pi-host or NANOCLAW_PI_HOST)" "$PI_HOST"
@@ -546,6 +566,7 @@ if [ "${#runtime_missing[@]}" -eq 0 ]; then
     --second-brain-root "$PI_SECOND_BRAIN_ROOT"
     --codex-projects-root "$PI_CODEX_PROJECTS_ROOT"
     --rclone-remote "$PI_RCLONE_REMOTE"
+    --bridge-execute-mode "$PI_BRIDGE_EXECUTE_MODE"
   )
   [ -n "$PI_UNIT_NAME" ] && runtime_cmd+=(--unit-name "$PI_UNIT_NAME")
   run_capture "$REHEARSAL_DIR/ssh-start-runtime-dry-run.txt" "Pi SSH Runtime Start Dry Run" "${runtime_cmd[@]}"

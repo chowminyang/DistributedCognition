@@ -103,12 +103,14 @@ default. It opens no SSH connection, stops no local service, exports no state,
 and does not touch WhatsApp auth. Use this before Tuesday so the Mac Codex
 thread can start from a concrete bundle instead of improvising.
 The generated `operator-env.sh` contains only non-secret SSH, path, repo,
-branch, date, rclone, SSH timeout, and expected commit values. Source it from
-the Mac Codex shell before running the cutover helpers. By default it sets
-`NANOCLAW_PI_SSH_CONNECT_TIMEOUT=10`, which keeps Codex from waiting forever if
-the Pi hostname or IP is wrong, and `NANOCLAW_PI_EXPECTED_COMMIT`, which lets
-Pi status/doctor checks prove the runtime checkout matches the rehearsed Mac
-commit.
+branch, date, rclone, SSH timeout, bridge mode, and expected commit values.
+Source it from the Mac Codex shell before running the cutover helpers. By
+default it sets `NANOCLAW_PI_SSH_CONNECT_TIMEOUT=10`, which keeps Codex from
+waiting forever if the Pi hostname or IP is wrong,
+`NANOCLAW_PI_BRIDGE_EXECUTE_MODE=memory`, which keeps Mnemon promotion running
+on the Pi while Codex/action queues remain reviewable from Mac Codex, and
+`NANOCLAW_PI_EXPECTED_COMMIT`, which lets Pi status/doctor checks prove the
+runtime checkout matches the rehearsed Mac commit.
 
 For a broader one-command readiness snapshot on the Mac, run:
 
