@@ -214,6 +214,7 @@ pnpm run pi:codex-goal -- \
   --pi-path /home/pi/NanoClaw \
   --pi-second-brain-root /home/pi/Distributed-Cognition \
   --pi-codex-projects-root /home/pi/Codex \
+  --operator-env "$TMP_DIR/operator-env.sh" \
   --repo-url https://github.com/chowminyang/DistributedCognition.git \
   --branch main \
   --migration-date 02-06-26 \
@@ -221,7 +222,11 @@ pnpm run pi:codex-goal -- \
 assert_contains "$goal_out" "/goal" "codex goal starts with slash goal"
 assert_contains "$goal_out" "Mac Codex is the control plane" "codex goal names Mac control plane"
 assert_contains "$goal_out" "Raspberry Pi is the final always-on Distributed Cognition runtime" "codex goal names Pi runtime"
+assert_contains "$goal_out" "Pi operator env file: $TMP_DIR/operator-env.sh" "codex goal records operator env path"
+assert_contains "$goal_out" "source \"$TMP_DIR/operator-env.sh\"" "codex goal tells Mac Codex to source operator env"
+assert_contains "$goal_out" "If it still has commented \"# Missing:\" lines" "codex goal tells Codex to ask for missing operator env values"
 assert_contains "$goal_out" "non-secret Pi control-plane environment" "codex goal tells operator to set Pi environment"
+assert_contains "$goal_out" "NANOCLAW_PI_EXPECTED_COMMIT" "codex goal sets expected Pi commit from operator env or current checkout"
 assert_contains "$goal_out" "Do not run commands with unresolved <placeholder> values" "codex goal guards against placeholder execution"
 assert_contains "$goal_out" "pnpm run pi:ssh-preflight -- --host" "codex goal includes explicit SSH preflight values"
 assert_contains "$goal_out" "pnpm run pi:ssh-bootstrap" "codex goal includes SSH bootstrap"
@@ -327,6 +332,8 @@ assert_contains "$TMP_DIR/rehearsal.out" "No SSH was opened" "cutover rehearsal 
 [ -f "$rehearsal_dir/ssh-restore-state-dry-run.txt" ] || fail "cutover rehearsal writes ssh state restore dry-run"
 [ -f "$rehearsal_dir/ssh-start-runtime-dry-run.txt" ] || fail "cutover rehearsal writes ssh runtime start dry-run"
 assert_contains "$rehearsal_dir/codex-goal.md" "/goal" "cutover rehearsal includes goal prompt"
+assert_contains "$rehearsal_dir/codex-goal.md" "Pi operator env file: $rehearsal_dir/operator-env.sh" "cutover rehearsal codex goal names operator env"
+assert_contains "$rehearsal_dir/codex-goal.md" "source \"$rehearsal_dir/operator-env.sh\"" "cutover rehearsal codex goal sources operator env"
 assert_contains "$rehearsal_dir/operator-env.sh" "export NANOCLAW_PI_HOST=nanoclaw-pi.local" "cutover rehearsal operator env includes Pi host"
 assert_contains "$rehearsal_dir/operator-env.sh" "export NANOCLAW_PI_CODEX_PROJECTS_ROOT=/home/pi/Codex" "cutover rehearsal operator env includes Codex projects root"
 assert_contains "$rehearsal_dir/operator-env.sh" "export NANOCLAW_PI_SSH_CONNECT_TIMEOUT=10" "cutover rehearsal operator env includes SSH timeout"
@@ -395,6 +402,7 @@ assert_contains "$readiness_dir/summary.md" "git-revision-check.txt" "mac readin
 assert_contains "$readiness_dir/summary.md" "ssh-preflight.txt" "mac readiness summary lists ssh preflight artifact"
 assert_contains "$readiness_dir/summary.md" "rehearsal/operator-env.sh" "mac readiness summary lists nested operator env"
 assert_contains "$readiness_dir/summary.md" "Expected Pi commit" "mac readiness summary records expected Pi commit"
+assert_contains "$readiness_dir/rehearsal/codex-goal.md" "Pi operator env file: $readiness_dir/rehearsal/operator-env.sh" "mac readiness nested goal names operator env"
 assert_contains "$readiness_dir/rehearsal/operator-env.sh" "export NANOCLAW_PI_BRIDGE_EXECUTE_MODE=memory" "mac readiness nested rehearsal carries bridge memory mode"
 assert_contains "$readiness_dir/rehearsal/operator-env.sh" "export NANOCLAW_PI_EXPECTED_BRIDGE_EXECUTE_MODE=memory" "mac readiness nested rehearsal carries expected bridge timer mode"
 assert_contains "$readiness_dir/rehearsal/operator-env.sh" "export NANOCLAW_PI_EXPECTED_COMMIT=" "mac readiness nested rehearsal carries expected commit"

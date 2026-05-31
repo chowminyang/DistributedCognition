@@ -197,7 +197,9 @@ without hiding Codex/action handoffs from Mac Codex,
 `NANOCLAW_PI_EXPECTED_BRIDGE_EXECUTE_MODE=memory` so post-cutover checks prove
 the installed systemd bridge timers match that mode, and
 `NANOCLAW_PI_EXPECTED_COMMIT` so Pi status/doctor checks prove the runtime
-checkout matches the rehearsed Mac commit.
+checkout matches the rehearsed Mac commit. The generated `/goal` also names the
+exact `operator-env.sh` path, so the Mac Codex cutover thread can source the
+same non-secret values before controlling the Pi over SSH.
 
 To produce a broader Mac-side readiness bundle before Tuesday:
 

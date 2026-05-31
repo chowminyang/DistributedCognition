@@ -113,7 +113,10 @@ on the Pi while Codex/action queues remain reviewable from Mac Codex,
 verification fail if the installed systemd bridge timers are not in that mode,
 and
 `NANOCLAW_PI_EXPECTED_COMMIT`, which lets Pi status/doctor checks prove the
-runtime checkout matches the rehearsed Mac commit.
+runtime checkout matches the rehearsed Mac commit. The generated `codex-goal.md`
+also points to this exact `operator-env.sh`, so the Mac Codex cutover thread can
+source one shared non-secret control-plane file before it starts operating over
+SSH.
 
 For a broader one-command readiness snapshot on the Mac, run:
 

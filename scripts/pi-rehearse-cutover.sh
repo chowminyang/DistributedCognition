@@ -477,6 +477,7 @@ write_operator_env "$REHEARSAL_DIR/operator-env.sh"
 goal_cmd=(pnpm run pi:codex-goal --)
 [ -n "$LOCAL_SECOND_BRAIN_ROOT" ] && goal_cmd+=(--local-root "$LOCAL_SECOND_BRAIN_ROOT")
 goal_cmd+=(--out-dir "$OUT_DIR")
+[ -n "$REHEARSAL_DIR" ] && goal_cmd+=(--operator-env "$REHEARSAL_DIR/operator-env.sh")
 [ -n "$PI_HOST" ] && goal_cmd+=(--pi-host "$PI_HOST")
 [ -n "$PI_USER" ] && goal_cmd+=(--pi-user "$PI_USER")
 [ -n "$PI_PROJECT_ROOT" ] && goal_cmd+=(--pi-path "$PI_PROJECT_ROOT")

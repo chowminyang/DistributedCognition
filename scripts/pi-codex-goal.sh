@@ -11,6 +11,7 @@ PI_SECOND_BRAIN_ROOT="${NANOCLAW_PI_SECOND_BRAIN_ROOT:-}"
 PI_CODEX_PROJECTS_ROOT="${NANOCLAW_PI_CODEX_PROJECTS_ROOT:-}"
 PI_RCLONE_REMOTE="${NANOCLAW_PI_RCLONE_REMOTE:-dropbox:}"
 PI_UNIT_NAME="${NANOCLAW_PI_UNIT_NAME:-}"
+OPERATOR_ENV_PATH="${NANOCLAW_PI_OPERATOR_ENV:-}"
 REPO_URL="${NANOCLAW_PI_REPO_URL:-https://github.com/chowminyang/DistributedCognition.git}"
 BRANCH="${NANOCLAW_PI_BRANCH:-main}"
 MIGRATION_DATE="${NANOCLAW_PI_MIGRATION_DATE:-02-06-26}"
@@ -36,6 +37,7 @@ Options:
   --pi-codex-projects-root <path> Codex projects folder on the Pi.
   --pi-rclone-remote <name:>      rclone remote name. Default: dropbox:.
   --pi-unit-name <name>           Optional NanoClaw systemd unit name.
+  --operator-env <path>           Generated non-secret operator env file.
   --repo-url <url>                Repository URL to clone on the Pi.
   --branch <name>                 Branch to use on the Pi. Default: main.
   --migration-date <DD-MM-YY>     Planned migration date. Default: 02-06-26.
@@ -50,6 +52,7 @@ Environment defaults:
   NANOCLAW_PI_CODEX_PROJECTS_ROOT
   NANOCLAW_PI_RCLONE_REMOTE
   NANOCLAW_PI_UNIT_NAME
+  NANOCLAW_PI_OPERATOR_ENV
   NANOCLAW_PI_REPO_URL
   NANOCLAW_PI_BRANCH
   NANOCLAW_PI_MIGRATION_DATE
@@ -127,6 +130,11 @@ while [ "$#" -gt 0 ]; do
       [ -n "$PI_UNIT_NAME" ] || { echo "Missing value for --pi-unit-name" >&2; exit 2; }
       shift 2
       ;;
+    --operator-env)
+      OPERATOR_ENV_PATH="${2:-}"
+      [ -n "$OPERATOR_ENV_PATH" ] || { echo "Missing value for --operator-env" >&2; exit 2; }
+      shift 2
+      ;;
     --repo-url)
       REPO_URL="${2:-}"
       [ -n "$REPO_URL" ] || { echo "Missing value for --repo-url" >&2; exit 2; }
@@ -159,6 +167,7 @@ done
 
 LOCAL_SECOND_BRAIN_ROOT="$(expand_local_path "$LOCAL_SECOND_BRAIN_ROOT")"
 OUT_DIR="$(expand_local_path "$OUT_DIR")"
+OPERATOR_ENV_PATH="$(expand_local_path "$OPERATOR_ENV_PATH")"
 
 MAC_SECOND_BRAIN_DISPLAY="$(value_or_placeholder "$LOCAL_SECOND_BRAIN_ROOT" "Mac Distributed-Cognition folder")"
 PI_HOST_DISPLAY="$(value_or_placeholder "$PI_HOST" "Pi host or IP")"
@@ -167,6 +176,7 @@ PI_PROJECT_DISPLAY="$(value_or_placeholder "$PI_PROJECT_ROOT" "Pi NanoClaw check
 PI_SECOND_BRAIN_DISPLAY="$(value_or_placeholder "$PI_SECOND_BRAIN_ROOT" "Pi Distributed-Cognition path")"
 PI_CODEX_DISPLAY="$(value_or_placeholder "$PI_CODEX_PROJECTS_ROOT" "Pi Codex projects path")"
 PI_UNIT_DISPLAY="$(value_or_placeholder "$PI_UNIT_NAME" "auto-detect")"
+OPERATOR_ENV_DISPLAY="$(value_or_placeholder "$OPERATOR_ENV_PATH" "generated operator-env.sh path")"
 
 cat <<EOF
 /goal
@@ -191,6 +201,7 @@ Repo and paths:
 - Pi Codex projects folder: ${PI_CODEX_DISPLAY}
 - Pi rclone remote: ${PI_RCLONE_REMOTE}
 - Pi systemd unit: ${PI_UNIT_DISPLAY}
+- Pi operator env file: ${OPERATOR_ENV_DISPLAY}
 - Public repo: ${REPO_URL}
 - Branch: ${BRANCH}
 
@@ -206,7 +217,14 @@ Work plan:
 1. On the Mac, inspect repo status and verify the public branch is current.
    Set the expected Pi runtime version from the current Mac checkout:
    EXPECTED_COMMIT="\$(git rev-parse HEAD)"
-2. Ask me for any missing Pi values before continuing. Then set the non-secret Pi control-plane environment for this Codex thread, replacing any placeholder values first:
+2. Inspect the generated operator env if it exists:
+   ${OPERATOR_ENV_DISPLAY}
+   It must contain only non-secret SSH, path, repo, branch, bridge-mode, and expected-commit values. If it still has commented "# Missing:" lines, ask me for those values before continuing.
+   Once filled, source it from the Mac Codex shell:
+   source "${OPERATOR_ENV_DISPLAY}"
+   Then set the expected Pi runtime version from the current Mac checkout if it was not already set:
+   export NANOCLAW_PI_EXPECTED_COMMIT="\${NANOCLAW_PI_EXPECTED_COMMIT:-\$EXPECTED_COMMIT}"
+   If no operator env file is available, ask me for any missing Pi values before continuing and set the non-secret Pi control-plane environment manually, replacing any placeholder values first:
    export NANOCLAW_PI_HOST="${PI_HOST_DISPLAY}"
    export NANOCLAW_PI_USER="${PI_USER_DISPLAY}"
    export NANOCLAW_PI_PROJECT_ROOT="${PI_PROJECT_DISPLAY}"
