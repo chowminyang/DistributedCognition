@@ -11,6 +11,7 @@ MNEMON_DB="${NANOCLAW_PI_MNEMON_DB:-}"
 UNIT_NAME="${NANOCLAW_PI_UNIT_NAME:-}"
 SSH_CONNECT_TIMEOUT="${NANOCLAW_PI_SSH_CONNECT_TIMEOUT:-}"
 EXPECTED_COMMIT="${NANOCLAW_PI_EXPECTED_COMMIT:-}"
+ALLOW_MAC_HOST_RUNNING="${NANOCLAW_PI_ALLOW_MAC_HOST_RUNNING:-false}"
 LINES="120"
 BRIDGE_LIMIT="5"
 EXECUTE_BRIDGES="false"
@@ -58,6 +59,9 @@ Optional:
   --lines <count>                Log lines for logs action. Default: 120.
   --limit <count>                Bridge queue limit. Default: 5.
   --execute-bridges              Execute bridge work. Without this, bridges dry-run.
+  --allow-mac-host-running       Allow start/restart/update even if this Mac
+                                 checkout still appears to run NanoClaw. Use
+                                 only for rollback/emergency work.
   --ssh-option <option>          Extra ssh option. Values like BatchMode=yes
                                  are passed as ssh -o options. May be repeated.
   -h, --help                     Show this help.
@@ -72,6 +76,7 @@ Environment defaults:
   NANOCLAW_PI_UNIT_NAME
   NANOCLAW_PI_SSH_CONNECT_TIMEOUT
   NANOCLAW_PI_EXPECTED_COMMIT
+  NANOCLAW_PI_ALLOW_MAC_HOST_RUNNING
 
 Examples:
   bash scripts/pi-ssh-admin.sh doctor --host nanoclaw-pi.local --user pi --path /home/pi/NanoClaw --second-brain-root /home/pi/Distributed-Cognition
@@ -103,6 +108,118 @@ add_default_ssh_options() {
 }
 
 add_default_ssh_options
+
+have_local() {
+  command -v "$1" >/dev/null 2>&1
+}
+
+canonical_dir() {
+  (cd "$1" 2>/dev/null && pwd -P)
+}
+
+pid_cwd() {
+  local pid="$1"
+  local cwd=""
+
+  if have_local lsof; then
+    cwd="$(lsof -a -p "$pid" -d cwd -Fn 2>/dev/null | sed -n 's/^n//p' | head -n 1 || true)"
+  fi
+
+  if [ -z "$cwd" ] && [ -e "/proc/$pid/cwd" ] && have_local readlink; then
+    cwd="$(readlink "/proc/$pid/cwd" 2>/dev/null || true)"
+  fi
+
+  [ -n "$cwd" ] || return 1
+  canonical_dir "$cwd"
+}
+
+find_local_host_pids() {
+  have_local pgrep || return 0
+
+  local candidates
+  candidates="$(pgrep -f '(^|[ /])(node|tsx)([ ]|.*[ ])(dist/index\.js|src/index\.ts)' 2>/dev/null || true)"
+  [ -n "$candidates" ] || return 0
+
+  local local_project_root pid cwd
+  local_project_root="$(canonical_dir "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)")"
+  while IFS= read -r pid; do
+    [ -n "$pid" ] || continue
+    [ "$pid" != "$$" ] || continue
+    [ "$pid" != "${PPID:-}" ] || continue
+    cwd="$(pid_cwd "$pid" 2>/dev/null || true)"
+    [ "$cwd" = "$local_project_root" ] || continue
+    printf '%s\n' "$pid"
+  done <<EOF
+$candidates
+EOF
+}
+
+find_local_screen_sessions() {
+  have_local screen || return 0
+
+  { screen -ls 2>/dev/null || true; } |
+    awk '
+      /[0-9]+\./ {
+        for (i = 1; i <= NF; i += 1) {
+          if ($i ~ /^[0-9]+\./ && tolower($i) ~ /(nanoclaw|distributed|cognition)/) {
+            print $i
+          }
+        }
+      }
+    '
+}
+
+unique_lines() {
+  awk 'NF && !seen[$0]++'
+}
+
+require_mac_host_stopped_for_service_start() {
+  case "$ACTION" in
+    start|restart|update)
+      ;;
+    *)
+      return 0
+      ;;
+  esac
+
+  [ "$ALLOW_MAC_HOST_RUNNING" != "true" ] || {
+    echo "WARN - Mac host guard bypassed by --allow-mac-host-running" >&2
+    return 0
+  }
+
+  local host_pids screen_sessions
+  host_pids="$(find_local_host_pids | unique_lines)"
+  screen_sessions="$(find_local_screen_sessions | unique_lines)"
+
+  [ -z "$host_pids" ] && [ -z "$screen_sessions" ] && return 0
+
+  echo "Refusing to $ACTION the Pi runtime while the Mac NanoClaw host appears to be running." >&2
+  echo "WhatsApp/Baileys must run from only one host at a time." >&2
+  echo "Run this first during final cutover:" >&2
+  echo "  pnpm run dc:install-launchd -- uninstall" >&2
+  echo "  pnpm run dc:stop-host -- --execute" >&2
+  echo "  pnpm run pi:mac-preflight -- --root <mac Distributed-Cognition folder> --out-dir <export dir> --require-stopped" >&2
+  echo >&2
+  if [ -n "$screen_sessions" ]; then
+    echo "Matching screen sessions:" >&2
+    while IFS= read -r session; do
+      [ -n "$session" ] && echo "  screen: $session" >&2
+    done <<EOF
+$screen_sessions
+EOF
+  fi
+  if [ -n "$host_pids" ]; then
+    echo "Matching host PIDs:" >&2
+    while IFS= read -r pid; do
+      [ -n "$pid" ] && echo "  pid: $pid" >&2
+    done <<EOF
+$host_pids
+EOF
+  fi
+  echo >&2
+  echo "Use --allow-mac-host-running only for explicit rollback or emergency work." >&2
+  exit 1
+}
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
@@ -169,6 +286,10 @@ while [ "$#" -gt 0 ]; do
       EXECUTE_BRIDGES="true"
       shift
       ;;
+    --allow-mac-host-running)
+      ALLOW_MAC_HOST_RUNNING="true"
+      shift
+      ;;
     --ssh-option)
       option_value="${2:-}"
       [ -n "$option_value" ] || { echo "Missing value for --ssh-option" >&2; exit 2; }
@@ -204,6 +325,7 @@ case "$ACTION" in
     [ -n "$CODEX_PROJECTS_ROOT" ] || { echo "$ACTION requires --codex-projects-root" >&2; exit 2; }
     ;;
 esac
+require_mac_host_stopped_for_service_start
 
 TARGET="$REMOTE_USER@$HOST"
 

@@ -265,6 +265,11 @@ pnpm run pi:ssh-admin -- process-bridges --execute-bridges
 pnpm run pi:ssh-admin -- restart
 ```
 
+The `start`, `restart`, and `update` admin actions use the same Mac-host guard
+as the runtime-start helper: they refuse to start the Pi WhatsApp runtime while
+this Mac checkout still appears to be running NanoClaw, unless
+`--allow-mac-host-running` is supplied for explicit rollback or emergency work.
+
 To gather post-cutover proof into one bundle, run the verifier in dry-run mode
 first:
 

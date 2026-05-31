@@ -425,6 +425,7 @@ assert_contains "$TMP_DIR/ssh-admin-help.out" "bridge-timers" "ssh admin help do
 assert_contains "$TMP_DIR/ssh-admin-help.out" "process-bridges" "ssh admin help documents Pi-side bridge processing"
 assert_contains "$TMP_DIR/ssh-admin-help.out" "--execute-bridges" "ssh admin help documents bridge execute flag"
 assert_contains "$TMP_DIR/ssh-admin-help.out" "--expected-commit" "ssh admin help documents expected commit"
+assert_contains "$TMP_DIR/ssh-admin-help.out" "--allow-mac-host-running" "ssh admin help documents Mac host guard override"
 assert_contains "$TMP_DIR/ssh-admin-help.out" "NANOCLAW_PI_SSH_CONNECT_TIMEOUT" "ssh admin help documents SSH timeout env"
 
 pnpm run pi:ssh-preflight -- --help >"$TMP_DIR/ssh-preflight-help.out"
@@ -614,6 +615,25 @@ set -e
 assert_exit_code 1 "$mac_guard_code" "ssh start runtime execute refuses while Mac host is running"
 assert_contains "$TMP_DIR/ssh-start-runtime-mac-guard.err" "Refusing to start the Pi runtime while the Mac NanoClaw host appears to be running" "ssh start runtime Mac guard explains refusal"
 assert_contains "$TMP_DIR/ssh-start-runtime-mac-guard.err" "WhatsApp/Baileys must run from only one host at a time" "ssh start runtime Mac guard protects WhatsApp single-host invariant"
+
+node -e 'setInterval(() => {}, 1000)' dist/index.js >/dev/null 2>&1 &
+MAC_GUARD_PID="$!"
+sleep 1
+set +e
+pnpm run pi:ssh-admin -- start \
+  --host nanoclaw-pi.local \
+  --user pi \
+  --path /home/pi/NanoClaw \
+  >"$TMP_DIR/ssh-admin-start-mac-guard.out" \
+  2>"$TMP_DIR/ssh-admin-start-mac-guard.err"
+admin_mac_guard_code="$?"
+kill "$MAC_GUARD_PID" 2>/dev/null || true
+wait "$MAC_GUARD_PID" 2>/dev/null || true
+MAC_GUARD_PID=""
+set -e
+assert_exit_code 1 "$admin_mac_guard_code" "ssh admin start refuses while Mac host is running"
+assert_contains "$TMP_DIR/ssh-admin-start-mac-guard.err" "Refusing to start the Pi runtime while the Mac NanoClaw host appears to be running" "ssh admin start guard explains refusal"
+assert_contains "$TMP_DIR/ssh-admin-start-mac-guard.err" "WhatsApp/Baileys must run from only one host at a time" "ssh admin start guard protects WhatsApp single-host invariant"
 
 env \
   NANOCLAW_PI_HOST=nanoclaw-pi.local \

@@ -434,7 +434,10 @@ The supported actions are `doctor`, `status`, `bridge-timers`, `health`,
 the common "is DC really alive on the Pi?" check; it runs status, health, and
 dashboard in one SSH session. `status` avoids printing full process command
 lines and also lists bridge timers; `bridge-timers` fails explicitly if the Pi
-timer loop is missing. `logs` and `follow-logs` may include private
+timer loop is missing. The `start`, `restart`, and `update` admin actions also
+refuse to run if this Mac checkout still appears to be running NanoClaw, unless
+you explicitly pass `--allow-mac-host-running` for rollback or emergency work.
+`logs` and `follow-logs` may include private
 WhatsApp/reflection content, so use them only on your own trusted Mac/Pi.
 
 ## Post-Cutover Verification
