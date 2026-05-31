@@ -133,6 +133,10 @@ This writes `output/pi-mac-readiness/DD-MM-YY-HHMM/` with git status, public
 branch commit reachability, public-readiness, DC health, Mac export preflight,
 and the nested rehearsal bundle. It is safe to run while the Mac instance is
 live; a warning that the Mac host is running is expected before final export.
+The readiness output also prints `operator_env=.../rehearsal/operator-env.sh`.
+If Pi values are missing, use that generated file as the non-secret fillable
+template: uncomment and set the missing `NANOCLAW_PI_*` lines, source it from
+the Mac Codex shell, then rerun readiness.
 
 When you are ready to capture the final state, stop the Mac launchd jobs first so SQLite, WhatsApp auth, bridge queues, and delivery ledgers are quiet:
 

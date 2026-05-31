@@ -516,6 +516,9 @@ fi
       printf -- '- %s\n' "$item"
     done
     printf '\n'
+    printf '## Fillable Operator Environment\n\n'
+    printf 'Start with `rehearsal/operator-env.sh` in this bundle. It contains only non-secret SSH, path, repo, branch, bridge-mode, and expected-commit values.\n\n'
+    printf 'Uncomment and set the missing `NANOCLAW_PI_*` exports there, source it from the Mac Codex shell, then rerun this readiness check. When the Pi is reachable, rerun with `--include-ssh-preflight`.\n\n'
   fi
 
   if [ "${#warnings[@]}" -gt 0 ]; then
@@ -542,6 +545,7 @@ fi
   printf -- '- `mac-preflight.txt`\n'
   printf -- '- `ssh-preflight.txt`\n'
   printf -- '- `rehearsal.txt`\n'
+  printf -- '- `rehearsal/operator-env.sh`\n'
   printf -- '- `rehearsal/summary.md`\n\n'
 
   printf '## What This Means\n\n'
@@ -559,6 +563,7 @@ fi
 
 echo "PI_MAC_READINESS=$status"
 echo "bundle=$READINESS_DIR"
+echo "operator_env=$READINESS_DIR/rehearsal/operator-env.sh"
 if [ "$ssh_preflight_attempted" = "true" ]; then
   echo "SSH preflight was attempted. No WhatsApp/runtime state was changed."
 else
