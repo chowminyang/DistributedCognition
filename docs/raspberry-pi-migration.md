@@ -172,6 +172,14 @@ override.
 
 Use Raspberry Pi Imager to enable SSH before first boot, or enable it with `sudo raspi-config` after connecting a keyboard. Set a memorable hostname such as `nanoclaw-pi`.
 
+From the Mac, you can run a passive discovery pass before you know the exact SSH target:
+
+```bash
+pnpm run pi:discover
+```
+
+This does not SSH into the Pi and does not change any local, Docker, WhatsApp, or Pi state. It checks common `.local` names, browses advertised SSH services when `dns-sd` is available, and scans the local ARP cache for Raspberry Pi MAC prefixes. If it finds a likely host or IP, set `NANOCLAW_PI_HOST` and rerun `pi:mac-readiness` with `--include-ssh-preflight`.
+
 After SSH works:
 
 ```bash

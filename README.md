@@ -222,6 +222,12 @@ WhatsApp auth. The readiness output also points to
 values are still missing, uncomment and set the missing `NANOCLAW_PI_*` lines
 there, source it from the Mac Codex shell, then rerun readiness.
 
+If the Pi host or IP is not known yet, run a passive discovery pass from the Mac:
+
+```bash
+pnpm run pi:discover
+```
+
 When the Pi is on the network, add `--include-ssh-preflight` to the same
 command. That opens SSH only to run `pi:ssh-preflight`; it still does not start
 services, copy secrets, export state, or touch WhatsApp auth.

@@ -20,6 +20,7 @@ STRICT="false"
 SKIP_HEALTH="false"
 SKIP_PUBLIC_READINESS="false"
 SKIP_REMOTE_CHECK="false"
+SKIP_DISCOVERY="false"
 INCLUDE_SSH_PREFLIGHT="false"
 
 usage() {
@@ -55,6 +56,8 @@ Options:
   --skip-public-readiness         Do not run dc:public-readiness.
   --skip-remote-check             Do not check that expected commit is on the
                                   configured repo branch.
+  --skip-discovery                Do not run non-mutating Pi local-network
+                                  discovery.
   --include-ssh-preflight         Also run pi:ssh-preflight against the Pi.
                                   This opens SSH but does not mutate Pi state.
   -h, --help                      Show this help.
@@ -370,6 +373,10 @@ while [ "$#" -gt 0 ]; do
       SKIP_REMOTE_CHECK="true"
       shift
       ;;
+    --skip-discovery)
+      SKIP_DISCOVERY="true"
+      shift
+      ;;
     --include-ssh-preflight)
       INCLUDE_SSH_PREFLIGHT="true"
       shift
@@ -438,6 +445,14 @@ else
   if grep -Fq "MAC_EXPORT_PREFLIGHT=warn" "$READINESS_DIR/mac-preflight.txt"; then
     warnings+=("Mac export preflight has warnings; final export still requires stopped Mac host")
   fi
+fi
+
+if [ "$SKIP_DISCOVERY" = "true" ]; then
+  write_skipped "$READINESS_DIR/pi-discovery.txt" "Pi Discovery" "--skip-discovery supplied"
+elif is_missing_or_placeholder "$PI_HOST"; then
+  run_capture_allow_warn "$READINESS_DIR/pi-discovery.txt" "Pi Discovery" pnpm run pi:discover -- --timeout 3
+else
+  run_capture_allow_warn "$READINESS_DIR/pi-discovery.txt" "Pi Discovery" pnpm run pi:discover -- --timeout 3 --host "$PI_HOST"
 fi
 
 ssh_preflight_attempted="false"
@@ -519,6 +534,7 @@ fi
     printf '\n'
     printf '## Fillable Operator Environment\n\n'
     printf 'Start with `rehearsal/operator-env.sh` in this bundle. It contains only non-secret SSH, path, repo, branch, bridge-mode, and expected-commit values.\n\n'
+    printf 'Check `pi-discovery.txt` for passive local-network hints if the Pi host is still unknown.\n\n'
     printf 'Uncomment and set the missing `NANOCLAW_PI_*` exports there, source it from the Mac Codex shell, then rerun this readiness check. When the Pi is reachable, rerun with `--include-ssh-preflight`.\n\n'
   fi
 
@@ -544,6 +560,7 @@ fi
   printf -- '- `public-readiness.txt`\n'
   printf -- '- `health.json`\n'
   printf -- '- `mac-preflight.txt`\n'
+  printf -- '- `pi-discovery.txt`\n'
   printf -- '- `ssh-preflight.txt`\n'
   printf -- '- `rehearsal.txt`\n'
   printf -- '- `rehearsal/operator-env.sh`\n'

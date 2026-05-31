@@ -70,6 +70,7 @@ helper_scripts=(
   scripts/dc-stop-host.sh
   scripts/pi-codex-goal.sh
   scripts/pi-cutover-plan.sh
+  scripts/pi-discover.sh
   scripts/pi-mac-readiness.sh
   scripts/pi-rehearse-cutover.sh
   scripts/pi-ssh-admin.sh
@@ -102,6 +103,42 @@ assert_contains "$TMP_DIR/pi-install-dropbox-sync-help.out" "Installs a user-lev
 
 pnpm run pi:import -- --help >"$TMP_DIR/pi-import-help.out"
 assert_contains "$TMP_DIR/pi-import-help.out" "Restores a NanoClaw Raspberry Pi migration bundle" "pi import help accepts pnpm separator"
+
+pnpm run pi:discover -- --help >"$TMP_DIR/pi-discover-help.out"
+assert_contains "$TMP_DIR/pi-discover-help.out" "non-mutating local-network discovery" "pi discovery help documents purpose"
+assert_contains "$TMP_DIR/pi-discover-help.out" "No SSH is opened" "pi discovery help documents no SSH"
+
+fake_discovery_bin="$TMP_DIR/fake-discovery-bin"
+mkdir -p "$fake_discovery_bin"
+cat >"$fake_discovery_bin/getent" <<'FAKE_GETENT'
+#!/usr/bin/env bash
+set -euo pipefail
+if [ "${1:-}" = "hosts" ] && [ "${2:-}" = "nanoclaw-pi.local" ]; then
+  printf '192.168.1.43 nanoclaw-pi.local\n'
+  exit 0
+fi
+exit 2
+FAKE_GETENT
+cat >"$fake_discovery_bin/dns-sd" <<'FAKE_DNS_SD'
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'Browsing for _ssh._tcp.local.\n'
+printf 'DATE TIME Add 2 4 local. Raspberry Pi SSH\n'
+FAKE_DNS_SD
+cat >"$fake_discovery_bin/arp" <<'FAKE_ARP'
+#!/usr/bin/env bash
+set -euo pipefail
+printf '? (192.168.1.42) at b8:27:eb:aa:bb:cc on en0 ifscope [ethernet]\n'
+FAKE_ARP
+chmod +x "$fake_discovery_bin/getent" "$fake_discovery_bin/dns-sd" "$fake_discovery_bin/arp"
+PATH="$fake_discovery_bin:$PATH" pnpm run pi:discover -- --timeout 1 --host nanoclaw-pi.local >"$TMP_DIR/pi-discover.out"
+assert_contains "$TMP_DIR/pi-discover.out" "PI_DISCOVERY=ok" "pi discovery reports ok status"
+assert_contains "$TMP_DIR/pi-discover.out" "No SSH was opened. No state was changed." "pi discovery is non-mutating"
+assert_contains "$TMP_DIR/pi-discover.out" "nanoclaw-pi.local" "pi discovery checks requested host"
+assert_contains "$TMP_DIR/pi-discover.out" "192.168.1.43" "pi discovery reports resolved host"
+assert_contains "$TMP_DIR/pi-discover.out" "Raspberry Pi SSH" "pi discovery reports SSH service browse"
+assert_contains "$TMP_DIR/pi-discover.out" "192.168.1.42" "pi discovery reports Raspberry Pi ARP candidate"
+assert_contains "$TMP_DIR/pi-discover.out" "pnpm run pi:mac-readiness -- --include-ssh-preflight" "pi discovery suggests readiness preflight"
 
 fake_rclone_bin="$TMP_DIR/fake-rclone-bin"
 mkdir -p "$fake_rclone_bin"
@@ -391,14 +428,17 @@ assert_contains "$TMP_DIR/readiness.out" "No SSH was opened" "mac readiness is n
 [ -f "$readiness_dir/public-readiness.txt" ] || fail "mac readiness writes public-readiness artifact"
 [ -f "$readiness_dir/health.json" ] || fail "mac readiness writes health artifact"
 [ -f "$readiness_dir/mac-preflight.txt" ] || fail "mac readiness writes mac preflight"
+[ -f "$readiness_dir/pi-discovery.txt" ] || fail "mac readiness writes pi discovery artifact"
 [ -f "$readiness_dir/ssh-preflight.txt" ] || fail "mac readiness writes ssh preflight artifact"
 [ -f "$readiness_dir/rehearsal/operator-env.sh" ] || fail "mac readiness writes nested operator env"
 [ -f "$readiness_dir/rehearsal/summary.md" ] || fail "mac readiness writes nested rehearsal summary"
 assert_contains "$readiness_dir/public-readiness.txt" "Skipped" "mac readiness can skip public readiness"
 assert_contains "$readiness_dir/health.json" "Skipped" "mac readiness can skip health"
 assert_contains "$readiness_dir/ssh-preflight.txt" "Skipped: --include-ssh-preflight was not supplied" "mac readiness skips SSH preflight by default"
+assert_contains "$readiness_dir/pi-discovery.txt" "PI_DISCOVERY=ok" "mac readiness includes non-mutating Pi discovery"
 assert_contains "$readiness_dir/git-revision-check.txt" "GIT_REMOTE_COMMIT=ok" "mac readiness verifies expected commit is on configured branch"
 assert_contains "$readiness_dir/summary.md" "git-revision-check.txt" "mac readiness summary lists git revision check"
+assert_contains "$readiness_dir/summary.md" "pi-discovery.txt" "mac readiness summary lists pi discovery artifact"
 assert_contains "$readiness_dir/summary.md" "ssh-preflight.txt" "mac readiness summary lists ssh preflight artifact"
 assert_contains "$readiness_dir/summary.md" "rehearsal/operator-env.sh" "mac readiness summary lists nested operator env"
 assert_contains "$readiness_dir/summary.md" "Expected Pi commit" "mac readiness summary records expected Pi commit"
@@ -449,14 +489,18 @@ assert_contains "$TMP_DIR/readiness-missing.out" "PI_MAC_READINESS=missing_value
 assert_contains "$TMP_DIR/readiness-missing.out" "operator_env=$TMP_DIR/readiness-missing/rehearsal/operator-env.sh" "strict mac readiness prints fillable operator env path"
 assert_contains "$TMP_DIR/readiness-missing.out" "No SSH was opened" "strict mac readiness remains non-mutating"
 [ -f "$TMP_DIR/readiness-missing/rehearsal/operator-env.sh" ] || fail "strict mac readiness writes missing-value operator env"
+[ -f "$TMP_DIR/readiness-missing/pi-discovery.txt" ] || fail "strict mac readiness writes pi discovery artifact"
 assert_contains "$TMP_DIR/readiness-missing/summary.md" "Fillable Operator Environment" "strict mac readiness explains fillable operator env"
+assert_contains "$TMP_DIR/readiness-missing/summary.md" "Check \`pi-discovery.txt\` for passive local-network hints" "strict mac readiness points to pi discovery"
 assert_contains "$TMP_DIR/readiness-missing/summary.md" "rehearsal/operator-env.sh" "strict mac readiness summary points to operator env"
+assert_contains "$TMP_DIR/readiness-missing/pi-discovery.txt" "No SSH was opened. No state was changed." "strict mac readiness discovery is non-mutating"
 assert_contains "$TMP_DIR/readiness-missing/rehearsal/operator-env.sh" "# Missing: Pi host or IP" "strict mac readiness operator env marks missing Pi host"
 assert_contains "$TMP_DIR/readiness-missing/rehearsal/operator-env.sh" "# Missing: Pi Codex projects folder" "strict mac readiness operator env marks missing Pi Codex projects root"
 assert_contains "$TMP_DIR/readiness-missing/rehearsal/operator-env.sh" "export NANOCLAW_PI_EXPECTED_COMMIT=" "strict mac readiness operator env still records expected commit"
 
 pnpm run pi:mac-readiness -- --help >"$TMP_DIR/readiness-help.out"
 assert_contains "$TMP_DIR/readiness-help.out" "--include-ssh-preflight" "mac readiness help documents optional SSH preflight"
+assert_contains "$TMP_DIR/readiness-help.out" "--skip-discovery" "mac readiness help documents optional Pi discovery skip"
 
 verify_dir="$TMP_DIR/verify-cutover"
 pnpm run pi:verify-cutover -- \
