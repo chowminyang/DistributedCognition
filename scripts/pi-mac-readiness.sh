@@ -19,14 +19,15 @@ READINESS_DIR=""
 STRICT="false"
 SKIP_HEALTH="false"
 SKIP_PUBLIC_READINESS="false"
+SKIP_REMOTE_CHECK="false"
 
 usage() {
   cat <<'EOF'
 Usage: bash scripts/pi-mac-readiness.sh [options]
 
 Creates a non-mutating Mac-side readiness bundle for Raspberry Pi cutover.
-It gathers git state, public-readiness, DC health, Mac export preflight, and
-the Pi rehearsal bundle into one timestamped folder.
+It gathers git state, public branch reachability, public-readiness, DC health,
+Mac export preflight, and the Pi rehearsal bundle into one timestamped folder.
 
 This script does not SSH, stop services, copy files, inspect secrets, export
 state, import state, or touch WhatsApp runtime state.
@@ -51,6 +52,8 @@ Options:
   --strict                        Exit non-zero on warnings or missing Pi values.
   --skip-health                   Do not run dc:health.
   --skip-public-readiness         Do not run dc:public-readiness.
+  --skip-remote-check             Do not check that expected commit is on the
+                                  configured repo branch.
   -h, --help                      Show this help.
 
 Environment defaults:
@@ -177,6 +180,105 @@ write_skipped() {
   } >"$output_file"
 }
 
+write_git_revision_check() {
+  local output_file="$1"
+  local revision_warnings=()
+  local local_head=""
+  local local_short=""
+  local local_branch=""
+  local status_entries="unknown"
+  local status_output=""
+  local remote_output=""
+  local remote_code=0
+  local remote_head=""
+
+  local_head="$(git rev-parse HEAD 2>/dev/null || true)"
+  local_short="$(git rev-parse --short HEAD 2>/dev/null || true)"
+  local_branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
+  status_output="$(git status --short 2>/dev/null || true)"
+  if [ -n "$status_output" ]; then
+    status_entries="$(printf '%s\n' "$status_output" | wc -l | tr -d ' ')"
+  elif git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    status_entries="0"
+  fi
+
+  {
+    printf '# Git Revision Check\n\n'
+    printf 'Generated: `%s`\n\n' "$(date '+%d-%m-%y, %H:%M')"
+    printf 'This proves whether the commit pinned for the Pi is reachable from the configured public branch.\n\n'
+    printf '## Local\n\n'
+    printf -- '- Local branch: `%s`\n' "${local_branch:-unknown}"
+    printf -- '- Local HEAD: `%s`\n' "${local_head:-unknown}"
+    printf -- '- Expected Pi commit: `%s`\n' "${EXPECTED_COMMIT:-<not checked>}"
+    printf -- '- Worktree status entries: `%s`\n\n' "$status_entries"
+
+    if [ "$status_entries" != "0" ]; then
+      printf 'GIT_WORKTREE=dirty entries=%s\n\n' "$status_entries"
+      warnings+=("Git worktree has $status_entries status entries; expected Pi commit does not include uncommitted local changes")
+    else
+      printf 'GIT_WORKTREE=clean\n\n'
+    fi
+
+    if [ -n "$local_head" ] && [ -n "$EXPECTED_COMMIT" ]; then
+      if [[ "$local_head" == "$EXPECTED_COMMIT"* || "$EXPECTED_COMMIT" == "$local_head"* ]]; then
+        printf 'GIT_EXPECTED_COMMIT=ok actual=%s\n\n' "${local_short:-$local_head}"
+      else
+        printf 'GIT_EXPECTED_COMMIT=warn actual=%s expected=%s\n\n' "$local_head" "$EXPECTED_COMMIT"
+        revision_warnings+=("Expected Pi commit does not match local HEAD")
+      fi
+    else
+      printf 'GIT_EXPECTED_COMMIT=skipped\n\n'
+      revision_warnings+=("Could not compare expected commit with local HEAD")
+    fi
+
+    printf '## Remote\n\n'
+    printf -- '- Repo URL: `%s`\n' "${REPO_URL:-<missing>}"
+    printf -- '- Branch: `%s`\n\n' "${BRANCH:-<missing>}"
+
+    if [ "$SKIP_REMOTE_CHECK" = "true" ]; then
+      printf 'GIT_REMOTE_COMMIT=skipped reason=skip_remote_check\n'
+      revision_warnings+=("Remote branch check was skipped")
+    elif is_missing_or_placeholder "$REPO_URL" || is_missing_or_placeholder "$BRANCH" || [ -z "$EXPECTED_COMMIT" ]; then
+      printf 'GIT_REMOTE_COMMIT=skipped reason=missing_values\n'
+      revision_warnings+=("Remote branch check could not run because repo, branch, or expected commit is missing")
+    else
+      set +e
+      remote_output="$(git ls-remote "$REPO_URL" "refs/heads/$BRANCH" 2>&1)"
+      remote_code="$?"
+      set -e
+      if [ "$remote_code" -ne 0 ]; then
+        printf 'GIT_REMOTE_COMMIT=warn reason=ls_remote_failed\n\n'
+        printf '```text\n%s\n```\n' "$remote_output"
+        revision_warnings+=("Could not read configured repo branch with git ls-remote")
+      else
+        remote_head="$(printf '%s\n' "$remote_output" | awk 'NR == 1 {print $1}')"
+        if [ -z "$remote_head" ]; then
+          printf 'GIT_REMOTE_COMMIT=warn reason=branch_not_found\n'
+          revision_warnings+=("Configured repo branch was not found by git ls-remote")
+        elif [[ "$remote_head" == "$EXPECTED_COMMIT"* || "$EXPECTED_COMMIT" == "$remote_head"* ]]; then
+          printf -- '- Remote HEAD: `%s`\n\n' "$remote_head"
+          printf 'GIT_REMOTE_COMMIT=ok branch=%s remote=%s\n' "$BRANCH" "$remote_head"
+        else
+          printf -- '- Remote HEAD: `%s`\n\n' "$remote_head"
+          printf 'GIT_REMOTE_COMMIT=warn branch=%s remote=%s expected=%s\n' "$BRANCH" "$remote_head" "$EXPECTED_COMMIT"
+          revision_warnings+=("Expected Pi commit is not the HEAD of the configured repo branch")
+        fi
+      fi
+    fi
+
+    if [ "${#revision_warnings[@]}" -gt 0 ]; then
+      printf '\nGIT_REVISION_CHECK=warn\n'
+      printf '\n## Warnings\n\n'
+      for item in "${revision_warnings[@]}"; do
+        printf -- '- %s\n' "$item"
+        warnings+=("$item")
+      done
+    else
+      printf '\nGIT_REVISION_CHECK=ok\n'
+    fi
+  } >"$output_file"
+}
+
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --local-root)
@@ -261,6 +363,10 @@ while [ "$#" -gt 0 ]; do
       SKIP_PUBLIC_READINESS="true"
       shift
       ;;
+    --skip-remote-check)
+      SKIP_REMOTE_CHECK="true"
+      shift
+      ;;
     --)
       shift
       ;;
@@ -301,6 +407,7 @@ if [ -z "$EXPECTED_COMMIT" ] && git rev-parse --is-inside-work-tree >/dev/null 2
 fi
 
 run_capture "$READINESS_DIR/git-status.txt" "Git Status" git status --short --branch
+write_git_revision_check "$READINESS_DIR/git-revision-check.txt"
 
 if [ "$SKIP_PUBLIC_READINESS" = "true" ]; then
   write_skipped "$READINESS_DIR/public-readiness.txt" "Public Readiness" "--skip-public-readiness supplied"
@@ -400,6 +507,7 @@ fi
 
   printf '## Artifacts\n\n'
   printf -- '- `git-status.txt`\n'
+  printf -- '- `git-revision-check.txt`\n'
   printf -- '- `public-readiness.txt`\n'
   printf -- '- `health.json`\n'
   printf -- '- `mac-preflight.txt`\n'

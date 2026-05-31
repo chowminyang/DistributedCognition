@@ -124,10 +124,10 @@ pnpm run pi:mac-readiness -- \
   --branch main
 ```
 
-This writes `output/pi-mac-readiness/DD-MM-YY-HHMM/` with git status,
-public-readiness, DC health, Mac export preflight, and the nested rehearsal
-bundle. It is safe to run while the Mac instance is live; a warning that the
-Mac host is running is expected before final export.
+This writes `output/pi-mac-readiness/DD-MM-YY-HHMM/` with git status, public
+branch commit reachability, public-readiness, DC health, Mac export preflight,
+and the nested rehearsal bundle. It is safe to run while the Mac instance is
+live; a warning that the Mac host is running is expected before final export.
 
 When you are ready to capture the final state, stop the Mac launchd jobs first so SQLite, WhatsApp auth, bridge queues, and delivery ledgers are quiet:
 

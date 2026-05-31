@@ -199,8 +199,9 @@ pnpm run pi:mac-readiness -- \
   --pi-codex-projects-root "<pi Codex projects path>"
 ```
 
-This gathers git status, public-readiness, DC health, Mac export preflight, and
-the Pi rehearsal into `output/pi-mac-readiness/DD-MM-YY-HHMM/`. It is still
+This gathers git status, public branch commit reachability, public-readiness,
+DC health, Mac export preflight, and the Pi rehearsal into
+`output/pi-mac-readiness/DD-MM-YY-HHMM/`. It is still
 non-mutating: it does not SSH, stop the Mac host, export state, or touch
 WhatsApp auth.
 

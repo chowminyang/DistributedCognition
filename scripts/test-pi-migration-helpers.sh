@@ -261,6 +261,9 @@ assert_contains "$TMP_DIR/rehearsal-missing.out" "No SSH was opened" "strict cut
 readiness_root="$TMP_DIR/Distributed-Cognition"
 mkdir -p "$readiness_root/.dc-index"
 readiness_dir="$TMP_DIR/readiness"
+readiness_remote="$TMP_DIR/readiness-remote.git"
+git init --bare --initial-branch=main "$readiness_remote" >/dev/null
+git push "$readiness_remote" HEAD:refs/heads/main >/dev/null 2>&1
 pnpm run pi:mac-readiness -- \
   --local-root "$readiness_root" \
   --out-dir "$TMP_DIR/export" \
@@ -270,7 +273,7 @@ pnpm run pi:mac-readiness -- \
   --pi-path /home/pi/NanoClaw \
   --pi-second-brain-root /home/pi/Distributed-Cognition \
   --pi-codex-projects-root /home/pi/Codex \
-  --repo-url https://github.com/chowminyang/DistributedCognition.git \
+  --repo-url "$readiness_remote" \
   --branch main \
   --migration-date 02-06-26 \
   --skip-health \
@@ -280,16 +283,21 @@ assert_contains "$TMP_DIR/readiness.out" "PI_MAC_READINESS=" "mac readiness repo
 assert_contains "$TMP_DIR/readiness.out" "No SSH was opened" "mac readiness is non-mutating"
 [ -f "$readiness_dir/summary.md" ] || fail "mac readiness writes summary"
 [ -f "$readiness_dir/git-status.txt" ] || fail "mac readiness writes git status"
+[ -f "$readiness_dir/git-revision-check.txt" ] || fail "mac readiness writes git revision check"
 [ -f "$readiness_dir/public-readiness.txt" ] || fail "mac readiness writes public-readiness artifact"
 [ -f "$readiness_dir/health.json" ] || fail "mac readiness writes health artifact"
 [ -f "$readiness_dir/mac-preflight.txt" ] || fail "mac readiness writes mac preflight"
 [ -f "$readiness_dir/rehearsal/summary.md" ] || fail "mac readiness writes nested rehearsal summary"
 assert_contains "$readiness_dir/public-readiness.txt" "Skipped" "mac readiness can skip public readiness"
 assert_contains "$readiness_dir/health.json" "Skipped" "mac readiness can skip health"
+assert_contains "$readiness_dir/git-revision-check.txt" "GIT_REMOTE_COMMIT=ok" "mac readiness verifies expected commit is on configured branch"
+assert_contains "$readiness_dir/summary.md" "git-revision-check.txt" "mac readiness summary lists git revision check"
+assert_contains "$readiness_dir/summary.md" "Expected Pi commit" "mac readiness summary records expected Pi commit"
+assert_contains "$readiness_dir/rehearsal/operator-env.sh" "export NANOCLAW_PI_EXPECTED_COMMIT=" "mac readiness nested rehearsal carries expected commit"
 assert_contains "$readiness_dir/rehearsal/summary.md" "Status: \`ready\`" "mac readiness nested rehearsal is ready with complete values"
 
 set +e
-pnpm run pi:mac-readiness -- --strict --output-dir "$TMP_DIR/readiness-missing" --skip-health --skip-public-readiness >"$TMP_DIR/readiness-missing.out" 2>"$TMP_DIR/readiness-missing.err"
+pnpm run pi:mac-readiness -- --strict --output-dir "$TMP_DIR/readiness-missing" --skip-health --skip-public-readiness --skip-remote-check >"$TMP_DIR/readiness-missing.out" 2>"$TMP_DIR/readiness-missing.err"
 readiness_missing_code="$?"
 set -e
 assert_exit_code 1 "$readiness_missing_code" "strict mac readiness fails when values are missing"
