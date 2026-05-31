@@ -205,6 +205,10 @@ DC health, Mac export preflight, and the Pi rehearsal into
 non-mutating: it does not SSH, stop the Mac host, export state, or touch
 WhatsApp auth.
 
+When the Pi is on the network, add `--include-ssh-preflight` to the same
+command. That opens SSH only to run `pi:ssh-preflight`; it still does not start
+services, copy secrets, export state, or touch WhatsApp auth.
+
 Before pushing a public update, run the local public-boundary and Pi helper checks:
 
 ```bash

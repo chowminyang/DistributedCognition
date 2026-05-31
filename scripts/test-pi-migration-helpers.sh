@@ -305,14 +305,49 @@ assert_contains "$TMP_DIR/readiness.out" "No SSH was opened" "mac readiness is n
 [ -f "$readiness_dir/public-readiness.txt" ] || fail "mac readiness writes public-readiness artifact"
 [ -f "$readiness_dir/health.json" ] || fail "mac readiness writes health artifact"
 [ -f "$readiness_dir/mac-preflight.txt" ] || fail "mac readiness writes mac preflight"
+[ -f "$readiness_dir/ssh-preflight.txt" ] || fail "mac readiness writes ssh preflight artifact"
 [ -f "$readiness_dir/rehearsal/summary.md" ] || fail "mac readiness writes nested rehearsal summary"
 assert_contains "$readiness_dir/public-readiness.txt" "Skipped" "mac readiness can skip public readiness"
 assert_contains "$readiness_dir/health.json" "Skipped" "mac readiness can skip health"
+assert_contains "$readiness_dir/ssh-preflight.txt" "Skipped: --include-ssh-preflight was not supplied" "mac readiness skips SSH preflight by default"
 assert_contains "$readiness_dir/git-revision-check.txt" "GIT_REMOTE_COMMIT=ok" "mac readiness verifies expected commit is on configured branch"
 assert_contains "$readiness_dir/summary.md" "git-revision-check.txt" "mac readiness summary lists git revision check"
+assert_contains "$readiness_dir/summary.md" "ssh-preflight.txt" "mac readiness summary lists ssh preflight artifact"
 assert_contains "$readiness_dir/summary.md" "Expected Pi commit" "mac readiness summary records expected Pi commit"
 assert_contains "$readiness_dir/rehearsal/operator-env.sh" "export NANOCLAW_PI_EXPECTED_COMMIT=" "mac readiness nested rehearsal carries expected commit"
 assert_contains "$readiness_dir/rehearsal/summary.md" "Status: \`ready\`" "mac readiness nested rehearsal is ready with complete values"
+
+fake_bin="$TMP_DIR/fake-bin"
+mkdir -p "$fake_bin"
+cat >"$fake_bin/ssh" <<'FAKE_SSH'
+#!/usr/bin/env bash
+set -euo pipefail
+cat >/dev/null
+echo "MOCK_SSH_PREFLIGHT=ok"
+echo "PREFLIGHT_RESULT=ok failures=0 warnings=0"
+FAKE_SSH
+chmod +x "$fake_bin/ssh"
+readiness_ssh_dir="$TMP_DIR/readiness-with-ssh"
+PATH="$fake_bin:$PATH" pnpm run pi:mac-readiness -- \
+  --local-root "$readiness_root" \
+  --out-dir "$TMP_DIR/export" \
+  --output-dir "$readiness_ssh_dir" \
+  --pi-host nanoclaw-pi.local \
+  --pi-user pi \
+  --pi-path /home/pi/NanoClaw \
+  --pi-second-brain-root /home/pi/Distributed-Cognition \
+  --pi-codex-projects-root /home/pi/Codex \
+  --repo-url "$readiness_remote" \
+  --branch main \
+  --migration-date 02-06-26 \
+  --skip-health \
+  --skip-public-readiness \
+  --skip-remote-check \
+  --include-ssh-preflight \
+  >"$TMP_DIR/readiness-with-ssh.out"
+assert_contains "$readiness_ssh_dir/ssh-preflight.txt" "MOCK_SSH_PREFLIGHT=ok" "mac readiness can include SSH preflight"
+assert_contains "$readiness_ssh_dir/summary.md" "SSH preflight was attempted" "mac readiness summary distinguishes SSH preflight mode"
+assert_contains "$TMP_DIR/readiness-with-ssh.out" "SSH preflight was attempted" "mac readiness stdout distinguishes SSH preflight mode"
 
 set +e
 pnpm run pi:mac-readiness -- --strict --output-dir "$TMP_DIR/readiness-missing" --skip-health --skip-public-readiness --skip-remote-check >"$TMP_DIR/readiness-missing.out" 2>"$TMP_DIR/readiness-missing.err"
@@ -321,6 +356,9 @@ set -e
 assert_exit_code 1 "$readiness_missing_code" "strict mac readiness fails when values are missing"
 assert_contains "$TMP_DIR/readiness-missing.out" "PI_MAC_READINESS=missing_values" "strict mac readiness reports missing values"
 assert_contains "$TMP_DIR/readiness-missing.out" "No SSH was opened" "strict mac readiness remains non-mutating"
+
+pnpm run pi:mac-readiness -- --help >"$TMP_DIR/readiness-help.out"
+assert_contains "$TMP_DIR/readiness-help.out" "--include-ssh-preflight" "mac readiness help documents optional SSH preflight"
 
 verify_dir="$TMP_DIR/verify-cutover"
 pnpm run pi:verify-cutover -- \

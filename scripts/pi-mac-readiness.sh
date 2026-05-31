@@ -20,6 +20,7 @@ STRICT="false"
 SKIP_HEALTH="false"
 SKIP_PUBLIC_READINESS="false"
 SKIP_REMOTE_CHECK="false"
+INCLUDE_SSH_PREFLIGHT="false"
 
 usage() {
   cat <<'EOF'
@@ -54,6 +55,8 @@ Options:
   --skip-public-readiness         Do not run dc:public-readiness.
   --skip-remote-check             Do not check that expected commit is on the
                                   configured repo branch.
+  --include-ssh-preflight         Also run pi:ssh-preflight against the Pi.
+                                  This opens SSH but does not mutate Pi state.
   -h, --help                      Show this help.
 
 Environment defaults:
@@ -367,6 +370,10 @@ while [ "$#" -gt 0 ]; do
       SKIP_REMOTE_CHECK="true"
       shift
       ;;
+    --include-ssh-preflight)
+      INCLUDE_SSH_PREFLIGHT="true"
+      shift
+      ;;
     --)
       shift
       ;;
@@ -432,6 +439,24 @@ else
   fi
 fi
 
+ssh_preflight_attempted="false"
+if [ "$INCLUDE_SSH_PREFLIGHT" = "true" ]; then
+  if is_missing_or_placeholder "$PI_HOST" || is_missing_or_placeholder "$PI_USER" || is_missing_or_placeholder "$PI_PROJECT_ROOT" || is_missing_or_placeholder "$PI_SECOND_BRAIN_ROOT"; then
+    write_skipped "$READINESS_DIR/ssh-preflight.txt" "Pi SSH Preflight" "required Pi SSH/path values are missing"
+  else
+    ssh_preflight_attempted="true"
+    ssh_preflight_cmd=(pnpm run pi:ssh-preflight -- --host "$PI_HOST" --user "$PI_USER" --path "$PI_PROJECT_ROOT" --second-brain-root "$PI_SECOND_BRAIN_ROOT")
+    [ -n "$PI_CODEX_PROJECTS_ROOT" ] && ssh_preflight_cmd+=(--codex-projects-root "$PI_CODEX_PROJECTS_ROOT")
+    [ -n "$PI_RCLONE_REMOTE" ] && ssh_preflight_cmd+=(--rclone-remote "$PI_RCLONE_REMOTE")
+    run_capture_allow_warn "$READINESS_DIR/ssh-preflight.txt" "Pi SSH Preflight" "${ssh_preflight_cmd[@]}"
+    if grep -Fq "PREFLIGHT_RESULT=warn" "$READINESS_DIR/ssh-preflight.txt"; then
+      warnings+=("Pi SSH preflight completed with warnings")
+    fi
+  fi
+else
+  write_skipped "$READINESS_DIR/ssh-preflight.txt" "Pi SSH Preflight" "--include-ssh-preflight was not supplied"
+fi
+
 rehearsal_cmd=(pnpm run pi:rehearse-cutover -- --output-dir "$READINESS_DIR/rehearsal")
 [ -n "$LOCAL_SECOND_BRAIN_ROOT" ] && rehearsal_cmd+=(--local-root "$LOCAL_SECOND_BRAIN_ROOT")
 rehearsal_cmd+=(--out-dir "$OUT_DIR")
@@ -466,7 +491,11 @@ fi
   printf 'Status: `%s`\n\n' "$status"
   printf 'Generated: `%s`\n\n' "$(date '+%d-%m-%y, %H:%M')"
   printf 'Bundle path: `%s`\n\n' "$READINESS_DIR"
-  printf 'No SSH was opened. No WhatsApp/runtime state was changed.\n\n'
+  if [ "$ssh_preflight_attempted" = "true" ]; then
+    printf 'SSH preflight was attempted through `pi:ssh-preflight`. No WhatsApp/runtime state was changed.\n\n'
+  else
+    printf 'No SSH was opened. No WhatsApp/runtime state was changed.\n\n'
+  fi
   printf '## Current Values\n\n'
   printf -- '- Mac repo: `%s`\n' "$PROJECT_ROOT"
   printf -- '- Mac Distributed-Cognition folder: `%s`\n' "${LOCAL_SECOND_BRAIN_ROOT:-<missing>}"
@@ -511,6 +540,7 @@ fi
   printf -- '- `public-readiness.txt`\n'
   printf -- '- `health.json`\n'
   printf -- '- `mac-preflight.txt`\n'
+  printf -- '- `ssh-preflight.txt`\n'
   printf -- '- `rehearsal.txt`\n'
   printf -- '- `rehearsal/summary.md`\n\n'
 
@@ -529,7 +559,11 @@ fi
 
 echo "PI_MAC_READINESS=$status"
 echo "bundle=$READINESS_DIR"
-echo "No SSH was opened. No WhatsApp/runtime state was changed."
+if [ "$ssh_preflight_attempted" = "true" ]; then
+  echo "SSH preflight was attempted. No WhatsApp/runtime state was changed."
+else
+  echo "No SSH was opened. No WhatsApp/runtime state was changed."
+fi
 if [ "${#missing[@]}" -gt 0 ]; then
   echo "missing_values=${#missing[@]}"
 fi

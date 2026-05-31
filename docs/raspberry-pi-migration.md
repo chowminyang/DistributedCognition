@@ -380,6 +380,23 @@ export NANOCLAW_PI_EXPECTED_COMMIT="$(git rev-parse HEAD)"
 pnpm run pi:ssh-preflight
 ```
 
+You can also include this SSH check inside the Mac readiness bundle:
+
+```bash
+pnpm run pi:mac-readiness -- \
+  --local-root "$HOME/Library/CloudStorage/Dropbox/Distributed-Cognition" \
+  --pi-host nanoclaw-pi.local \
+  --pi-user pi \
+  --pi-path /home/pi/NanoClaw \
+  --pi-second-brain-root /home/pi/Distributed-Cognition \
+  --pi-codex-projects-root /home/pi/Codex \
+  --include-ssh-preflight
+```
+
+Without `--include-ssh-preflight`, the readiness bundle does not open SSH. With
+the flag, it opens SSH only for `pi:ssh-preflight`; it still does not mutate Pi
+state, start services, copy secrets, export state, or touch WhatsApp auth.
+
 If the Pi is freshly imaged and only SSH is working, run
 `pnpm run pi:ssh-bootstrap` first in dry-run mode, then with `--execute`,
 before this preflight.
