@@ -78,6 +78,7 @@ helper_scripts=(
   scripts/pi-ssh-admin.sh
   scripts/pi-ssh-bootstrap.sh
   scripts/pi-ssh-key-check.sh
+  scripts/pi-ssh-key-setup.sh
   scripts/pi-ssh-preflight.sh
   scripts/pi-ssh-restore-state.sh
   scripts/pi-ssh-start-runtime.sh
@@ -120,6 +121,58 @@ assert_contains "$TMP_DIR/pi-ssh-key-check-help.out" "Mac Codex has the local SS
 assert_contains "$TMP_DIR/pi-ssh-key-check-help.out" "--test-login" "pi ssh key check help documents login test"
 assert_contains "$TMP_DIR/pi-ssh-key-check-help.out" "distributed_cognition_pi_ed25519" "pi ssh key check help documents dedicated key preference"
 
+pnpm run pi:ssh-key-setup -- --help >"$TMP_DIR/pi-ssh-key-setup-help.out"
+assert_contains "$TMP_DIR/pi-ssh-key-setup-help.out" "Creates the dedicated Mac SSH identity" "pi ssh key setup help documents purpose"
+assert_contains "$TMP_DIR/pi-ssh-key-setup-help.out" "--execute" "pi ssh key setup help documents execute flag"
+assert_contains "$TMP_DIR/pi-ssh-key-setup-help.out" "distributed_cognition_pi_ed25519" "pi ssh key setup help documents default key"
+
+ssh_key_setup_home="$TMP_DIR/ssh-key-setup-home"
+mkdir -p "$ssh_key_setup_home"
+HOME="$ssh_key_setup_home" pnpm run pi:ssh-key-setup -- >"$TMP_DIR/pi-ssh-key-setup-dry-run.out"
+assert_contains "$TMP_DIR/pi-ssh-key-setup-dry-run.out" "PI_SSH_KEY_SETUP=dry_run" "pi ssh key setup is dry-run by default"
+assert_contains "$TMP_DIR/pi-ssh-key-setup-dry-run.out" "No SSH was opened" "pi ssh key setup is non-mutating by default"
+assert_contains "$TMP_DIR/pi-ssh-key-setup-dry-run.out" "pnpm run pi:ssh-key-setup -- --execute" "pi ssh key setup prints execute command"
+[ ! -e "$ssh_key_setup_home/.ssh/distributed_cognition_pi_ed25519" ] || fail "pi ssh key setup dry-run created a private key"
+ok "pi ssh key setup dry-run does not create a private key"
+
+fake_ssh_keygen_bin="$TMP_DIR/fake-ssh-keygen-bin"
+mkdir -p "$fake_ssh_keygen_bin"
+cat >"$fake_ssh_keygen_bin/ssh-keygen" <<'FAKE_SSH_KEYGEN'
+#!/usr/bin/env bash
+set -euo pipefail
+args=" $* "
+if [[ "$args" == *" -y "* ]]; then
+  printf 'ssh-ed25519 fake-public-key distributed-cognition-test\n'
+  exit 0
+fi
+output_file=""
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    -f)
+      output_file="${2:-}"
+      shift 2
+      ;;
+    *)
+      shift
+      ;;
+  esac
+done
+[ -n "$output_file" ] || { echo "missing -f" >&2; exit 2; }
+printf 'fake private key\n' >"$output_file"
+printf 'ssh-ed25519 fake-public-key distributed-cognition-test\n' >"$output_file.pub"
+FAKE_SSH_KEYGEN
+chmod +x "$fake_ssh_keygen_bin/ssh-keygen"
+
+ssh_key_setup_execute_home="$TMP_DIR/ssh-key-setup-execute-home"
+mkdir -p "$ssh_key_setup_execute_home"
+PATH="$fake_ssh_keygen_bin:$PATH" HOME="$ssh_key_setup_execute_home" pnpm run pi:ssh-key-setup -- --execute >"$TMP_DIR/pi-ssh-key-setup-execute.out"
+assert_contains "$TMP_DIR/pi-ssh-key-setup-execute.out" "PI_SSH_KEY_SETUP=created" "pi ssh key setup creates dedicated key with execute"
+[ -f "$ssh_key_setup_execute_home/.ssh/distributed_cognition_pi_ed25519" ] || fail "pi ssh key setup execute did not create private key"
+[ -f "$ssh_key_setup_execute_home/.ssh/distributed_cognition_pi_ed25519.pub" ] || fail "pi ssh key setup execute did not create public key"
+ok "pi ssh key setup execute creates keypair in fake home"
+PATH="$fake_ssh_keygen_bin:$PATH" HOME="$ssh_key_setup_execute_home" pnpm run pi:ssh-key-setup -- --execute >"$TMP_DIR/pi-ssh-key-setup-existing.out"
+assert_contains "$TMP_DIR/pi-ssh-key-setup-existing.out" "PI_SSH_KEY_SETUP=exists" "pi ssh key setup refuses to overwrite existing key"
+
 ssh_key_home="$TMP_DIR/ssh-key-home"
 mkdir -p "$ssh_key_home/.ssh"
 printf 'test private key placeholder\n' >"$ssh_key_home/.ssh/id_ed25519"
@@ -159,6 +212,7 @@ ssh_key_no_key_code="$?"
 set -e
 assert_exit_code 1 "$ssh_key_no_key_code" "strict pi ssh key check fails when no key exists"
 assert_contains "$TMP_DIR/pi-ssh-key-check-no-key.out" "PI_SSH_KEY_CHECK=missing_key" "pi ssh key check reports missing key"
+assert_contains "$TMP_DIR/pi-ssh-key-check-no-key.out" "pnpm run pi:ssh-key-setup -- --execute" "pi ssh key check suggests setup helper"
 assert_contains "$TMP_DIR/pi-ssh-key-check-no-key.out" "distributed_cognition_pi_ed25519" "pi ssh key check suggests dedicated key generation"
 assert_contains "$TMP_DIR/pi-ssh-key-check-no-key.out" 'export NANOCLAW_PI_SSH_IDENTITY_FILE="$HOME/.ssh/distributed_cognition_pi_ed25519"' "pi ssh key check suggests identity-file env"
 assert_contains "$TMP_DIR/pi-ssh-key-check-no-key.out" 'ssh-copy-id -i "$NANOCLAW_PI_SSH_IDENTITY_FILE.pub"' "pi ssh key check suggests copying dedicated public key"

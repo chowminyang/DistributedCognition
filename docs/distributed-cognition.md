@@ -1041,7 +1041,7 @@ Short migration path:
 
 1. Use Codex on the Mac as the SSH control plane for the Pi.
 2. Stop the Mac launchd jobs before exporting state.
-3. Set up SSH key login from the Mac to the Pi with the dedicated `~/.ssh/distributed_cognition_pi_ed25519` key; the helper scripts use non-interactive SSH by default.
+3. Set up SSH key login from the Mac to the Pi with `pnpm run pi:ssh-key-setup -- --execute`; the helper creates the dedicated `~/.ssh/distributed_cognition_pi_ed25519` key only when explicitly executed, and the SSH helpers use non-interactive SSH by default.
 4. Clone the repo on the Raspberry Pi.
 5. Restore only the deliberate state bundle: `.env`, `data/`, `store/`, `groups/`, and NanoClaw allowlists.
 6. Create a local second-brain folder on the Pi.

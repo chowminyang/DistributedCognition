@@ -314,9 +314,7 @@ fi
 if [ -z "$found_key" ]; then
   printf 'Suggested one-time setup:\n\n'
   printf '```bash\n'
-  printf 'mkdir -p "$HOME/.ssh"\n'
-  printf 'chmod 700 "$HOME/.ssh"\n'
-  printf 'ssh-keygen -t ed25519 -f "$HOME/.ssh/distributed_cognition_pi_ed25519" -N "" -C "distributed-cognition-mac-to-pi"\n'
+  printf 'pnpm run pi:ssh-key-setup -- --execute\n'
   printf 'export NANOCLAW_PI_SSH_IDENTITY_FILE="$HOME/.ssh/distributed_cognition_pi_ed25519"\n'
   printf 'ssh-copy-id -i "$NANOCLAW_PI_SSH_IDENTITY_FILE.pub" %s@%s\n' "${REMOTE_USER:-<pi-user>}" "${HOST:-<pi-host>}"
   printf 'pnpm run pi:ssh-key-check -- --identity-file "$NANOCLAW_PI_SSH_IDENTITY_FILE" --host %s --user %s --test-login\n' "${HOST:-<pi-host>}" "${REMOTE_USER:-<pi-user>}"

@@ -49,6 +49,7 @@
     "pi:ssh-admin": "bash scripts/pi-ssh-admin.sh",
     "pi:ssh-bootstrap": "bash scripts/pi-ssh-bootstrap.sh",
     "pi:ssh-key-check": "bash scripts/pi-ssh-key-check.sh",
+    "pi:ssh-key-setup": "bash scripts/pi-ssh-key-setup.sh",
     "pi:ssh-preflight": "bash scripts/pi-ssh-preflight.sh",
     "pi:ssh-restore-state": "bash scripts/pi-ssh-restore-state.sh",
     "pi:ssh-start-runtime": "bash scripts/pi-ssh-start-runtime.sh",

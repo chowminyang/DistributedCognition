@@ -152,9 +152,8 @@ automation-friendly key for this Pi handoff rather than reusing or overwriting a
 default personal SSH key:
 
 ```bash
-mkdir -p "$HOME/.ssh"
-chmod 700 "$HOME/.ssh"
-ssh-keygen -t ed25519 -f "$HOME/.ssh/distributed_cognition_pi_ed25519" -N "" -C "distributed-cognition-mac-to-pi"
+pnpm run pi:ssh-key-setup
+pnpm run pi:ssh-key-setup -- --execute
 export NANOCLAW_PI_SSH_IDENTITY_FILE="$HOME/.ssh/distributed_cognition_pi_ed25519"
 ```
 
