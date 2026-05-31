@@ -237,13 +237,16 @@ pnpm run pi:ssh-restore-state -- \
 ```
 
 When the dry-run output is correct and the Mac NanoClaw host is stopped, add
-`--execute` to the same command. The helper inspects the local bundle first,
-copies the bundle and checksum to the Pi, verifies the checksum on the Pi,
-imports state through `scripts/pi-import-state.sh`, runs `pnpm run build`, and
-removes the copied bundle from the Pi when `--cleanup-remote` is supplied. The
-Pi-side importer also refuses to restore over a running NanoClaw host process
-or NanoClaw Docker agent container unless `--allow-running` is explicitly used
-for an emergency best-effort import.
+`--execute` to the same command. The execute path refuses while this Mac
+checkout appears to be running a NanoClaw host or Docker agent container unless
+`--allow-mac-host-running` is used for explicit rollback or emergency work. The
+helper inspects the local bundle first, copies the bundle and checksum to the
+Pi, verifies the checksum on the Pi, imports state through
+`scripts/pi-import-state.sh`, runs `pnpm run build`, and removes the copied
+bundle from the Pi when `--cleanup-remote` is supplied. The Pi-side importer
+also refuses to restore over a running NanoClaw host process or NanoClaw Docker
+agent container unless `--allow-running` is explicitly used for an emergency
+best-effort import.
 
 Then configure the Pi runtime with a second dry run:
 

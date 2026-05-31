@@ -534,6 +534,7 @@ assert_contains "$TMP_DIR/ssh-bootstrap-help.out" "NANOCLAW_PI_SSH_CONNECT_TIMEO
 pnpm run pi:ssh-restore-state -- --help >"$TMP_DIR/ssh-restore-help.out"
 assert_contains "$TMP_DIR/ssh-restore-help.out" "dry-run by default" "ssh restore help documents dry-run default"
 assert_contains "$TMP_DIR/ssh-restore-help.out" "verifies the checksum on the Pi" "ssh restore help documents remote checksum verification"
+assert_contains "$TMP_DIR/ssh-restore-help.out" "--allow-mac-host-running" "ssh restore help documents Mac host guard override"
 assert_contains "$TMP_DIR/ssh-restore-help.out" "NANOCLAW_PI_SSH_CONNECT_TIMEOUT" "ssh restore help documents SSH timeout env"
 
 pnpm run pi:ssh-start-runtime -- --help >"$TMP_DIR/ssh-start-runtime-help.out"
@@ -793,6 +794,7 @@ pnpm run pi:ssh-restore-state -- \
   >"$TMP_DIR/ssh-restore-dry-run.out"
 assert_contains "$TMP_DIR/ssh-restore-dry-run.out" "PI_SSH_RESTORE_STATE=dry_run" "ssh restore dry-run does not SSH"
 assert_contains "$TMP_DIR/ssh-restore-dry-run.out" "No SSH was opened" "ssh restore dry-run is non-mutating"
+assert_contains "$TMP_DIR/ssh-restore-dry-run.out" "Mac host guard: enforced" "ssh restore dry-run reports Mac host guard"
 assert_contains "$TMP_DIR/ssh-restore-dry-run.out" "STATE_BUNDLE_INSPECT=ok" "ssh restore dry-run inspects local state bundle"
 assert_contains "$TMP_DIR/ssh-restore-dry-run.out" "pi-import-state.sh" "ssh restore dry-run shows import command"
 assert_contains "$TMP_DIR/ssh-restore-dry-run.out" "pnpm run build" "ssh restore dry-run shows build command"
@@ -883,6 +885,17 @@ PATH="$fake_docker_bin:$PATH" pnpm run pi:import -- \
   >"$TMP_DIR/pi-import-docker-running.out" \
   2>"$TMP_DIR/pi-import-docker-running.err"
 pi_import_docker_code="$?"
+PATH="$fake_docker_bin:$PATH" pnpm run pi:ssh-restore-state -- \
+  --host nanoclaw-pi.local \
+  --user pi \
+  --path /home/pi/NanoClaw \
+  --bundle "$bundle_path" \
+  --force \
+  --cleanup-remote \
+  --execute \
+  >"$TMP_DIR/ssh-restore-docker-guard.out" \
+  2>"$TMP_DIR/ssh-restore-docker-guard.err"
+restore_docker_guard_code="$?"
 PATH="$fake_docker_bin:$PATH" pnpm run pi:ssh-start-runtime -- \
   --host nanoclaw-pi.local \
   --user pi \
@@ -909,12 +922,38 @@ assert_contains "$TMP_DIR/pi-export-docker-running.err" "dc-sidecar-test" "pi ex
 assert_exit_code 1 "$pi_import_docker_code" "pi import refuses while NanoClaw Docker container is running"
 assert_contains "$TMP_DIR/pi-import-docker-running.err" "NanoClaw Docker agent containers are still running" "pi import reports running Docker containers"
 assert_contains "$TMP_DIR/pi-import-docker-running.err" "dc-sidecar-test" "pi import names image-matched Docker container"
+assert_exit_code 1 "$restore_docker_guard_code" "ssh restore execute refuses while Mac Docker container is running"
+assert_contains "$TMP_DIR/ssh-restore-docker-guard.err" "Matching Docker containers" "ssh restore Docker guard reports matching containers"
+assert_contains "$TMP_DIR/ssh-restore-docker-guard.err" "dc-sidecar-test" "ssh restore Docker guard names image-matched container"
 assert_exit_code 1 "$docker_guard_code" "ssh start runtime refuses while Mac Docker container is running"
 assert_contains "$TMP_DIR/ssh-start-runtime-docker-guard.err" "Matching Docker containers" "ssh start runtime Docker guard reports matching containers"
 assert_contains "$TMP_DIR/ssh-start-runtime-docker-guard.err" "dc-sidecar-test" "ssh start runtime Docker guard names image-matched container"
 assert_exit_code 1 "$admin_docker_guard_code" "ssh admin restart refuses while Mac Docker container is running"
 assert_contains "$TMP_DIR/ssh-admin-restart-docker-guard.err" "Matching Docker containers" "ssh admin Docker guard reports matching containers"
 assert_contains "$TMP_DIR/ssh-admin-restart-docker-guard.err" "dc-sidecar-test" "ssh admin Docker guard names image-matched container"
+
+node -e 'setInterval(() => {}, 1000)' dist/index.js >/dev/null 2>&1 &
+MAC_GUARD_PID="$!"
+sleep 1
+set +e
+pnpm run pi:ssh-restore-state -- \
+  --host nanoclaw-pi.local \
+  --user pi \
+  --path /home/pi/NanoClaw \
+  --bundle "$bundle_path" \
+  --force \
+  --cleanup-remote \
+  --execute \
+  >"$TMP_DIR/ssh-restore-mac-guard.out" \
+  2>"$TMP_DIR/ssh-restore-mac-guard.err"
+restore_mac_guard_code="$?"
+kill "$MAC_GUARD_PID" 2>/dev/null || true
+wait "$MAC_GUARD_PID" 2>/dev/null || true
+MAC_GUARD_PID=""
+set -e
+assert_exit_code 1 "$restore_mac_guard_code" "ssh restore execute refuses while Mac host is running"
+assert_contains "$TMP_DIR/ssh-restore-mac-guard.err" "Refusing to restore Pi state while the Mac NanoClaw host appears to be running" "ssh restore Mac guard explains refusal"
+assert_contains "$TMP_DIR/ssh-restore-mac-guard.err" "WhatsApp/Baileys state should be exported/restored only after the Mac runtime is stopped" "ssh restore Mac guard protects WhatsApp state transfer"
 
 node -e 'setInterval(() => {}, 1000)' dist/index.js >/dev/null 2>&1 &
 MAC_GUARD_PID="$!"

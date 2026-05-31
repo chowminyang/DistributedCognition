@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 HOST="${NANOCLAW_PI_HOST:-${PI_HOST:-}}"
 REMOTE_USER="${NANOCLAW_PI_USER:-${PI_USER:-}}"
 REMOTE_PROJECT_ROOT="${NANOCLAW_PI_PROJECT_ROOT:-}"
@@ -8,6 +9,7 @@ BUNDLE="${NANOCLAW_PI_STATE_BUNDLE:-}"
 CHECKSUM="${NANOCLAW_PI_STATE_CHECKSUM:-}"
 REMOTE_IMPORT_DIR="${NANOCLAW_PI_REMOTE_IMPORT_DIR:-~/nanoclaw-state-import}"
 SSH_CONNECT_TIMEOUT="${NANOCLAW_PI_SSH_CONNECT_TIMEOUT:-}"
+ALLOW_MAC_HOST_RUNNING="${NANOCLAW_PI_ALLOW_MAC_HOST_RUNNING:-false}"
 EXECUTE=false
 FORCE=false
 CLEANUP_REMOTE=false
@@ -26,6 +28,8 @@ state when --execute is supplied.
 
 What --execute does:
   - inspects the local bundle and checksum before transfer;
+  - refuses to copy or import state while this Mac checkout appears to be
+    running NanoClaw, unless --allow-mac-host-running is supplied;
   - creates the remote import directory on the Pi;
   - copies the bundle and .sha256 file to that directory;
   - verifies the SHA-256 checksum on the Pi before import;
@@ -48,6 +52,9 @@ Optional:
   --force                        Pass --force to scripts/pi-import-state.sh.
   --cleanup-remote               Delete the copied bundle and checksum after a
                                  successful import and build.
+  --allow-mac-host-running       Allow --execute even if this Mac checkout
+                                 still appears to run NanoClaw. Use only for
+                                 rollback/emergency work.
   --execute                      Actually copy and import state.
   --ssh-option <option>          Extra ssh/scp option. Values like BatchMode=yes
                                  are passed as -o options. May be repeated.
@@ -61,6 +68,7 @@ Environment defaults:
   NANOCLAW_PI_STATE_CHECKSUM
   NANOCLAW_PI_REMOTE_IMPORT_DIR
   NANOCLAW_PI_SSH_CONNECT_TIMEOUT
+  NANOCLAW_PI_ALLOW_MAC_HOST_RUNNING
 
 Examples:
   bash scripts/pi-ssh-restore-state.sh --host nanoclaw-pi.local --user pi --path /home/pi/NanoClaw --bundle "$HOME/Desktop/dc-pi-migration/nanoclaw-pi-state-20260601T120000Z.tar.gz"
@@ -105,6 +113,130 @@ shell_quote() {
   printf '%q' "$1"
 }
 
+have_local() {
+  command -v "$1" >/dev/null 2>&1
+}
+
+canonical_dir() {
+  (cd "$1" 2>/dev/null && pwd -P)
+}
+
+pid_cwd() {
+  local pid="$1"
+  local cwd=""
+
+  if have_local lsof; then
+    cwd="$(lsof -a -p "$pid" -d cwd -Fn 2>/dev/null | sed -n 's/^n//p' | head -n 1 || true)"
+  fi
+
+  if [ -z "$cwd" ] && [ -e "/proc/$pid/cwd" ] && have_local readlink; then
+    cwd="$(readlink "/proc/$pid/cwd" 2>/dev/null || true)"
+  fi
+
+  [ -n "$cwd" ] || return 1
+  canonical_dir "$cwd"
+}
+
+find_local_host_pids() {
+  have_local pgrep || return 0
+
+  local candidates
+  candidates="$(pgrep -f '(^|[ /])(node|tsx)([ ]|.*[ ])(dist/index\.js|src/index\.ts)' 2>/dev/null || true)"
+  [ -n "$candidates" ] || return 0
+
+  local pid cwd
+  while IFS= read -r pid; do
+    [ -n "$pid" ] || continue
+    [ "$pid" != "$$" ] || continue
+    [ "$pid" != "${PPID:-}" ] || continue
+    cwd="$(pid_cwd "$pid" 2>/dev/null || true)"
+    [ "$cwd" = "$PROJECT_ROOT" ] || continue
+    printf '%s\n' "$pid"
+  done <<EOF
+$candidates
+EOF
+}
+
+find_local_screen_sessions() {
+  have_local screen || return 0
+
+  { screen -ls 2>/dev/null || true; } |
+    awk '
+      /[0-9]+\./ {
+        for (i = 1; i <= NF; i += 1) {
+          if ($i ~ /^[0-9]+\./ && tolower($i) ~ /(nanoclaw|distributed|cognition)/) {
+            print $i
+          }
+        }
+      }
+    '
+}
+
+find_local_docker_containers() {
+  have_local docker || return 0
+
+  docker ps --format '{{.Names}}\t{{.Image}}\t{{.Status}}' 2>/dev/null |
+    awk -F '\t' '
+      $1 ~ /^nanoclaw-v2-/ || $1 ~ /^nanoclaw-agent-v2-/ || $2 ~ /(^|\/)nanoclaw-agent(:|@|$|-v2-)/ {
+        print $1
+      }
+    '
+}
+
+unique_lines() {
+  awk 'NF && !seen[$0]++'
+}
+
+require_mac_host_stopped_for_execute() {
+  [ "$ALLOW_MAC_HOST_RUNNING" != "true" ] || {
+    echo "WARN - Mac host guard bypassed by --allow-mac-host-running" >&2
+    return 0
+  }
+
+  local host_pids screen_sessions docker_containers
+  host_pids="$(find_local_host_pids | unique_lines)"
+  screen_sessions="$(find_local_screen_sessions | unique_lines)"
+  docker_containers="$(find_local_docker_containers | unique_lines)"
+
+  [ -z "$host_pids" ] && [ -z "$screen_sessions" ] && [ -z "$docker_containers" ] && return 0
+
+  echo "Refusing to restore Pi state while the Mac NanoClaw host appears to be running." >&2
+  echo "WhatsApp/Baileys state should be exported/restored only after the Mac runtime is stopped." >&2
+  echo "Run this first during final cutover:" >&2
+  echo "  pnpm run dc:install-launchd -- uninstall" >&2
+  echo "  pnpm run dc:stop-host -- --execute" >&2
+  echo "  pnpm run pi:mac-preflight -- --root <mac Distributed-Cognition folder> --out-dir <export dir> --require-stopped" >&2
+  echo "  pnpm run pi:export -- --out-dir <export dir>" >&2
+  echo >&2
+  if [ -n "$screen_sessions" ]; then
+    echo "Matching screen sessions:" >&2
+    while IFS= read -r session; do
+      [ -n "$session" ] && echo "  screen: $session" >&2
+    done <<EOF
+$screen_sessions
+EOF
+  fi
+  if [ -n "$docker_containers" ]; then
+    echo "Matching Docker containers:" >&2
+    while IFS= read -r container; do
+      [ -n "$container" ] && echo "  container: $container" >&2
+    done <<EOF
+$docker_containers
+EOF
+  fi
+  if [ -n "$host_pids" ]; then
+    echo "Matching host PIDs:" >&2
+    while IFS= read -r pid; do
+      [ -n "$pid" ] && echo "  pid: $pid" >&2
+    done <<EOF
+$host_pids
+EOF
+  fi
+  echo >&2
+  echo "Use --allow-mac-host-running only for explicit rollback or emergency work." >&2
+  exit 1
+}
+
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --host)
@@ -143,6 +275,10 @@ while [ "$#" -gt 0 ]; do
       ;;
     --cleanup-remote)
       CLEANUP_REMOTE=true
+      shift
+      ;;
+    --allow-mac-host-running)
+      ALLOW_MAC_HOST_RUNNING=true
       shift
       ;;
     --execute)
@@ -217,6 +353,11 @@ echo "Remote import dir: $REMOTE_IMPORT_DIR"
 [ -n "$SSH_CONNECT_TIMEOUT" ] && echo "SSH connect timeout: ${SSH_CONNECT_TIMEOUT}s"
 echo "Force import: $FORCE"
 echo "Cleanup remote bundle: $CLEANUP_REMOTE"
+if [ "$ALLOW_MAC_HOST_RUNNING" = "true" ]; then
+  echo "Mac host guard: bypassed"
+else
+  echo "Mac host guard: enforced"
+fi
 echo
 
 echo "== Inspect Local State Bundle =="
@@ -237,6 +378,8 @@ if [ "$EXECUTE" != "true" ]; then
   echo "Add --execute only after the Mac host is stopped and the exported bundle is final."
   exit 0
 fi
+
+require_mac_host_stopped_for_execute
 
 REMOTE_IMPORT_DIR_RESOLVED="$(
   ssh "${SSH_OPTIONS[@]}" "$TARGET" 'bash -s' -- "$REMOTE_IMPORT_DIR" <<'REMOTE'
