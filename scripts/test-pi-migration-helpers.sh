@@ -452,6 +452,7 @@ assert_contains "$TMP_DIR/readiness-missing.out" "No SSH was opened" "strict mac
 assert_contains "$TMP_DIR/readiness-missing/summary.md" "Fillable Operator Environment" "strict mac readiness explains fillable operator env"
 assert_contains "$TMP_DIR/readiness-missing/summary.md" "rehearsal/operator-env.sh" "strict mac readiness summary points to operator env"
 assert_contains "$TMP_DIR/readiness-missing/rehearsal/operator-env.sh" "# Missing: Pi host or IP" "strict mac readiness operator env marks missing Pi host"
+assert_contains "$TMP_DIR/readiness-missing/rehearsal/operator-env.sh" "# Missing: Pi Codex projects folder" "strict mac readiness operator env marks missing Pi Codex projects root"
 assert_contains "$TMP_DIR/readiness-missing/rehearsal/operator-env.sh" "export NANOCLAW_PI_EXPECTED_COMMIT=" "strict mac readiness operator env still records expected commit"
 
 pnpm run pi:mac-readiness -- --help >"$TMP_DIR/readiness-help.out"

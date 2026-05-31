@@ -269,6 +269,10 @@ export NANOCLAW_PI_EXPECTED_COMMIT="$(git rev-parse HEAD)"
 pnpm run pi:ssh-preflight
 ```
 
+Set `NANOCLAW_PI_CODEX_PROJECTS_ROOT` even if Codex/action queues will remain
+reviewable from Mac Codex; the Pi uses that path for Docker mount access and
+bridge timer setup.
+
 Or pass the values inline:
 
 ```bash

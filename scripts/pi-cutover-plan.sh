@@ -194,7 +194,7 @@ Current values:
   Pi SSH target: ${PI_USER:-<missing>}@${PI_HOST:-<missing>}
   Pi NanoClaw path: ${PI_PROJECT_ROOT:-<missing>}
   Pi second brain: ${PI_SECOND_BRAIN_ROOT:-<missing>}
-  Pi Codex projects: ${PI_CODEX_PROJECTS_ROOT:-<optional-not-set>}
+  Pi Codex projects: ${PI_CODEX_PROJECTS_ROOT:-<missing>}
   Pi rclone remote: ${PI_RCLONE_REMOTE:-<optional-not-set>}
   Pi systemd unit: ${PI_UNIT_NAME:-<auto-detect>}
   Repo URL: $REPO_URL

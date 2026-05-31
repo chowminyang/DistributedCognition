@@ -401,6 +401,9 @@ When you ask Codex on the Mac to control the Pi, have these ready:
 - SSH host: `nanoclaw-pi.local` or the Pi's LAN IP.
 - SSH user: usually `pi` or the username created in Raspberry Pi Imager.
 - NanoClaw path: usually `/home/pi/NanoClaw`.
+- Pi Codex projects path: usually `/home/pi/Codex`; needed for Docker mount
+  access and bridge timer setup even when Codex/action queues stay reviewable
+  from Mac Codex.
 - Whether Docker `hello-world` succeeds without `sudo`.
 - The exported bundle path if the restore has not happened yet.
 

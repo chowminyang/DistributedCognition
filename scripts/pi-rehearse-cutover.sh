@@ -272,7 +272,7 @@ write_summary() {
     printf -- '- Pi SSH target: `%s@%s`\n' "${PI_USER:-<missing>}" "${PI_HOST:-<missing>}"
     printf -- '- Pi NanoClaw path: `%s`\n' "${PI_PROJECT_ROOT:-<missing>}"
     printf -- '- Pi Distributed-Cognition folder: `%s`\n' "${PI_SECOND_BRAIN_ROOT:-<missing>}"
-    printf -- '- Pi Codex projects folder: `%s`\n' "${PI_CODEX_PROJECTS_ROOT:-<optional-not-set>}"
+    printf -- '- Pi Codex projects folder: `%s`\n' "${PI_CODEX_PROJECTS_ROOT:-<missing>}"
     printf -- '- Pi rclone remote: `%s`\n' "${PI_RCLONE_REMOTE:-<optional-not-set>}"
     printf -- '- Pi systemd unit: `%s`\n' "${PI_UNIT_NAME:-<auto-detect>}"
     printf -- '- Pi SSH connect timeout: `%ss`\n' "${PI_SSH_CONNECT_TIMEOUT:-<unset>}"
