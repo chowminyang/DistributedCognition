@@ -184,7 +184,7 @@ action_bridge_config="$action_bridge_root/.dc-index/action-bridge.config.json"
 assert_contains "$action_bridge_config" '"launchMode": "app-server"' "action bridge defaults to app-visible Codex app-server mode"
 assert_contains "$action_bridge_config" '"remoteRuntime"' "action bridge config includes remote runtime section"
 assert_contains "$action_bridge_config" '"host": "nanoclaw-pi.local"' "action bridge config captures Pi host context"
-assert_contains "$action_bridge_config" '"adminCommand": "pnpm run pi:ssh-admin"' "action bridge config captures Pi admin helper"
+assert_contains "$action_bridge_config" '"adminCommand": "pnpm run pi:ssh-admin --"' "action bridge config captures Pi admin helper"
 
 goal_out="$TMP_DIR/codex-goal.out"
 pnpm run pi:codex-goal -- \

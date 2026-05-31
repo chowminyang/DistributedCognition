@@ -29,7 +29,24 @@ describe('remote runtime context', () => {
     expect(markdown).toContain('Mac as the SSH control plane');
     expect(markdown).toContain('Do not start or restart the Mac NanoClaw/WhatsApp host');
     expect(markdown).toContain("cd '/Users/minyangchow/Documents/NanoClaw'");
-    expect(markdown).toContain("pnpm run pi:ssh-admin status --host 'nanoclaw-pi.local'");
+    expect(markdown).toContain("pnpm run pi:ssh-admin -- status --host 'nanoclaw-pi.local'");
+    expect(markdown).toContain("pnpm run pi:ssh-admin -- bridge-timers --host 'nanoclaw-pi.local'");
+    expect(markdown).toContain(
+      "pnpm run pi:ssh-admin -- process-bridges --host 'nanoclaw-pi.local' --user 'pi' --path '/home/pi/NanoClaw' --second-brain-root '/home/pi/Distributed-Cognition' --codex-projects-root '/home/pi/Codex'",
+    );
+    expect(markdown).toContain('--execute-bridges');
     expect(markdown).toContain("--expected-commit 'abc123'");
+  });
+
+  it('normalizes older persisted pnpm admin commands without the separator', () => {
+    const markdown = renderRemoteRuntimeContext({
+      enabled: true,
+      host: 'nanoclaw-pi.local',
+      user: 'pi',
+      projectRoot: '/home/pi/NanoClaw',
+      adminCommand: 'pnpm run pi:ssh-admin',
+    });
+
+    expect(markdown).toContain("pnpm run pi:ssh-admin -- status --host 'nanoclaw-pi.local'");
   });
 });

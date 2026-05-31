@@ -28,7 +28,7 @@ export function defaultRemoteRuntimeConfigFromEnv(
     codexProjectsRoot: env.NANOCLAW_PI_CODEX_PROJECTS_ROOT || '',
     expectedCommit: env.NANOCLAW_PI_EXPECTED_COMMIT || '',
     operatorRepo,
-    adminCommand: 'pnpm run pi:ssh-admin',
+    adminCommand: 'pnpm run pi:ssh-admin --',
   };
 }
 
@@ -40,15 +40,26 @@ function commandOption(name: string, value?: string): string[] {
   return value ? [`--${name}`, shellQuote(value)] : [];
 }
 
-function adminCommand(config: RemoteRuntimeConfig, action: string, includeSecondBrain = false): string {
+function normalizedAdminCommand(command?: string): string {
+  const base = (command || 'pnpm run pi:ssh-admin --').trim();
+  return base === 'pnpm run pi:ssh-admin' ? `${base} --` : base;
+}
+
+function adminCommand(
+  config: RemoteRuntimeConfig,
+  action: string,
+  options: { includeSecondBrain?: boolean; includeCodexProjects?: boolean; executeBridges?: boolean } = {},
+): string {
   const parts = [
-    config.adminCommand || 'pnpm run pi:ssh-admin',
+    normalizedAdminCommand(config.adminCommand),
     action,
     ...commandOption('host', config.host),
     ...commandOption('user', config.user),
     ...commandOption('path', config.projectRoot),
   ];
-  if (includeSecondBrain) parts.push(...commandOption('second-brain-root', config.secondBrainRoot));
+  if (options.includeSecondBrain) parts.push(...commandOption('second-brain-root', config.secondBrainRoot));
+  if (options.includeCodexProjects) parts.push(...commandOption('codex-projects-root', config.codexProjectsRoot));
+  if (options.executeBridges) parts.push('--execute-bridges');
   if (config.expectedCommit && (action === 'status' || action === 'doctor')) {
     parts.push(...commandOption('expected-commit', config.expectedCommit));
   }
@@ -78,7 +89,23 @@ export function renderRemoteRuntimeContext(config?: RemoteRuntimeConfig): string
   lines.push('', 'Useful Mac control-plane commands:');
   if (config.operatorRepo) lines.push(`- cd ${shellQuote(config.operatorRepo)}`);
   lines.push(`- ${adminCommand(config, 'status')}`);
-  lines.push(`- ${adminCommand(config, 'doctor', true)}`);
+  lines.push(`- ${adminCommand(config, 'doctor', { includeSecondBrain: true })}`);
+  lines.push(`- ${adminCommand(config, 'bridge-timers')}`);
+  if (config.secondBrainRoot && config.codexProjectsRoot) {
+    lines.push(
+      `- ${adminCommand(config, 'process-bridges', {
+        includeSecondBrain: true,
+        includeCodexProjects: true,
+      })}`,
+    );
+    lines.push(
+      `- ${adminCommand(config, 'process-bridges', {
+        includeSecondBrain: true,
+        includeCodexProjects: true,
+        executeBridges: true,
+      })}`,
+    );
+  }
   lines.push(`- ${adminCommand(config, 'logs')}`);
 
   return lines.join('\n');
