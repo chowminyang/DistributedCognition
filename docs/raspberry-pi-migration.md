@@ -520,17 +520,20 @@ pnpm run pi:verify-cutover -- \
 The verifier writes `output/pi-cutover-verification/DD-MM-YY-HHMM/` with:
 
 - Mac stopped-state preflight.
+- Mac runtime-lock proof from `logs/pi-cutover/mac-runtime-disabled.lock`.
 - Pi service/status output.
+- Pi bridge timer and expected bridge mode output.
 - Pi `dc:health` output.
 - Pi dashboard refresh output.
 - Optional Pi WhatsApp persistence proof when `--proof-text` is supplied.
 - A manual WhatsApp checklist.
 
-This helper can prove the local stopped state and Pi health path. With
-`--proof-text`, it can also prove that a manually sent WhatsApp capture landed
-in recent Pi second-brain files without printing the note body. The visible
-WhatsApp reply still needs to be checked from the allowlisted 1:1 chat before
-the migration is complete.
+This helper can prove the local stopped state, the local restart-prevention
+lock, the expected Pi bridge-timer mode, and Pi health path. With `--proof-text`,
+it can also prove that a manually sent WhatsApp capture landed in recent Pi
+second-brain files without printing the note body. The visible WhatsApp reply
+still needs to be checked from the allowlisted 1:1 chat before the migration is
+complete.
 
 ## Bridge Work After Cutover
 

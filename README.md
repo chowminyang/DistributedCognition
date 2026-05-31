@@ -303,8 +303,8 @@ pnpm run pi:verify-cutover -- \
 ```
 
 After the Mac host is stopped and the Pi service is running, add `--execute`.
-This checks the Mac stopped state plus Pi status, bridge timers, bridge timer
-mode, health, and dashboard output, and writes
+This checks the Mac stopped state, the Mac runtime lock written by final export,
+Pi status, bridge timers, bridge timer mode, health, and dashboard output, and writes
 `output/pi-cutover-verification/DD-MM-YY-HHMM/`. If `--expected-commit` is
 omitted, the verifier uses the current local `HEAD` when available. The bridge
 timer mode check defaults to `memory`, matching the recommended Pi runtime.

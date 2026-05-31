@@ -23,6 +23,7 @@ SSH_CONNECT_TIMEOUT="${NANOCLAW_PI_SSH_CONNECT_TIMEOUT:-}"
 SSH_OPTIONS=()
 RAW_SSH_OPTIONS=()
 PROOF_RESULT="skipped"
+MAC_RUNTIME_LOCK="$PROJECT_ROOT/logs/pi-cutover/mac-runtime-disabled.lock"
 
 usage() {
   cat <<'EOF'
@@ -190,6 +191,73 @@ write_dry_run_artifact() {
     printf '```\n\n'
     printf 'Not executed. No SSH was opened. No WhatsApp/runtime state was changed.\n'
   } >"$output_file"
+}
+
+write_runtime_lock_dry_run() {
+  local output_file="$1"
+  {
+    printf '# Mac Runtime Lock Check\n\n'
+    printf 'Status: `dry_run`\n\n'
+    printf 'Expected lock path: `%s`\n\n' "$MAC_RUNTIME_LOCK"
+    printf 'This check proves the final Mac export wrote the local cutover lock that blocks accidental `pnpm start` / `pnpm dev` after the Pi becomes the runtime host.\n\n'
+    printf 'Not executed. No runtime state was changed.\n'
+  } >"$output_file"
+}
+
+run_runtime_lock_capture() {
+  local output_file="$1"
+  local source_host=""
+  local current_host=""
+  local reason=""
+  local override_env=""
+  local mode=""
+
+  current_host="$(hostname 2>/dev/null || printf 'unknown')"
+
+  {
+    printf '# Mac Runtime Lock Check\n\n'
+    printf 'Expected lock path: `%s`\n\n' "$MAC_RUNTIME_LOCK"
+  } >"$output_file"
+
+  if [ ! -f "$MAC_RUNTIME_LOCK" ]; then
+    {
+      printf 'MAC_RUNTIME_LOCK=missing\n'
+      printf 'The final Mac export lock was not found. Run `pnpm run pi:export` after stopping the Mac host, or restore the lock before marking cutover complete.\n'
+    } >>"$output_file"
+    failures+=("Mac runtime lock missing at $MAC_RUNTIME_LOCK")
+    return
+  fi
+
+  source_host="$(sed -n 's/^source_host=//p' "$MAC_RUNTIME_LOCK" | head -n 1)"
+  reason="$(sed -n 's/^reason=//p' "$MAC_RUNTIME_LOCK" | head -n 1)"
+  override_env="$(sed -n 's/^override_env=//p' "$MAC_RUNTIME_LOCK" | head -n 1)"
+
+  if command -v stat >/dev/null 2>&1; then
+    mode="$(stat -f '%Lp' "$MAC_RUNTIME_LOCK" 2>/dev/null || stat -c '%a' "$MAC_RUNTIME_LOCK" 2>/dev/null || true)"
+  fi
+
+  {
+    printf 'MAC_RUNTIME_LOCK=present\n'
+    printf 'source_host=%s\n' "${source_host:-<missing>}"
+    printf 'current_host=%s\n' "$current_host"
+    printf 'reason=%s\n' "${reason:-<missing>}"
+    printf 'override_env=%s\n' "${override_env:-<missing>}"
+    [ -n "$mode" ] && printf 'mode=%s\n' "$mode"
+  } >>"$output_file"
+
+  if [ -z "$source_host" ]; then
+    failures+=("Mac runtime lock is missing source_host")
+  elif [ "$(printf '%s' "$source_host" | tr '[:upper:]' '[:lower:]')" != "$(printf '%s' "$current_host" | tr '[:upper:]' '[:lower:]')" ]; then
+    failures+=("Mac runtime lock source_host does not match this Mac")
+  fi
+
+  if [ "$reason" != "pi_state_export_completed" ]; then
+    failures+=("Mac runtime lock reason is not pi_state_export_completed")
+  fi
+
+  if [ "$override_env" != "NANOCLAW_ALLOW_MAC_RUNTIME_AFTER_PI_EXPORT=true" ]; then
+    failures+=("Mac runtime lock override_env marker is missing")
+  fi
 }
 
 write_manual_whatsapp_checklist() {
@@ -483,6 +551,7 @@ if [ "$EXECUTE" = "true" ]; then
   fi
 
   run_capture "$VERIFY_DIR/mac-stopped-check.txt" "Mac Host Stopped Check" "${mac_check_cmd[@]}"
+  run_runtime_lock_capture "$VERIFY_DIR/mac-runtime-lock.txt"
   run_capture "$VERIFY_DIR/pi-status.txt" "Pi Status" "${status_cmd[@]}"
   run_capture "$VERIFY_DIR/pi-bridge-timers.txt" "Pi Bridge Timers" "${bridge_timers_cmd[@]}"
   run_capture "$VERIFY_DIR/pi-health.txt" "Pi Health" "${health_cmd[@]}"
@@ -501,6 +570,7 @@ if [ "$EXECUTE" = "true" ]; then
   fi
 else
   write_dry_run_artifact "$VERIFY_DIR/mac-stopped-check.txt" "Mac Host Stopped Check" "${mac_check_cmd[@]}"
+  write_runtime_lock_dry_run "$VERIFY_DIR/mac-runtime-lock.txt"
   write_dry_run_artifact "$VERIFY_DIR/pi-status.txt" "Pi Status" "${status_cmd[@]}"
   write_dry_run_artifact "$VERIFY_DIR/pi-bridge-timers.txt" "Pi Bridge Timers" "${bridge_timers_cmd[@]}"
   write_dry_run_artifact "$VERIFY_DIR/pi-health.txt" "Pi Health" "${health_cmd[@]}"
@@ -576,6 +646,7 @@ fi
 
   printf '## Artifacts\n\n'
   printf -- '- `mac-stopped-check.txt`\n'
+  printf -- '- `mac-runtime-lock.txt`\n'
   printf -- '- `pi-status.txt`\n'
   printf -- '- `pi-bridge-timers.txt`\n'
   printf -- '- `pi-health.txt`\n'
@@ -585,7 +656,7 @@ fi
   printf -- '- `manual-whatsapp-checklist.md`\n\n'
 
   printf '## Completion Rule\n\n'
-  printf 'This helper verifies the Mac stopped state plus Pi service, bridge timer, health, and dashboard checks. If `--proof-text` is supplied after a manual WhatsApp test, it also verifies that the proof phrase landed in recent Pi second-brain files. The visual WhatsApp reply still needs to be confirmed from the allowlisted 1:1 chat before migration is complete.\n'
+  printf 'This helper verifies the Mac stopped state, Mac runtime lock, Pi service, bridge timer, health, and dashboard checks. If `--proof-text` is supplied after a manual WhatsApp test, it also verifies that the proof phrase landed in recent Pi second-brain files. The visual WhatsApp reply still needs to be confirmed from the allowlisted 1:1 chat before migration is complete.\n'
 } >"$VERIFY_DIR/summary.md"
 
 echo "PI_CUTOVER_VERIFY=$status"
