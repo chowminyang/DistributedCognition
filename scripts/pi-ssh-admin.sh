@@ -336,6 +336,10 @@ show_status() {
   else
     echo "docker: missing"
   fi
+
+  echo
+  echo "== Bridge Timers =="
+  systemctl list-timers '*bridge*.timer' --all --no-pager 2>/dev/null || true
 }
 
 run_health() {

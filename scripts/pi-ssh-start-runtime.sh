@@ -7,17 +7,22 @@ REMOTE_PROJECT_ROOT="${NANOCLAW_PI_PROJECT_ROOT:-}"
 SECOND_BRAIN_ROOT="${NANOCLAW_PI_SECOND_BRAIN_ROOT:-${DC_SECOND_BRAIN_ROOT:-}}"
 CODEX_PROJECTS_ROOT="${NANOCLAW_PI_CODEX_PROJECTS_ROOT:-}"
 CODEX_MEMORY_ROOT="${NANOCLAW_PI_CODEX_MEMORY_ROOT:-}"
+MNEMON_DB="${NANOCLAW_PI_MNEMON_DB:-}"
 RCLONE_REMOTE="${NANOCLAW_PI_RCLONE_REMOTE:-dropbox:}"
 RCLONE_FOLDER="${NANOCLAW_PI_RCLONE_FOLDER:-Distributed-Cognition}"
 RCLONE_TARGET="${NANOCLAW_PI_RCLONE_TARGET:-}"
 RCLONE_INTERVAL="${NANOCLAW_PI_RCLONE_INTERVAL:-5min}"
 RCLONE_MODE="${NANOCLAW_PI_RCLONE_MODE:-copy}"
 UNIT_NAME="${NANOCLAW_PI_UNIT_NAME:-}"
+BRIDGE_INTERVAL="${NANOCLAW_PI_BRIDGE_INTERVAL:-5min}"
+BRIDGE_UNIT_PREFIX="${NANOCLAW_PI_BRIDGE_UNIT_PREFIX:-}"
 SSH_CONNECT_TIMEOUT="${NANOCLAW_PI_SSH_CONNECT_TIMEOUT:-}"
 EXECUTE=false
+EXECUTE_BRIDGES=false
 SKIP_RCLONE=false
 SKIP_DOCKER_ACCESS=false
 SKIP_SYSTEMD=false
+SKIP_BRIDGE_TIMERS=false
 SKIP_HEALTH=false
 SSH_OPTIONS=()
 
@@ -38,6 +43,7 @@ What --execute does on the Pi:
   - installs and starts the rclone Dropbox timer unless --skip-rclone is set;
   - updates NanoClaw Docker mount access unless --skip-docker-access is set;
   - installs/enables/starts the NanoClaw systemd service unless --skip-systemd is set;
+  - installs/enables/starts Pi bridge timers unless --skip-bridge-timers is set;
   - runs pnpm run dc:health unless --skip-health is set.
 
 It does not copy secrets, import state, export state, or re-pair WhatsApp.
@@ -51,6 +57,7 @@ Required options, unless the matching environment defaults are set:
 
 Optional:
   --codex-memory-root <path>     Readable Codex memory summaries folder on the Pi.
+  --mnemon-db <path>             Optional Pi Mnemon SQLite database path.
   --rclone-remote <name:>        rclone remote name. Default: dropbox:.
   --rclone-folder <path>         remote folder appended to --rclone-remote.
                                  Default: Distributed-Cognition.
@@ -58,9 +65,13 @@ Optional:
   --rclone-interval <duration>   timer interval. Default: 5min.
   --rclone-mode <copy|sync>      copy is non-destructive. Default: copy.
   --unit-name <name>             NanoClaw systemd unit name override.
+  --bridge-interval <duration>   Pi bridge timer interval. Default: 5min.
+  --bridge-unit-prefix <name>    Pi bridge timer unit prefix.
+  --execute-bridges              Install Pi bridge timers in execute mode.
   --skip-rclone                  Do not install/start the rclone timer.
   --skip-docker-access           Do not update Docker mount access.
   --skip-systemd                 Do not install/start the systemd service.
+  --skip-bridge-timers           Do not install/start Pi bridge timers.
   --skip-health                  Do not run dc:health.
   --execute                      Actually SSH to the Pi and start setup.
   --ssh-option <option>          Extra ssh option. Values like BatchMode=yes
@@ -74,12 +85,15 @@ Environment defaults:
   NANOCLAW_PI_SECOND_BRAIN_ROOT
   NANOCLAW_PI_CODEX_PROJECTS_ROOT
   NANOCLAW_PI_CODEX_MEMORY_ROOT
+  NANOCLAW_PI_MNEMON_DB
   NANOCLAW_PI_RCLONE_REMOTE
   NANOCLAW_PI_RCLONE_FOLDER
   NANOCLAW_PI_RCLONE_TARGET
   NANOCLAW_PI_RCLONE_INTERVAL
   NANOCLAW_PI_RCLONE_MODE
   NANOCLAW_PI_UNIT_NAME
+  NANOCLAW_PI_BRIDGE_INTERVAL
+  NANOCLAW_PI_BRIDGE_UNIT_PREFIX
   NANOCLAW_PI_SSH_CONNECT_TIMEOUT
 
 Examples:
@@ -143,6 +157,11 @@ while [ "$#" -gt 0 ]; do
       [ -n "$CODEX_MEMORY_ROOT" ] || { echo "Missing value for --codex-memory-root" >&2; exit 2; }
       shift 2
       ;;
+    --mnemon-db)
+      MNEMON_DB="${2:-}"
+      [ -n "$MNEMON_DB" ] || { echo "Missing value for --mnemon-db" >&2; exit 2; }
+      shift 2
+      ;;
     --rclone-remote)
       RCLONE_REMOTE="${2:-}"
       [ -n "$RCLONE_REMOTE" ] || { echo "Missing value for --rclone-remote" >&2; exit 2; }
@@ -173,6 +192,20 @@ while [ "$#" -gt 0 ]; do
       [ -n "$UNIT_NAME" ] || { echo "Missing value for --unit-name" >&2; exit 2; }
       shift 2
       ;;
+    --bridge-interval)
+      BRIDGE_INTERVAL="${2:-}"
+      [ -n "$BRIDGE_INTERVAL" ] || { echo "Missing value for --bridge-interval" >&2; exit 2; }
+      shift 2
+      ;;
+    --bridge-unit-prefix)
+      BRIDGE_UNIT_PREFIX="${2:-}"
+      [ -n "$BRIDGE_UNIT_PREFIX" ] || { echo "Missing value for --bridge-unit-prefix" >&2; exit 2; }
+      shift 2
+      ;;
+    --execute-bridges)
+      EXECUTE_BRIDGES=true
+      shift
+      ;;
     --skip-rclone)
       SKIP_RCLONE=true
       shift
@@ -183,6 +216,10 @@ while [ "$#" -gt 0 ]; do
       ;;
     --skip-systemd)
       SKIP_SYSTEMD=true
+      shift
+      ;;
+    --skip-bridge-timers)
+      SKIP_BRIDGE_TIMERS=true
       shift
       ;;
     --skip-health)
@@ -218,7 +255,7 @@ done
 [ -n "$REMOTE_USER" ] || { echo "Missing required --user" >&2; usage >&2; exit 2; }
 [ -n "$REMOTE_PROJECT_ROOT" ] || { echo "Missing required --path" >&2; usage >&2; exit 2; }
 [ -n "$SECOND_BRAIN_ROOT" ] || { echo "Missing required --second-brain-root" >&2; usage >&2; exit 2; }
-if [ "$SKIP_DOCKER_ACCESS" != "true" ]; then
+if [ "$SKIP_DOCKER_ACCESS" != "true" ] || [ "$SKIP_BRIDGE_TIMERS" != "true" ]; then
   [ -n "$CODEX_PROJECTS_ROOT" ] || { echo "Missing required --codex-projects-root" >&2; usage >&2; exit 2; }
 fi
 
@@ -234,11 +271,15 @@ echo "NanoClaw path: $REMOTE_PROJECT_ROOT"
 echo "Second brain root: $SECOND_BRAIN_ROOT"
 [ -n "$CODEX_PROJECTS_ROOT" ] && echo "Codex projects root: $CODEX_PROJECTS_ROOT"
 [ -n "$CODEX_MEMORY_ROOT" ] && echo "Codex memory root: $CODEX_MEMORY_ROOT"
+[ -n "$MNEMON_DB" ] && echo "Mnemon DB: $MNEMON_DB"
 echo "rclone target: $RCLONE_TARGET"
 echo "rclone interval: $RCLONE_INTERVAL"
 echo "rclone mode: $RCLONE_MODE"
+echo "bridge timer interval: $BRIDGE_INTERVAL"
+echo "bridge timer mode: $([ "$EXECUTE_BRIDGES" = "true" ] && echo execute || echo dry-run)"
 [ -n "$SSH_CONNECT_TIMEOUT" ] && echo "SSH connect timeout: ${SSH_CONNECT_TIMEOUT}s"
 [ -n "$UNIT_NAME" ] && echo "Service unit: $UNIT_NAME"
+[ -n "$BRIDGE_UNIT_PREFIX" ] && echo "Bridge unit prefix: $BRIDGE_UNIT_PREFIX"
 echo
 
 if [ "$EXECUTE" != "true" ]; then
@@ -271,6 +312,21 @@ if [ "$EXECUTE" != "true" ]; then
     fi
     echo "  $systemd_cmd"
   fi
+  if [ "$SKIP_BRIDGE_TIMERS" = "true" ]; then
+    echo "  # skip Pi bridge timers"
+  else
+    bridge_cmd="bash scripts/pi-install-bridge-timers.sh --root $(shell_quote "$SECOND_BRAIN_ROOT") --codex-projects-root $(shell_quote "$CODEX_PROJECTS_ROOT") --interval $(shell_quote "$BRIDGE_INTERVAL") --start"
+    if [ -n "$MNEMON_DB" ]; then
+      bridge_cmd="$bridge_cmd --mnemon-db $(shell_quote "$MNEMON_DB")"
+    fi
+    if [ -n "$BRIDGE_UNIT_PREFIX" ]; then
+      bridge_cmd="$bridge_cmd --unit-prefix $(shell_quote "$BRIDGE_UNIT_PREFIX")"
+    fi
+    if [ "$EXECUTE_BRIDGES" = "true" ]; then
+      bridge_cmd="$bridge_cmd --execute-bridges"
+    fi
+    echo "  $bridge_cmd"
+  fi
   if [ "$SKIP_HEALTH" = "true" ]; then
     echo "  # skip health check"
   else
@@ -286,13 +342,18 @@ ssh "${SSH_OPTIONS[@]}" "$TARGET" 'bash -s' -- \
   "$SECOND_BRAIN_ROOT" \
   "$CODEX_PROJECTS_ROOT" \
   "$CODEX_MEMORY_ROOT" \
+  "$MNEMON_DB" \
   "$RCLONE_TARGET" \
   "$RCLONE_INTERVAL" \
   "$RCLONE_MODE" \
   "$UNIT_NAME" \
+  "$BRIDGE_INTERVAL" \
+  "$BRIDGE_UNIT_PREFIX" \
+  "$EXECUTE_BRIDGES" \
   "$SKIP_RCLONE" \
   "$SKIP_DOCKER_ACCESS" \
   "$SKIP_SYSTEMD" \
+  "$SKIP_BRIDGE_TIMERS" \
   "$SKIP_HEALTH" <<'REMOTE'
 set -euo pipefail
 
@@ -300,14 +361,19 @@ PROJECT_ROOT="$1"
 SECOND_BRAIN_ROOT="$2"
 CODEX_PROJECTS_ROOT="$3"
 CODEX_MEMORY_ROOT="$4"
-RCLONE_TARGET="$5"
-RCLONE_INTERVAL="$6"
-RCLONE_MODE="$7"
-UNIT_NAME="$8"
-SKIP_RCLONE="$9"
-SKIP_DOCKER_ACCESS="${10}"
-SKIP_SYSTEMD="${11}"
-SKIP_HEALTH="${12}"
+MNEMON_DB="$5"
+RCLONE_TARGET="$6"
+RCLONE_INTERVAL="$7"
+RCLONE_MODE="$8"
+UNIT_NAME="$9"
+BRIDGE_INTERVAL="${10}"
+BRIDGE_UNIT_PREFIX="${11}"
+EXECUTE_BRIDGES="${12}"
+SKIP_RCLONE="${13}"
+SKIP_DOCKER_ACCESS="${14}"
+SKIP_SYSTEMD="${15}"
+SKIP_BRIDGE_TIMERS="${16}"
+SKIP_HEALTH="${17}"
 
 expand_remote_path() {
   case "$1" in
@@ -334,6 +400,7 @@ PROJECT_ROOT="$(expand_remote_path "$PROJECT_ROOT")"
 SECOND_BRAIN_ROOT="$(expand_remote_path "$SECOND_BRAIN_ROOT")"
 CODEX_PROJECTS_ROOT="$(expand_remote_path "$CODEX_PROJECTS_ROOT")"
 CODEX_MEMORY_ROOT="$(expand_remote_path "$CODEX_MEMORY_ROOT")"
+MNEMON_DB="$(expand_remote_path "$MNEMON_DB")"
 
 [ -d "$PROJECT_ROOT" ] || { echo "NanoClaw path does not exist on Pi: $PROJECT_ROOT" >&2; exit 1; }
 have pnpm || { echo "pnpm is required on the Pi" >&2; exit 1; }
@@ -388,6 +455,26 @@ if [ "$SKIP_SYSTEMD" != "true" ]; then
 else
   echo
   echo "== Install And Start systemd Service =="
+  echo "Skipped"
+fi
+
+if [ "$SKIP_BRIDGE_TIMERS" != "true" ]; then
+  echo
+  echo "== Install And Start Pi Bridge Timers =="
+  bridge_cmd=(bash scripts/pi-install-bridge-timers.sh --root "$SECOND_BRAIN_ROOT" --codex-projects-root "$CODEX_PROJECTS_ROOT" --interval "$BRIDGE_INTERVAL" --start)
+  if [ -n "$MNEMON_DB" ]; then
+    bridge_cmd+=(--mnemon-db "$MNEMON_DB")
+  fi
+  if [ -n "$BRIDGE_UNIT_PREFIX" ]; then
+    bridge_cmd+=(--unit-prefix "$BRIDGE_UNIT_PREFIX")
+  fi
+  if [ "$EXECUTE_BRIDGES" = "true" ]; then
+    bridge_cmd+=(--execute-bridges)
+  fi
+  "${bridge_cmd[@]}"
+else
+  echo
+  echo "== Install And Start Pi Bridge Timers =="
   echo "Skipped"
 fi
 

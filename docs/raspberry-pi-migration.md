@@ -235,8 +235,23 @@ pnpm run pi:ssh-start-runtime -- \
 When the dry-run output is correct, add `--execute`. This creates the selected
 local folders, installs and starts the rclone timer for
 `dropbox:Distributed-Cognition`, updates Docker mount access for Distributed
-Cognition, installs and starts the NanoClaw systemd service, and runs
-`pnpm run dc:health` on the Pi.
+Cognition, installs and starts the NanoClaw systemd service, installs and
+starts Pi-side bridge timers, and runs `pnpm run dc:health` on the Pi.
+
+By default the bridge timers dry-run queued Mnemon, Codex, and action work.
+Add `--execute-bridges` to `pi:ssh-start-runtime` only when you want those
+queues to execute automatically on the Pi:
+
+```bash
+pnpm run pi:ssh-start-runtime -- \
+  --host nanoclaw-pi.local \
+  --user pi \
+  --path /home/pi/NanoClaw \
+  --second-brain-root /home/pi/Distributed-Cognition \
+  --codex-projects-root /home/pi/Codex \
+  --rclone-remote dropbox: \
+  --execute-bridges
+```
 
 Manual fallback on the Pi:
 
@@ -380,11 +395,20 @@ After cutover, use the SSH admin helper for routine operations from the Mac:
 pnpm run pi:ssh-admin -- status
 pnpm run pi:ssh-admin -- health
 pnpm run pi:ssh-admin -- doctor
+pnpm run pi:ssh-admin -- process-bridges
+pnpm run pi:ssh-admin -- process-bridges --execute-bridges
 pnpm run pi:ssh-admin -- restart
 pnpm run pi:ssh-admin -- logs --lines 80
 ```
 
-The supported actions are `doctor`, `status`, `health`, `dashboard`, `logs`, `follow-logs`, `start`, `stop`, `restart`, and `update`. Use `doctor` for the common "is DC really alive on the Pi?" check; it runs status, health, and dashboard in one SSH session. `status` avoids printing full process command lines. `logs` and `follow-logs` may include private WhatsApp/reflection content, so use them only on your own trusted Mac/Pi.
+The supported actions are `doctor`, `status`, `health`, `dashboard`, `logs`,
+`follow-logs`, `memory-bridge`, `codex-bridge`, `action-bridge`,
+`process-bridges`, `start`, `stop`, `restart`, and `update`. Use `doctor` for
+the common "is DC really alive on the Pi?" check; it runs status, health, and
+dashboard in one SSH session. `status` avoids printing full process command
+lines and also lists bridge timers. `logs` and `follow-logs` may include
+private WhatsApp/reflection content, so use them only on your own trusted
+Mac/Pi.
 
 ## Post-Cutover Verification
 
@@ -450,7 +474,9 @@ the migration is complete.
 
 After WhatsApp replies are proven to come from the Pi, keep the Mac
 NanoClaw/WhatsApp host stopped. By default, process queued Mnemon, Codex, and
-action bridge work on the Pi from Mac Codex over SSH:
+action bridge work on the Pi. The Pi bridge timers installed by
+`pi:ssh-start-runtime` handle this periodically; Mac Codex can also trigger a
+manual dry-run or execution over SSH:
 
 ```bash
 cd /Users/minyangchow/Documents/NanoClaw

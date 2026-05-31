@@ -141,7 +141,10 @@ pnpm run pi:ssh-start-runtime -- \
 When the dry-run output is correct, add `--execute`. This installs/starts the
 rclone timer for only the selected `Distributed-Cognition` folder, updates the
 Docker mount allowlist and group mounts, installs/starts the Pi systemd service,
-and runs `dc:health`.
+installs/starts Pi bridge timers for health, dashboard, Mnemon, Codex, and
+action queues, and runs `dc:health`. Bridge timers are dry-run by default;
+pass `--execute-bridges` to `pi:ssh-start-runtime` only when you want queued
+bridge work to execute automatically on the Pi.
 
 To generate a paste-ready `/goal` prompt for the Mac Codex thread that will
 control the Pi on migration day:
@@ -287,7 +290,9 @@ the bundle checklist.
 
 After WhatsApp replies are proven to come from the Pi, keep the Mac
 NanoClaw/WhatsApp host stopped and process queued bridge work on the Pi from
-Mac Codex over SSH:
+Mac Codex over SSH. The Pi bridge timers installed by `pi:ssh-start-runtime`
+will keep doing this periodically; the SSH admin command is useful for a manual
+run or proof check:
 
 ```bash
 pnpm run pi:ssh-admin -- process-bridges

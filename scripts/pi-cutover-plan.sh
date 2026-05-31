@@ -271,6 +271,7 @@ if [ -n "$PI_UNIT_NAME" ]; then
 fi
 section "5. Configure Pi Sync And Service"
 print_command "$start_runtime_cmd"
+print_command "# This also installs Pi bridge timers in dry-run mode by default. Add --execute-bridges only when queued bridge work should execute automatically on the Pi."
 print_command "# If the dry run is correct, rerun the same command with --execute."
 
 section "6. Smoke Test From Mac"
@@ -311,8 +312,8 @@ fi
 section "8. Post-Cutover Bridge Work"
 cat <<'EOF'
   Default for the Pi migration: keep the Mac NanoClaw/WhatsApp host stopped and
-  use Mac Codex only as an SSH operator. Process queued Mnemon, Codex, and
-  action work on the Pi:
+  use Mac Codex only as an SSH operator. The Pi bridge timers handle queued
+  Mnemon, Codex, and action work periodically; run one manual check:
 EOF
 if [ -n "$LOCAL_SECOND_BRAIN_ROOT" ]; then
   print_command "pnpm run pi:ssh-admin -- process-bridges"

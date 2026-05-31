@@ -40,6 +40,7 @@
     "pi:cutover-plan": "bash scripts/pi-cutover-plan.sh",
     "pi:rehearse-cutover": "bash scripts/pi-rehearse-cutover.sh",
     "pi:verify-cutover": "bash scripts/pi-verify-cutover.sh",
+    "pi:install-bridge-timers": "bash scripts/pi-install-bridge-timers.sh",
     "pi:install-systemd": "bash scripts/pi-install-systemd.sh",
     "pi:install-dropbox-sync": "bash scripts/pi-install-dropbox-sync.sh",
     "pi:ssh-admin": "bash scripts/pi-ssh-admin.sh",

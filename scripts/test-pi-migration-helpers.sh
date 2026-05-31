@@ -75,6 +75,7 @@ helper_scripts=(
   scripts/pi-mac-export-preflight.sh
   scripts/pi-export-state.sh
   scripts/pi-import-state.sh
+  scripts/pi-install-bridge-timers.sh
   scripts/pi-install-systemd.sh
   scripts/pi-install-dropbox-sync.sh
 )
@@ -91,6 +92,29 @@ systemd_unit="$(find "$systemd_render_dir" -name 'nanoclaw-v2-*.service' -print 
 assert_contains "$systemd_unit" "docker info" "systemd unit waits for Docker readiness"
 assert_contains "$systemd_unit" "Docker is not reachable by the service user after 60s" "systemd unit reports Docker readiness timeout"
 assert_contains "$systemd_unit" "Restart=always" "systemd unit restarts NanoClaw"
+
+bridge_timer_render_dir="$TMP_DIR/bridge-timer-render"
+bash scripts/pi-install-bridge-timers.sh \
+  --output-dir "$bridge_timer_render_dir" \
+  --root /home/pi/Distributed-Cognition \
+  --codex-projects-root /home/pi/Codex \
+  --mnemon-db /home/pi/NanoClaw/groups/dm-with-minyangchow/.mnemon/memory.db \
+  --interval 5min \
+  --unit-prefix dc-bridge-test \
+  --execute-bridges \
+  >"$TMP_DIR/bridge-timer-render.out"
+bridge_runner="$bridge_timer_render_dir/dc-pi-run-bridges-dc-bridge-test.sh"
+bridge_timer="$bridge_timer_render_dir/dc-bridge-test-codex-bridge.timer"
+bridge_unit="$bridge_timer_render_dir/dc-bridge-test-codex-bridge.service"
+[ -f "$bridge_runner" ] || fail "bridge timer render writes runner"
+[ -f "$bridge_timer" ] || fail "bridge timer render writes timer"
+[ -f "$bridge_unit" ] || fail "bridge timer render writes unit"
+assert_contains "$bridge_runner" "dc:memory-bridge" "bridge runner includes memory bridge"
+assert_contains "$bridge_runner" "dc:codex-bridge" "bridge runner includes codex bridge"
+assert_contains "$bridge_runner" "--execute" "bridge runner can execute queued bridge work"
+assert_contains "$bridge_timer" "OnUnitActiveSec=5min" "bridge timer uses configured interval"
+assert_contains "$bridge_unit" "ExecStart=/bin/bash" "bridge unit calls runner"
+assert_contains "$TMP_DIR/bridge-timer-render.out" "Bridge jobs execute queued work." "bridge timer render reports execute mode"
 
 goal_out="$TMP_DIR/codex-goal.out"
 pnpm run pi:codex-goal -- \
@@ -337,6 +361,8 @@ assert_contains "$TMP_DIR/ssh-restore-help.out" "NANOCLAW_PI_SSH_CONNECT_TIMEOUT
 pnpm run pi:ssh-start-runtime -- --help >"$TMP_DIR/ssh-start-runtime-help.out"
 assert_contains "$TMP_DIR/ssh-start-runtime-help.out" "dry-run by default" "ssh start runtime help documents dry-run default"
 assert_contains "$TMP_DIR/ssh-start-runtime-help.out" "systemd installation/startup" "ssh start runtime help documents systemd startup"
+assert_contains "$TMP_DIR/ssh-start-runtime-help.out" "--skip-bridge-timers" "ssh start runtime help documents bridge timer skip"
+assert_contains "$TMP_DIR/ssh-start-runtime-help.out" "--execute-bridges" "ssh start runtime help documents bridge timer execute mode"
 assert_contains "$TMP_DIR/ssh-start-runtime-help.out" "NANOCLAW_PI_SSH_CONNECT_TIMEOUT" "ssh start runtime help documents SSH timeout env"
 
 set +e
@@ -452,6 +478,7 @@ pnpm run pi:ssh-start-runtime -- \
   --codex-projects-root /home/pi/Codex \
   --rclone-remote dropbox: \
   --rclone-folder Distributed-Cognition \
+  --bridge-interval 5min \
   --unit-name nanoclaw-v2-test.service \
   >"$TMP_DIR/ssh-start-runtime-dry-run.out"
 assert_contains "$TMP_DIR/ssh-start-runtime-dry-run.out" "PI_SSH_START_RUNTIME=dry_run" "ssh start runtime dry-run does not SSH"
@@ -459,6 +486,7 @@ assert_contains "$TMP_DIR/ssh-start-runtime-dry-run.out" "No SSH was opened" "ss
 assert_contains "$TMP_DIR/ssh-start-runtime-dry-run.out" "pi-install-dropbox-sync.sh" "ssh start runtime dry-run shows rclone timer install"
 assert_contains "$TMP_DIR/ssh-start-runtime-dry-run.out" "dc:ensure-docker-access" "ssh start runtime dry-run shows Docker access update"
 assert_contains "$TMP_DIR/ssh-start-runtime-dry-run.out" "pi-install-systemd.sh" "ssh start runtime dry-run shows systemd install"
+assert_contains "$TMP_DIR/ssh-start-runtime-dry-run.out" "pi-install-bridge-timers.sh" "ssh start runtime dry-run shows Pi bridge timer install"
 assert_contains "$TMP_DIR/ssh-start-runtime-dry-run.out" "dc:health" "ssh start runtime dry-run shows health check"
 
 env \

@@ -236,7 +236,7 @@ Work plan:
    STATE_BUNDLE="\$(ls -t "${OUT_DIR}"/nanoclaw-pi-state-*.tar.gz | head -n 1)"
    pnpm run pi:ssh-restore-state -- --host "${PI_HOST_DISPLAY}" --user "${PI_USER_DISPLAY}" --path "${PI_PROJECT_DISPLAY}" --bundle "\$STATE_BUNDLE" --force --cleanup-remote
    If the dry run is correct, rerun the same command with --execute. This must verify sha256 on the Pi before importing.
-9. Configure rclone sync, update Docker mount access, install/start systemd, and run health using the dry-run helper first:
+9. Configure rclone sync, update Docker mount access, install/start systemd, install/start Pi bridge timers, and run health using the dry-run helper first:
    pnpm run pi:ssh-start-runtime -- --host "${PI_HOST_DISPLAY}" --user "${PI_USER_DISPLAY}" --path "${PI_PROJECT_DISPLAY}" --second-brain-root "${PI_SECOND_BRAIN_DISPLAY}" --codex-projects-root "${PI_CODEX_DISPLAY}" --rclone-remote "${PI_RCLONE_REMOTE}"
    If the dry run is correct, rerun the same command with --execute.
 10. Verify from the Mac:
@@ -267,7 +267,8 @@ Work plan:
      --proof-text "\$PROOF_TEXT" \\
      --proof-since-minutes 30 \\
      --execute
-13. After WhatsApp is proven to be replying from the Pi, keep the Mac NanoClaw host stopped and process DC bridge work on the Pi from Mac Codex over SSH:
+13. After WhatsApp is proven to be replying from the Pi, keep the Mac NanoClaw host stopped. Confirm Pi bridge timers are installed, then process DC bridge work on the Pi with one manual bridge dry-run/execution from Mac Codex over SSH:
+   pnpm run pi:ssh-admin -- status
    pnpm run pi:ssh-admin -- process-bridges
    pnpm run pi:ssh-admin -- process-bridges --execute-bridges
    Do not restart the Mac NanoClaw/WhatsApp host unless I explicitly roll back. If I later choose Mac-visible Codex Desktop/App handoffs, explain the tradeoff and install only the Mac bridge jobs, never the Mac WhatsApp host.
@@ -277,6 +278,7 @@ Completion evidence required:
 - Pi preflight succeeds, or every warning is explicitly accounted for.
 - Final exported state bundle sha256 verifies before import.
 - Pi systemd service is enabled and active.
+- Pi bridge timers are installed and visible from pnpm run pi:ssh-admin -- status.
 - Mac NanoClaw host remains stopped after cutover.
 - The post-cutover verification helper writes a clean verification bundle.
 - DC replies on WhatsApp from the Pi.
