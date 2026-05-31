@@ -10,6 +10,7 @@ CODEX_PROJECTS_ROOT="${NANOCLAW_PI_CODEX_PROJECTS_ROOT:-}"
 MNEMON_DB="${NANOCLAW_PI_MNEMON_DB:-}"
 UNIT_NAME="${NANOCLAW_PI_UNIT_NAME:-}"
 SSH_CONNECT_TIMEOUT="${NANOCLAW_PI_SSH_CONNECT_TIMEOUT:-}"
+EXPECTED_COMMIT="${NANOCLAW_PI_EXPECTED_COMMIT:-}"
 LINES="120"
 BRIDGE_LIMIT="5"
 EXECUTE_BRIDGES="false"
@@ -53,6 +54,7 @@ Required for codex-bridge/process-bridges:
 Optional:
   --mnemon-db <path>             Mnemon SQLite DB path on the Pi.
   --unit-name <name>             systemd unit name. Auto-detects nanoclaw-v2-*.
+  --expected-commit <sha>        Verify the Pi checkout commit starts with this SHA.
   --lines <count>                Log lines for logs action. Default: 120.
   --limit <count>                Bridge queue limit. Default: 5.
   --execute-bridges              Execute bridge work. Without this, bridges dry-run.
@@ -69,6 +71,7 @@ Environment defaults:
   NANOCLAW_PI_MNEMON_DB
   NANOCLAW_PI_UNIT_NAME
   NANOCLAW_PI_SSH_CONNECT_TIMEOUT
+  NANOCLAW_PI_EXPECTED_COMMIT
 
 Examples:
   bash scripts/pi-ssh-admin.sh doctor --host nanoclaw-pi.local --user pi --path /home/pi/NanoClaw --second-brain-root /home/pi/Distributed-Cognition
@@ -146,6 +149,11 @@ while [ "$#" -gt 0 ]; do
       [ -n "$UNIT_NAME" ] || { echo "Missing value for --unit-name" >&2; exit 2; }
       shift 2
       ;;
+    --expected-commit)
+      EXPECTED_COMMIT="${2:-}"
+      [ -n "$EXPECTED_COMMIT" ] || { echo "Missing value for --expected-commit" >&2; exit 2; }
+      shift 2
+      ;;
     --lines)
       LINES="${2:-}"
       [[ "$LINES" =~ ^[0-9]+$ ]] || { echo "--lines must be an integer" >&2; exit 2; }
@@ -207,6 +215,7 @@ echo "NanoClaw path: $REMOTE_PROJECT_ROOT"
 [ -n "$MNEMON_DB" ] && echo "Mnemon DB: $MNEMON_DB"
 [ -n "$UNIT_NAME" ] && echo "Service unit: $UNIT_NAME"
 [ -n "$SSH_CONNECT_TIMEOUT" ] && echo "SSH connect timeout: ${SSH_CONNECT_TIMEOUT}s"
+[ -n "$EXPECTED_COMMIT" ] && echo "Expected commit: $EXPECTED_COMMIT"
 case "$ACTION" in
   memory-bridge|codex-bridge|action-bridge|process-bridges)
     echo "Bridge mode: $([ "$EXECUTE_BRIDGES" = "true" ] && echo execute || echo dry-run)"
@@ -224,7 +233,8 @@ ssh "${SSH_OPTIONS[@]}" "$TARGET" 'bash -s' -- \
   "$UNIT_NAME" \
   "$LINES" \
   "$BRIDGE_LIMIT" \
-  "$EXECUTE_BRIDGES" <<'REMOTE'
+  "$EXECUTE_BRIDGES" \
+  "$EXPECTED_COMMIT" <<'REMOTE'
 set -euo pipefail
 
 ACTION="$1"
@@ -236,6 +246,7 @@ UNIT_NAME="$6"
 LINES="$7"
 BRIDGE_LIMIT="$8"
 EXECUTE_BRIDGES="$9"
+EXPECTED_COMMIT="${10}"
 
 expand_remote_path() {
   case "$1" in
@@ -275,6 +286,29 @@ require_project() {
   cd "$PROJECT_ROOT"
 }
 
+verify_expected_commit() {
+  [ -n "$EXPECTED_COMMIT" ] || return 0
+
+  local actual_full="$1"
+  local actual_short="$2"
+  if [ -z "$actual_full" ]; then
+    echo "expected_commit: $EXPECTED_COMMIT"
+    echo "PI_EXPECTED_COMMIT=fail reason=no_git_commit"
+    exit 1
+  fi
+
+  if [[ "$actual_full" == "$EXPECTED_COMMIT"* || "$actual_short" == "$EXPECTED_COMMIT"* ]]; then
+    echo "expected_commit: $EXPECTED_COMMIT"
+    echo "PI_EXPECTED_COMMIT=ok actual=${actual_short:-$actual_full}"
+    return 0
+  fi
+
+  echo "expected_commit: $EXPECTED_COMMIT"
+  echo "actual_commit: $actual_full"
+  echo "PI_EXPECTED_COMMIT=fail"
+  exit 1
+}
+
 detect_unit() {
   if [ -n "$UNIT_NAME" ]; then
     printf '%s\n' "$UNIT_NAME"
@@ -307,10 +341,18 @@ show_status() {
   echo
   echo "== Git =="
   if [ -d .git ]; then
-    echo "commit: $(git rev-parse --short HEAD 2>/dev/null || echo unknown)"
+    actual_full="$(git rev-parse HEAD 2>/dev/null || true)"
+    actual_short="$(git rev-parse --short HEAD 2>/dev/null || true)"
+    echo "commit: ${actual_short:-unknown}"
     echo "status_entries: $(git status --short 2>/dev/null | wc -l | tr -d ' ')"
+    verify_expected_commit "$actual_full" "$actual_short"
   else
     echo "not a git checkout"
+    if [ -n "$EXPECTED_COMMIT" ]; then
+      echo "expected_commit: $EXPECTED_COMMIT"
+      echo "PI_EXPECTED_COMMIT=fail reason=no_git_checkout"
+      exit 1
+    fi
   fi
 
   echo

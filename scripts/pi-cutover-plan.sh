@@ -243,6 +243,7 @@ print_command "export NANOCLAW_PI_USER=$(quote_shell "${PI_USER:-<pi-user>}")"
 print_command "export NANOCLAW_PI_PROJECT_ROOT=$(quote_shell "${PI_PROJECT_ROOT:-<pi NanoClaw path>}")"
 print_command "export NANOCLAW_PI_SECOND_BRAIN_ROOT=$(quote_shell "${PI_SECOND_BRAIN_ROOT:-<pi Distributed-Cognition path>}")"
 print_command "export NANOCLAW_PI_RCLONE_REMOTE=$(quote_shell "$PI_RCLONE_REMOTE")"
+print_command 'export NANOCLAW_PI_EXPECTED_COMMIT="$(git rev-parse HEAD)"'
 print_command "pnpm run pi:ssh-preflight"
 
 section "3. Final Mac Cutover And State Export"
@@ -280,15 +281,15 @@ if [ -n "$PI_UNIT_NAME" ]; then
   print_command "export NANOCLAW_PI_UNIT_NAME=$(quote_shell "$PI_UNIT_NAME")"
 fi
 print_command "PROOF_TEXT=\"DC Pi cutover proof \$(date '+%d-%m-%y-%H%M')\""
-print_command "pnpm run pi:ssh-admin -- status"
+print_command 'pnpm run pi:ssh-admin -- status --expected-commit "$NANOCLAW_PI_EXPECTED_COMMIT"'
 print_command "pnpm run pi:ssh-admin -- health"
-print_command "pnpm run pi:ssh-admin -- doctor"
+print_command 'pnpm run pi:ssh-admin -- doctor --expected-commit "$NANOCLAW_PI_EXPECTED_COMMIT"'
 print_command "pnpm run pi:ssh-admin -- dashboard"
 print_command "pnpm run pi:ssh-admin -- logs --lines 80"
 if [ -n "$LOCAL_SECOND_BRAIN_ROOT" ]; then
-  print_command "pnpm run pi:verify-cutover -- --local-root $(quote_shell "$LOCAL_SECOND_BRAIN_ROOT") --host $(quote_shell "${PI_HOST:-<pi-host>}") --user $(quote_shell "${PI_USER:-<pi-user>}") --path $(quote_shell "${PI_PROJECT_ROOT:-<pi NanoClaw path>}") --second-brain-root $(quote_shell "${PI_SECOND_BRAIN_ROOT:-<pi Distributed-Cognition path>}") --execute"
+  print_command "pnpm run pi:verify-cutover -- --local-root $(quote_shell "$LOCAL_SECOND_BRAIN_ROOT") --host $(quote_shell "${PI_HOST:-<pi-host>}") --user $(quote_shell "${PI_USER:-<pi-user>}") --path $(quote_shell "${PI_PROJECT_ROOT:-<pi NanoClaw path>}") --second-brain-root $(quote_shell "${PI_SECOND_BRAIN_ROOT:-<pi Distributed-Cognition path>}") --expected-commit \"\$NANOCLAW_PI_EXPECTED_COMMIT\" --execute"
 else
-  print_command "pnpm run pi:verify-cutover -- --local-root <mac Distributed-Cognition folder> --host $(quote_shell "${PI_HOST:-<pi-host>}") --user $(quote_shell "${PI_USER:-<pi-user>}") --path $(quote_shell "${PI_PROJECT_ROOT:-<pi NanoClaw path>}") --second-brain-root $(quote_shell "${PI_SECOND_BRAIN_ROOT:-<pi Distributed-Cognition path>}") --execute"
+  print_command "pnpm run pi:verify-cutover -- --local-root <mac Distributed-Cognition folder> --host $(quote_shell "${PI_HOST:-<pi-host>}") --user $(quote_shell "${PI_USER:-<pi-user>}") --path $(quote_shell "${PI_PROJECT_ROOT:-<pi NanoClaw path>}") --second-brain-root $(quote_shell "${PI_SECOND_BRAIN_ROOT:-<pi Distributed-Cognition path>}") --expected-commit \"\$NANOCLAW_PI_EXPECTED_COMMIT\" --execute"
 fi
 
 section "7. WhatsApp Test"
@@ -305,9 +306,9 @@ cat <<'EOF'
     - The Mac host remains stopped.
 EOF
 if [ -n "$LOCAL_SECOND_BRAIN_ROOT" ]; then
-  print_command "pnpm run pi:verify-cutover -- --local-root $(quote_shell "$LOCAL_SECOND_BRAIN_ROOT") --host $(quote_shell "${PI_HOST:-<pi-host>}") --user $(quote_shell "${PI_USER:-<pi-user>}") --path $(quote_shell "${PI_PROJECT_ROOT:-<pi NanoClaw path>}") --second-brain-root $(quote_shell "${PI_SECOND_BRAIN_ROOT:-<pi Distributed-Cognition path>}") --proof-text \"\$PROOF_TEXT\" --proof-since-minutes 30 --execute"
+  print_command "pnpm run pi:verify-cutover -- --local-root $(quote_shell "$LOCAL_SECOND_BRAIN_ROOT") --host $(quote_shell "${PI_HOST:-<pi-host>}") --user $(quote_shell "${PI_USER:-<pi-user>}") --path $(quote_shell "${PI_PROJECT_ROOT:-<pi NanoClaw path>}") --second-brain-root $(quote_shell "${PI_SECOND_BRAIN_ROOT:-<pi Distributed-Cognition path>}") --expected-commit \"\$NANOCLAW_PI_EXPECTED_COMMIT\" --proof-text \"\$PROOF_TEXT\" --proof-since-minutes 30 --execute"
 else
-  print_command "pnpm run pi:verify-cutover -- --local-root <mac Distributed-Cognition folder> --host $(quote_shell "${PI_HOST:-<pi-host>}") --user $(quote_shell "${PI_USER:-<pi-user>}") --path $(quote_shell "${PI_PROJECT_ROOT:-<pi NanoClaw path>}") --second-brain-root $(quote_shell "${PI_SECOND_BRAIN_ROOT:-<pi Distributed-Cognition path>}") --proof-text \"\$PROOF_TEXT\" --proof-since-minutes 30 --execute"
+  print_command "pnpm run pi:verify-cutover -- --local-root <mac Distributed-Cognition folder> --host $(quote_shell "${PI_HOST:-<pi-host>}") --user $(quote_shell "${PI_USER:-<pi-user>}") --path $(quote_shell "${PI_PROJECT_ROOT:-<pi NanoClaw path>}") --second-brain-root $(quote_shell "${PI_SECOND_BRAIN_ROOT:-<pi Distributed-Cognition path>}") --expected-commit \"\$NANOCLAW_PI_EXPECTED_COMMIT\" --proof-text \"\$PROOF_TEXT\" --proof-since-minutes 30 --execute"
 fi
 
 section "8. Post-Cutover Bridge Work"

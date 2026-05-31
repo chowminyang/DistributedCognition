@@ -373,6 +373,7 @@ export NANOCLAW_PI_SECOND_BRAIN_ROOT=/home/pi/Distributed-Cognition
 export NANOCLAW_PI_CODEX_PROJECTS_ROOT=/home/pi/Codex
 export NANOCLAW_PI_RCLONE_REMOTE=dropbox:
 export NANOCLAW_PI_SSH_CONNECT_TIMEOUT=10
+export NANOCLAW_PI_EXPECTED_COMMIT="$(git rev-parse HEAD)"
 
 pnpm run pi:ssh-preflight
 ```
@@ -398,10 +399,10 @@ Replace every path with the actual Pi username and folders you created. The pref
 After cutover, use the SSH admin helper for routine operations from the Mac:
 
 ```bash
-pnpm run pi:ssh-admin -- status
+pnpm run pi:ssh-admin -- status --expected-commit "$NANOCLAW_PI_EXPECTED_COMMIT"
 pnpm run pi:ssh-admin -- bridge-timers
 pnpm run pi:ssh-admin -- health
-pnpm run pi:ssh-admin -- doctor
+pnpm run pi:ssh-admin -- doctor --expected-commit "$NANOCLAW_PI_EXPECTED_COMMIT"
 pnpm run pi:ssh-admin -- process-bridges
 pnpm run pi:ssh-admin -- process-bridges --execute-bridges
 pnpm run pi:ssh-admin -- restart
@@ -429,7 +430,8 @@ pnpm run pi:verify-cutover -- \
   --host nanoclaw-pi.local \
   --user pi \
   --path /home/pi/NanoClaw \
-  --second-brain-root /home/pi/Distributed-Cognition
+  --second-brain-root /home/pi/Distributed-Cognition \
+  --expected-commit "$NANOCLAW_PI_EXPECTED_COMMIT"
 ```
 
 The default is a dry run. Add `--execute` only after the values look right:
@@ -441,8 +443,13 @@ pnpm run pi:verify-cutover -- \
   --user pi \
   --path /home/pi/NanoClaw \
   --second-brain-root /home/pi/Distributed-Cognition \
+  --expected-commit "$NANOCLAW_PI_EXPECTED_COMMIT" \
   --execute
 ```
+
+If `--expected-commit` is omitted, the verifier uses the current local `HEAD`
+when available. Passing it explicitly makes the evidence bundle clearer on
+migration day.
 
 For the final WhatsApp persistence proof, generate one unique harmless proof
 phrase, send it from the allowlisted 1:1 WhatsApp chat, then rerun the verifier
@@ -457,6 +464,7 @@ pnpm run pi:verify-cutover -- \
   --user pi \
   --path /home/pi/NanoClaw \
   --second-brain-root /home/pi/Distributed-Cognition \
+  --expected-commit "$NANOCLAW_PI_EXPECTED_COMMIT" \
   --proof-text "$PROOF_TEXT" \
   --proof-since-minutes 30 \
   --execute

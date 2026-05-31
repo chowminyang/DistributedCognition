@@ -229,6 +229,7 @@ export NANOCLAW_PI_PROJECT_ROOT="<pi NanoClaw checkout path>"
 export NANOCLAW_PI_SECOND_BRAIN_ROOT="<pi Distributed-Cognition path>"
 export NANOCLAW_PI_CODEX_PROJECTS_ROOT="<pi Codex projects path>"
 export NANOCLAW_PI_RCLONE_REMOTE="dropbox:"
+export NANOCLAW_PI_EXPECTED_COMMIT="$(git rev-parse HEAD)"
 
 pnpm run pi:ssh-preflight
 ```
@@ -248,10 +249,10 @@ pnpm run pi:ssh-preflight -- \
 After cutover, Mac Codex can operate the Pi through the SSH admin helper:
 
 ```bash
-pnpm run pi:ssh-admin -- status
+pnpm run pi:ssh-admin -- status --expected-commit "$NANOCLAW_PI_EXPECTED_COMMIT"
 pnpm run pi:ssh-admin -- bridge-timers
 pnpm run pi:ssh-admin -- health
-pnpm run pi:ssh-admin -- doctor
+pnpm run pi:ssh-admin -- doctor --expected-commit "$NANOCLAW_PI_EXPECTED_COMMIT"
 pnpm run pi:ssh-admin -- process-bridges
 pnpm run pi:ssh-admin -- process-bridges --execute-bridges
 pnpm run pi:ssh-admin -- restart
@@ -266,12 +267,15 @@ pnpm run pi:verify-cutover -- \
   --host "<pi-host-or-ip>" \
   --user "<pi-ssh-user>" \
   --path "<pi NanoClaw checkout path>" \
-  --second-brain-root "<pi Distributed-Cognition path>"
+  --second-brain-root "<pi Distributed-Cognition path>" \
+  --expected-commit "$NANOCLAW_PI_EXPECTED_COMMIT"
 ```
 
 After the Mac host is stopped and the Pi service is running, add `--execute`.
 This checks the Mac stopped state plus Pi status, health, and dashboard output,
-and writes `output/pi-cutover-verification/DD-MM-YY-HHMM/`.
+and writes `output/pi-cutover-verification/DD-MM-YY-HHMM/`. If
+`--expected-commit` is omitted, the verifier uses the current local `HEAD`
+when available.
 
 For the final live proof, send one unique harmless WhatsApp phrase from the
 allowlisted chat, then rerun the verifier with that phrase:
@@ -285,6 +289,7 @@ pnpm run pi:verify-cutover -- \
   --user "<pi-ssh-user>" \
   --path "<pi NanoClaw checkout path>" \
   --second-brain-root "<pi Distributed-Cognition path>" \
+  --expected-commit "$NANOCLAW_PI_EXPECTED_COMMIT" \
   --proof-text "$PROOF_TEXT" \
   --proof-since-minutes 30 \
   --execute

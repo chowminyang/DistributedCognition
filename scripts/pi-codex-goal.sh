@@ -204,6 +204,8 @@ Rules:
 
 Work plan:
 1. On the Mac, inspect repo status and verify the public branch is current.
+   Set the expected Pi runtime version from the current Mac checkout:
+   EXPECTED_COMMIT="\$(git rev-parse HEAD)"
 2. Generate and show the read-only cutover plan:
    pnpm run pi:cutover-plan -- \\
      --local-root "${MAC_SECOND_BRAIN_DISPLAY}" \\
@@ -241,7 +243,7 @@ Work plan:
    pnpm run pi:ssh-start-runtime -- --host "${PI_HOST_DISPLAY}" --user "${PI_USER_DISPLAY}" --path "${PI_PROJECT_DISPLAY}" --second-brain-root "${PI_SECOND_BRAIN_DISPLAY}" --codex-projects-root "${PI_CODEX_DISPLAY}" --rclone-remote "${PI_RCLONE_REMOTE}"
    If the dry run is correct, rerun the same command with --execute. The execute path must refuse to start while the Mac NanoClaw host is still running, unless I explicitly approve rollback/emergency override.
 10. Verify from the Mac:
-   pnpm run pi:ssh-admin -- status
+   pnpm run pi:ssh-admin -- status --expected-commit "\$EXPECTED_COMMIT"
    pnpm run pi:ssh-admin -- health
    pnpm run pi:ssh-admin -- dashboard
    pnpm run pi:ssh-admin -- logs --lines 80
@@ -252,6 +254,7 @@ Work plan:
      --user "${PI_USER_DISPLAY}" \\
      --path "${PI_PROJECT_DISPLAY}" \\
      --second-brain-root "${PI_SECOND_BRAIN_DISPLAY}" \\
+     --expected-commit "\$EXPECTED_COMMIT" \\
      --execute
 12. Run a live WhatsApp smoke test from my allowed personal chat, using one unique harmless proof phrase:
    PROOF_TEXT="DC Pi cutover proof \$(date '+%d-%m-%y-%H%M')"
@@ -265,11 +268,12 @@ Work plan:
      --user "${PI_USER_DISPLAY}" \\
      --path "${PI_PROJECT_DISPLAY}" \\
      --second-brain-root "${PI_SECOND_BRAIN_DISPLAY}" \\
+     --expected-commit "\$EXPECTED_COMMIT" \\
      --proof-text "\$PROOF_TEXT" \\
      --proof-since-minutes 30 \\
      --execute
 13. After WhatsApp is proven to be replying from the Pi, keep the Mac NanoClaw host stopped. Confirm Pi bridge timers are installed, then process DC bridge work on the Pi with one manual bridge dry-run/execution from Mac Codex over SSH:
-   pnpm run pi:ssh-admin -- status
+   pnpm run pi:ssh-admin -- status --expected-commit "\$EXPECTED_COMMIT"
    pnpm run pi:ssh-admin -- process-bridges
    pnpm run pi:ssh-admin -- process-bridges --execute-bridges
    Do not restart the Mac NanoClaw/WhatsApp host unless I explicitly roll back. If I later choose Mac-visible Codex Desktop/App handoffs, explain the tradeoff and install only the Mac bridge jobs, never the Mac WhatsApp host.
@@ -280,6 +284,7 @@ Completion evidence required:
 - Final exported state bundle sha256 verifies before import.
 - Final exported state bundle passes pnpm run pi:inspect-state-bundle.
 - Pi systemd service is enabled and active.
+- Pi status proves the checkout is running the expected commit from the Mac cutover thread.
 - Pi bridge timers are installed and visible from pnpm run pi:ssh-admin -- status.
 - Mac NanoClaw host remains stopped after cutover.
 - The post-cutover verification helper writes a clean verification bundle.

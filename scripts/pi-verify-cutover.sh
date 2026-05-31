@@ -9,6 +9,7 @@ REMOTE_USER="${NANOCLAW_PI_USER:-${PI_USER:-}}"
 REMOTE_PROJECT_ROOT="${NANOCLAW_PI_PROJECT_ROOT:-}"
 SECOND_BRAIN_ROOT="${NANOCLAW_PI_SECOND_BRAIN_ROOT:-}"
 UNIT_NAME="${NANOCLAW_PI_UNIT_NAME:-}"
+EXPECTED_COMMIT="${NANOCLAW_PI_EXPECTED_COMMIT:-}"
 VERIFY_DIR=""
 LINES="80"
 EXECUTE="false"
@@ -46,6 +47,8 @@ Optional:
   --out-dir <path>               Mac export output directory.
                                   Default: ~/Desktop/dc-pi-migration
   --unit-name <name>             systemd unit name. Auto-detects nanoclaw-v2-*.
+  --expected-commit <sha>        Pi checkout commit expected during status checks.
+                                  Default: current local HEAD, when available.
   --output-dir <path>            Exact verification bundle directory.
                                   Default: output/pi-cutover-verification/DD-MM-YY-HHMM
   --lines <count>                Log lines if --include-logs is supplied. Default: 80.
@@ -69,6 +72,7 @@ Environment defaults:
   NANOCLAW_PI_PROJECT_ROOT
   NANOCLAW_PI_SECOND_BRAIN_ROOT
   NANOCLAW_PI_UNIT_NAME
+  NANOCLAW_PI_EXPECTED_COMMIT
   NANOCLAW_PI_WHATSAPP_PROOF_TEXT
   NANOCLAW_PI_WHATSAPP_PROOF_SINCE_MINUTES
   NANOCLAW_PI_SSH_CONNECT_TIMEOUT
@@ -340,6 +344,11 @@ while [ "$#" -gt 0 ]; do
       [ -n "$UNIT_NAME" ] || { echo "Missing value for --unit-name" >&2; exit 2; }
       shift 2
       ;;
+    --expected-commit)
+      EXPECTED_COMMIT="${2:-}"
+      [ -n "$EXPECTED_COMMIT" ] || { echo "Missing value for --expected-commit" >&2; exit 2; }
+      shift 2
+      ;;
     --output-dir)
       VERIFY_DIR="${2:-}"
       [ -n "$VERIFY_DIR" ] || { echo "Missing value for --output-dir" >&2; exit 2; }
@@ -421,10 +430,15 @@ require_value "Pi Distributed-Cognition path (--second-brain-root or NANOCLAW_PI
 mkdir -p "$VERIFY_DIR"
 cd "$PROJECT_ROOT"
 
+if [ -z "$EXPECTED_COMMIT" ] && git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  EXPECTED_COMMIT="$(git rev-parse HEAD 2>/dev/null || true)"
+fi
+
 mac_check_cmd=(pnpm run pi:mac-preflight -- --root "$LOCAL_SECOND_BRAIN_ROOT" --out-dir "$OUT_DIR" --require-stopped)
 admin_base=(pnpm run pi:ssh-admin --)
 admin_common=(--host "$HOST" --user "$REMOTE_USER" --path "$REMOTE_PROJECT_ROOT")
 [ -n "$UNIT_NAME" ] && admin_common+=(--unit-name "$UNIT_NAME")
+[ -n "$EXPECTED_COMMIT" ] && admin_common+=(--expected-commit "$EXPECTED_COMMIT")
 if [ "${#SSH_OPTIONS[@]}" -gt 0 ]; then
   admin_common+=("${SSH_OPTIONS[@]}")
 fi
@@ -518,6 +532,7 @@ fi
   printf -- '- Pi SSH target: `%s@%s`\n' "${REMOTE_USER:-<missing>}" "${HOST:-<missing>}"
   printf -- '- Pi NanoClaw path: `%s`\n' "${REMOTE_PROJECT_ROOT:-<missing>}"
   printf -- '- Pi Distributed-Cognition folder: `%s`\n' "${SECOND_BRAIN_ROOT:-<missing>}"
+  printf -- '- Expected Pi commit: `%s`\n' "${EXPECTED_COMMIT:-<not checked>}"
   printf -- '- Pi systemd unit: `%s`\n\n' "${UNIT_NAME:-<auto-detect>}"
   [ -n "$SSH_CONNECT_TIMEOUT" ] && printf -- '- SSH connect timeout: `%ss`\n' "$SSH_CONNECT_TIMEOUT"
   printf -- '- WhatsApp persistence proof: `%s`\n' "$PROOF_RESULT"
