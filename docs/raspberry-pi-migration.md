@@ -214,6 +214,24 @@ the Pi, verifies the checksum on the Pi, imports state through
 `scripts/pi-import-state.sh`, runs `pnpm run build`, and removes the copied
 bundle from the Pi when `--cleanup-remote` is supplied.
 
+Then configure the Pi runtime with a second dry run:
+
+```bash
+pnpm run pi:ssh-start-runtime -- \
+  --host nanoclaw-pi.local \
+  --user pi \
+  --path /home/pi/NanoClaw \
+  --second-brain-root /home/pi/Distributed-Cognition \
+  --codex-projects-root /home/pi/Codex \
+  --rclone-remote dropbox:
+```
+
+When the dry-run output is correct, add `--execute`. This creates the selected
+local folders, installs and starts the rclone timer for
+`dropbox:Distributed-Cognition`, updates Docker mount access for Distributed
+Cognition, installs and starts the NanoClaw systemd service, and runs
+`pnpm run dc:health` on the Pi.
+
 Manual fallback on the Pi:
 
 ```bash

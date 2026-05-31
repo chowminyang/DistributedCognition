@@ -260,20 +260,17 @@ print_command "STATE_BUNDLE=\"\$(ls -t $(quote_shell "$OUT_DIR")/nanoclaw-pi-sta
 print_command "pnpm run pi:ssh-restore-state -- --host $(quote_shell "${PI_HOST:-<pi-host>}") --user $(quote_shell "${PI_USER:-<pi-user>}") --path $(quote_shell "${PI_PROJECT_ROOT:-<pi NanoClaw path>}") --bundle \"\$STATE_BUNDLE\" --force --cleanup-remote"
 print_command "# If the dry run is correct, rerun the same command with --execute."
 
-section "5. Configure Pi Sync And Service"
-print_command "ssh ${PI_USER:-<pi-user>}@${PI_HOST:-<pi-host>}"
-print_command "cd $(quote_shell "${PI_PROJECT_ROOT:-<pi NanoClaw path>}")"
-print_command "mkdir -p $(quote_shell "${PI_SECOND_BRAIN_ROOT:-<pi Distributed-Cognition path>}")"
 if [ -n "$PI_CODEX_PROJECTS_ROOT" ]; then
-  print_command "mkdir -p $(quote_shell "$PI_CODEX_PROJECTS_ROOT")"
-fi
-print_command "bash scripts/pi-install-dropbox-sync.sh --local $(quote_shell "${PI_SECOND_BRAIN_ROOT:-<pi Distributed-Cognition path>}") --remote ${PI_RCLONE_REMOTE}Distributed-Cognition --interval 5min --start"
-if [ -n "$PI_CODEX_PROJECTS_ROOT" ]; then
-  print_command "pnpm run dc:ensure-docker-access -- --second-brain-root $(quote_shell "$PI_SECOND_BRAIN_ROOT") --codex-projects-root $(quote_shell "$PI_CODEX_PROJECTS_ROOT")"
+  start_runtime_cmd="pnpm run pi:ssh-start-runtime -- --host $(quote_shell "${PI_HOST:-<pi-host>}") --user $(quote_shell "${PI_USER:-<pi-user>}") --path $(quote_shell "${PI_PROJECT_ROOT:-<pi NanoClaw path>}") --second-brain-root $(quote_shell "${PI_SECOND_BRAIN_ROOT:-<pi Distributed-Cognition path>}") --codex-projects-root $(quote_shell "$PI_CODEX_PROJECTS_ROOT") --rclone-remote $(quote_shell "$PI_RCLONE_REMOTE")"
 else
-  print_command "pnpm run dc:ensure-docker-access -- --second-brain-root $(quote_shell "${PI_SECOND_BRAIN_ROOT:-<pi Distributed-Cognition path>}")"
+  start_runtime_cmd="pnpm run pi:ssh-start-runtime -- --host $(quote_shell "${PI_HOST:-<pi-host>}") --user $(quote_shell "${PI_USER:-<pi-user>}") --path $(quote_shell "${PI_PROJECT_ROOT:-<pi NanoClaw path>}") --second-brain-root $(quote_shell "${PI_SECOND_BRAIN_ROOT:-<pi Distributed-Cognition path>}") --codex-projects-root <pi Codex projects path> --rclone-remote $(quote_shell "$PI_RCLONE_REMOTE")"
 fi
-print_command "bash scripts/pi-install-systemd.sh --start"
+if [ -n "$PI_UNIT_NAME" ]; then
+  start_runtime_cmd="$start_runtime_cmd --unit-name $(quote_shell "$PI_UNIT_NAME")"
+fi
+section "5. Configure Pi Sync And Service"
+print_command "$start_runtime_cmd"
+print_command "# If the dry run is correct, rerun the same command with --execute."
 
 section "6. Smoke Test From Mac"
 if [ -n "$PI_UNIT_NAME" ]; then

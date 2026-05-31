@@ -236,7 +236,9 @@ Work plan:
    STATE_BUNDLE="\$(ls -t "${OUT_DIR}"/nanoclaw-pi-state-*.tar.gz | head -n 1)"
    pnpm run pi:ssh-restore-state -- --host "${PI_HOST_DISPLAY}" --user "${PI_USER_DISPLAY}" --path "${PI_PROJECT_DISPLAY}" --bundle "\$STATE_BUNDLE" --force --cleanup-remote
    If the dry run is correct, rerun the same command with --execute. This must verify sha256 on the Pi before importing.
-9. Configure rclone sync, update Docker mount access, and install/start systemd on the Pi.
+9. Configure rclone sync, update Docker mount access, install/start systemd, and run health using the dry-run helper first:
+   pnpm run pi:ssh-start-runtime -- --host "${PI_HOST_DISPLAY}" --user "${PI_USER_DISPLAY}" --path "${PI_PROJECT_DISPLAY}" --second-brain-root "${PI_SECOND_BRAIN_DISPLAY}" --codex-projects-root "${PI_CODEX_DISPLAY}" --rclone-remote "${PI_RCLONE_REMOTE}"
+   If the dry run is correct, rerun the same command with --execute.
 10. Verify from the Mac:
    pnpm run pi:ssh-admin -- status
    pnpm run pi:ssh-admin -- health

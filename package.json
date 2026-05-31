@@ -46,6 +46,7 @@
     "pi:ssh-bootstrap": "bash scripts/pi-ssh-bootstrap.sh",
     "pi:ssh-preflight": "bash scripts/pi-ssh-preflight.sh",
     "pi:ssh-restore-state": "bash scripts/pi-ssh-restore-state.sh",
+    "pi:ssh-start-runtime": "bash scripts/pi-ssh-start-runtime.sh",
     "pi:test-helpers": "bash scripts/test-pi-migration-helpers.sh",
     "auth": "tsx src/whatsapp-auth.ts",
     "lint": "eslint src/",

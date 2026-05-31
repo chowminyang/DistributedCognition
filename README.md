@@ -125,6 +125,23 @@ When the dry-run output is correct and the Mac host is stopped, add
 checksum on the Pi, imports state with the existing safe importer, and rebuilds.
 It does not start NanoClaw, configure rclone, or install systemd.
 
+Then start the Pi runtime setup with another dry run:
+
+```bash
+pnpm run pi:ssh-start-runtime -- \
+  --host "<pi-host-or-ip>" \
+  --user "<pi-ssh-user>" \
+  --path "<pi NanoClaw checkout path>" \
+  --second-brain-root "<pi Distributed-Cognition path>" \
+  --codex-projects-root "<pi Codex projects path>" \
+  --rclone-remote dropbox:
+```
+
+When the dry-run output is correct, add `--execute`. This installs/starts the
+rclone timer for only the selected `Distributed-Cognition` folder, updates the
+Docker mount allowlist and group mounts, installs/starts the Pi systemd service,
+and runs `dc:health`.
+
 To generate a paste-ready `/goal` prompt for the Mac Codex thread that will
 control the Pi on migration day:
 
