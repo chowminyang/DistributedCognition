@@ -141,6 +141,21 @@ means a first-seen Pi host key is added automatically, a changed host key is
 rejected, and missing SSH key authentication fails fast instead of hanging for a
 password prompt. Set up SSH key login from the Mac before cutover.
 
+You can check the Mac side before you know the Pi values:
+
+```bash
+pnpm run pi:ssh-key-check
+```
+
+After the Pi host and user are known, prove non-interactive login explicitly:
+
+```bash
+pnpm run pi:ssh-key-check -- --host nanoclaw-pi.local --user pi --test-login
+```
+
+The login test does not change NanoClaw, Docker, Dropbox, or WhatsApp state. It
+may add the first-seen Pi host key to `~/.ssh/known_hosts`.
+
 For a broader one-command readiness snapshot on the Mac, run:
 
 ```bash
@@ -441,6 +456,12 @@ When you ask Codex on the Mac to control the Pi, have these ready:
 SSH key login from the Mac should already work before final cutover. The helper
 commands are designed for Codex-driven, non-interactive SSH and should fail
 quickly if key auth or host trust is not ready.
+
+Run the local key check first:
+
+```bash
+pnpm run pi:ssh-key-check -- --host nanoclaw-pi.local --user pi --test-login
+```
 
 Run the SSH preflight from the Mac before restoring state or starting the Pi service:
 

@@ -77,6 +77,7 @@ helper_scripts=(
   scripts/pi-ssh-target-guard.sh
   scripts/pi-ssh-admin.sh
   scripts/pi-ssh-bootstrap.sh
+  scripts/pi-ssh-key-check.sh
   scripts/pi-ssh-preflight.sh
   scripts/pi-ssh-restore-state.sh
   scripts/pi-ssh-start-runtime.sh
@@ -113,6 +114,57 @@ assert_contains "$TMP_DIR/pi-discover-help.out" "No SSH is opened" "pi discovery
 pnpm run pi:operator-env-check -- --help >"$TMP_DIR/pi-operator-env-check-help.out"
 assert_contains "$TMP_DIR/pi-operator-env-check-help.out" "Validates the non-secret Raspberry Pi operator environment" "pi operator env check help documents purpose"
 assert_contains "$TMP_DIR/pi-operator-env-check-help.out" "does not source files, open SSH" "pi operator env check help documents no sourcing or SSH"
+
+pnpm run pi:ssh-key-check -- --help >"$TMP_DIR/pi-ssh-key-check-help.out"
+assert_contains "$TMP_DIR/pi-ssh-key-check-help.out" "Mac Codex has the local SSH pieces" "pi ssh key check help documents purpose"
+assert_contains "$TMP_DIR/pi-ssh-key-check-help.out" "--test-login" "pi ssh key check help documents login test"
+
+ssh_key_home="$TMP_DIR/ssh-key-home"
+mkdir -p "$ssh_key_home/.ssh"
+printf 'test private key placeholder\n' >"$ssh_key_home/.ssh/id_ed25519"
+printf 'ssh-ed25519 test-public-key distributed-cognition-test\n' >"$ssh_key_home/.ssh/id_ed25519.pub"
+chmod 600 "$ssh_key_home/.ssh/id_ed25519"
+chmod 644 "$ssh_key_home/.ssh/id_ed25519.pub"
+HOME="$ssh_key_home" pnpm run pi:ssh-key-check -- \
+  --host nanoclaw-pi.local \
+  --user pi \
+  --ssh-timeout 8 \
+  >"$TMP_DIR/pi-ssh-key-check-local.out"
+assert_contains "$TMP_DIR/pi-ssh-key-check-local.out" "PI_SSH_KEY_CHECK=local_ready" "pi ssh key check reports local readiness"
+assert_contains "$TMP_DIR/pi-ssh-key-check-local.out" "No SSH was opened" "pi ssh key check is non-mutating by default"
+assert_contains "$TMP_DIR/pi-ssh-key-check-local.out" "BatchMode=yes" "pi ssh key check dry-run includes non-interactive batch mode"
+assert_contains "$TMP_DIR/pi-ssh-key-check-local.out" "StrictHostKeyChecking=accept-new" "pi ssh key check dry-run includes host key default"
+assert_contains "$TMP_DIR/pi-ssh-key-check-local.out" "ConnectTimeout=8" "pi ssh key check dry-run includes configured timeout"
+
+no_key_home="$TMP_DIR/no-key-home"
+mkdir -p "$no_key_home/.ssh"
+set +e
+HOME="$no_key_home" pnpm run pi:ssh-key-check -- --strict >"$TMP_DIR/pi-ssh-key-check-no-key.out" 2>"$TMP_DIR/pi-ssh-key-check-no-key.err"
+ssh_key_no_key_code="$?"
+set -e
+assert_exit_code 1 "$ssh_key_no_key_code" "strict pi ssh key check fails when no key exists"
+assert_contains "$TMP_DIR/pi-ssh-key-check-no-key.out" "PI_SSH_KEY_CHECK=missing_key" "pi ssh key check reports missing key"
+assert_contains "$TMP_DIR/pi-ssh-key-check-no-key.out" "ssh-keygen -t ed25519" "pi ssh key check suggests key generation"
+
+fake_ssh_key_bin="$TMP_DIR/fake-ssh-key-bin"
+mkdir -p "$fake_ssh_key_bin"
+cat >"$fake_ssh_key_bin/ssh" <<'FAKE_SSH_KEY_LOGIN'
+#!/usr/bin/env bash
+set -euo pipefail
+[ -z "${FAKE_SSH_KEY_ARGS:-}" ] || printf '%s\n' "$@" >"$FAKE_SSH_KEY_ARGS"
+echo "PI_SSH_KEY_LOGIN=ok"
+echo "remote_host=fake-pi"
+echo "remote_user=pi"
+FAKE_SSH_KEY_LOGIN
+chmod +x "$fake_ssh_key_bin/ssh"
+PATH="$fake_ssh_key_bin:$PATH" HOME="$ssh_key_home" FAKE_SSH_KEY_ARGS="$TMP_DIR/pi-ssh-key-login-args.txt" pnpm run pi:ssh-key-check -- \
+  --host nanoclaw-pi.local \
+  --user pi \
+  --test-login \
+  >"$TMP_DIR/pi-ssh-key-check-login.out"
+assert_contains "$TMP_DIR/pi-ssh-key-check-login.out" "PI_SSH_KEY_CHECK=login_ok" "pi ssh key check can prove fake non-interactive login"
+assert_contains "$TMP_DIR/pi-ssh-key-login-args.txt" "BatchMode=yes" "pi ssh key login passes batch mode"
+assert_contains "$TMP_DIR/pi-ssh-key-login-args.txt" "StrictHostKeyChecking=accept-new" "pi ssh key login passes host key default"
 
 operator_env_root="$TMP_DIR/operator-env-root"
 mkdir -p "$operator_env_root"
@@ -477,7 +529,7 @@ readiness_dir="$TMP_DIR/readiness"
 readiness_remote="$TMP_DIR/readiness-remote.git"
 git init --bare --initial-branch=main "$readiness_remote" >/dev/null
 git push "$readiness_remote" HEAD:refs/heads/main >/dev/null 2>&1
-pnpm run pi:mac-readiness -- \
+HOME="$ssh_key_home" pnpm run pi:mac-readiness -- \
   --local-root "$readiness_root" \
   --out-dir "$TMP_DIR/export" \
   --output-dir "$readiness_dir" \
@@ -501,6 +553,7 @@ assert_contains "$TMP_DIR/readiness.out" "No SSH was opened" "mac readiness is n
 [ -f "$readiness_dir/health.json" ] || fail "mac readiness writes health artifact"
 [ -f "$readiness_dir/mac-preflight.txt" ] || fail "mac readiness writes mac preflight"
 [ -f "$readiness_dir/pi-discovery.txt" ] || fail "mac readiness writes pi discovery artifact"
+[ -f "$readiness_dir/ssh-key-check.txt" ] || fail "mac readiness writes ssh key check artifact"
 [ -f "$readiness_dir/operator-env-check.txt" ] || fail "mac readiness writes operator env check artifact"
 [ -f "$readiness_dir/ssh-preflight.txt" ] || fail "mac readiness writes ssh preflight artifact"
 [ -f "$readiness_dir/rehearsal/operator-env.sh" ] || fail "mac readiness writes nested operator env"
@@ -510,9 +563,11 @@ assert_contains "$readiness_dir/public-readiness.txt" "Skipped" "mac readiness c
 assert_contains "$readiness_dir/health.json" "Skipped" "mac readiness can skip health"
 assert_contains "$readiness_dir/ssh-preflight.txt" "Skipped: --include-ssh-preflight was not supplied" "mac readiness skips SSH preflight by default"
 assert_contains "$readiness_dir/pi-discovery.txt" "PI_DISCOVERY=ok" "mac readiness includes non-mutating Pi discovery"
+assert_contains "$readiness_dir/ssh-key-check.txt" "PI_SSH_KEY_CHECK=local_ready" "mac readiness includes local SSH key check"
 assert_contains "$readiness_dir/git-revision-check.txt" "GIT_REMOTE_COMMIT=ok" "mac readiness verifies expected commit is on configured branch"
 assert_contains "$readiness_dir/summary.md" "git-revision-check.txt" "mac readiness summary lists git revision check"
 assert_contains "$readiness_dir/summary.md" "pi-discovery.txt" "mac readiness summary lists pi discovery artifact"
+assert_contains "$readiness_dir/summary.md" "ssh-key-check.txt" "mac readiness summary lists ssh key check artifact"
 assert_contains "$readiness_dir/summary.md" "operator-env-check.txt" "mac readiness summary lists operator env check artifact"
 assert_contains "$readiness_dir/summary.md" "ssh-preflight.txt" "mac readiness summary lists ssh preflight artifact"
 assert_contains "$readiness_dir/summary.md" "rehearsal/operator-env.sh" "mac readiness summary lists nested operator env"
@@ -537,7 +592,7 @@ echo "PREFLIGHT_RESULT=ok failures=0 warnings=0"
 FAKE_SSH
 chmod +x "$fake_bin/ssh"
 readiness_ssh_dir="$TMP_DIR/readiness-with-ssh"
-PATH="$fake_bin:$PATH" pnpm run pi:mac-readiness -- \
+PATH="$fake_bin:$PATH" HOME="$ssh_key_home" pnpm run pi:mac-readiness -- \
   --local-root "$readiness_root" \
   --out-dir "$TMP_DIR/export" \
   --output-dir "$readiness_ssh_dir" \

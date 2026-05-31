@@ -24,6 +24,7 @@ SKIP_REMOTE_CHECK="false"
 SKIP_DISCOVERY="false"
 INCLUDE_SSH_PREFLIGHT="false"
 OPERATOR_ENV_STATUS="unknown"
+SSH_KEY_STATUS="unknown"
 
 usage() {
   cat <<'EOF'
@@ -73,6 +74,7 @@ Environment defaults:
   NANOCLAW_PI_CODEX_PROJECTS_ROOT
   NANOCLAW_PI_RCLONE_REMOTE
   NANOCLAW_PI_UNIT_NAME
+  NANOCLAW_PI_SSH_CONNECT_TIMEOUT
   NANOCLAW_PI_EXPECTED_COMMIT
   NANOCLAW_PI_REPO_URL
   NANOCLAW_PI_BRANCH
@@ -457,6 +459,26 @@ else
   run_capture_allow_warn "$READINESS_DIR/pi-discovery.txt" "Pi Discovery" pnpm run pi:discover -- --timeout 3 --host "$PI_HOST"
 fi
 
+ssh_key_check_cmd=(pnpm run pi:ssh-key-check --)
+[ -n "$PI_HOST" ] && ssh_key_check_cmd+=(--host "$PI_HOST")
+[ -n "$PI_USER" ] && ssh_key_check_cmd+=(--user "$PI_USER")
+[ -n "$PI_SSH_CONNECT_TIMEOUT" ] && ssh_key_check_cmd+=(--ssh-timeout "$PI_SSH_CONNECT_TIMEOUT")
+run_capture_allow_warn "$READINESS_DIR/ssh-key-check.txt" "Mac SSH Key Check" "${ssh_key_check_cmd[@]}"
+SSH_KEY_STATUS="$(grep -E '^PI_SSH_KEY_CHECK=' "$READINESS_DIR/ssh-key-check.txt" | tail -n 1 | cut -d= -f2 || true)"
+if [ -z "$SSH_KEY_STATUS" ]; then
+  SSH_KEY_STATUS="unknown"
+fi
+case "$SSH_KEY_STATUS" in
+  local_ready|missing_values)
+    ;;
+  missing_key)
+    warnings+=("Mac SSH key check did not find a usable local SSH identity; set up SSH key login before cutover")
+    ;;
+  *)
+    warnings+=("Mac SSH key check reported $SSH_KEY_STATUS; inspect ssh-key-check.txt before cutover")
+    ;;
+esac
+
 operator_env_check_cmd=(pnpm run pi:operator-env-check --)
 [ -n "$LOCAL_SECOND_BRAIN_ROOT" ] && operator_env_check_cmd+=(--local-root "$LOCAL_SECOND_BRAIN_ROOT")
 [ -n "$PI_HOST" ] && operator_env_check_cmd+=(--pi-host "$PI_HOST")
@@ -554,6 +576,7 @@ fi
   printf -- '- Pi Distributed-Cognition folder: `%s`\n' "${PI_SECOND_BRAIN_ROOT:-<missing>}"
   printf -- '- Pi Codex projects folder: `%s`\n' "${PI_CODEX_PROJECTS_ROOT:-<missing>}"
   printf -- '- Pi rclone remote: `%s`\n' "${PI_RCLONE_REMOTE:-<optional-not-set>}"
+  printf -- '- Mac SSH key check: `%s`\n' "$SSH_KEY_STATUS"
   printf -- '- Expected Pi commit: `%s`\n' "${EXPECTED_COMMIT:-<not checked>}"
   printf -- '- Repo URL: `%s`\n' "${REPO_URL:-<missing>}"
   printf -- '- Branch: `%s`\n' "${BRANCH:-<missing>}"
@@ -594,6 +617,7 @@ fi
   printf -- '- `health.json`\n'
   printf -- '- `mac-preflight.txt`\n'
   printf -- '- `pi-discovery.txt`\n'
+  printf -- '- `ssh-key-check.txt`\n'
   printf -- '- `operator-env-check.txt`\n'
   printf -- '- `ssh-preflight.txt`\n'
   printf -- '- `rehearsal.txt`\n'
