@@ -25,6 +25,7 @@ Distributed Cognition has moved to the Pi.
 Actions:
   doctor          Run status, health, and dashboard checks in one SSH session.
   status          Show service, git, Docker, and runtime status.
+  bridge-timers   Verify Distributed Cognition Pi bridge timers.
   health          Run pnpm run dc:health on the Pi.
   dashboard       Refresh the Distributed Cognition dashboard on the Pi.
   logs            Show recent systemd logs for the NanoClaw service.
@@ -72,6 +73,7 @@ Environment defaults:
 Examples:
   bash scripts/pi-ssh-admin.sh doctor --host nanoclaw-pi.local --user pi --path /home/pi/NanoClaw --second-brain-root /home/pi/Distributed-Cognition
   bash scripts/pi-ssh-admin.sh status --host nanoclaw-pi.local --user pi --path /home/pi/NanoClaw
+  bash scripts/pi-ssh-admin.sh bridge-timers --host nanoclaw-pi.local --user pi --path /home/pi/NanoClaw
   bash scripts/pi-ssh-admin.sh health --host nanoclaw-pi.local --user pi --path /home/pi/NanoClaw --second-brain-root /home/pi/Distributed-Cognition
   bash scripts/pi-ssh-admin.sh process-bridges --host nanoclaw-pi.local --user pi --path /home/pi/NanoClaw --second-brain-root /home/pi/Distributed-Cognition --codex-projects-root /home/pi/Codex
   bash scripts/pi-ssh-admin.sh process-bridges --execute-bridges --host nanoclaw-pi.local --user pi --path /home/pi/NanoClaw --second-brain-root /home/pi/Distributed-Cognition --codex-projects-root /home/pi/Codex
@@ -101,7 +103,7 @@ add_default_ssh_options
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
-    doctor|status|health|dashboard|logs|follow-logs|memory-bridge|codex-bridge|action-bridge|process-bridges|start|stop|restart|update)
+    doctor|status|bridge-timers|health|dashboard|logs|follow-logs|memory-bridge|codex-bridge|action-bridge|process-bridges|start|stop|restart|update)
       if [ -n "$ACTION" ]; then
         echo "Action already set: $ACTION" >&2
         exit 2
@@ -339,7 +341,45 @@ show_status() {
 
   echo
   echo "== Bridge Timers =="
-  systemctl list-timers '*bridge*.timer' --all --no-pager 2>/dev/null || true
+  show_bridge_timers || true
+}
+
+show_bridge_timers() {
+  require_command systemctl
+
+  echo "== Distributed Cognition Bridge Timers =="
+  local timers
+  timers="$(
+    {
+      systemctl list-timers --all --no-legend --no-pager 2>/dev/null | awk '{print $1}'
+      systemctl list-unit-files --type=timer --no-legend --no-pager 2>/dev/null | awk '{print $1}'
+    } | grep -E -- '-(health|dashboard|memory-bridge|codex-bridge|action-bridge)\.timer$' | sort -u || true
+  )"
+
+  if [ -z "$timers" ]; then
+    echo "PI_BRIDGE_TIMERS=missing"
+    echo "No Distributed Cognition bridge timers were found."
+    return 1
+  fi
+
+  local count=0
+  while IFS= read -r timer; do
+    [ -n "$timer" ] || continue
+    count=$((count + 1))
+    echo
+    echo "timer: $timer"
+    echo "enabled: $(systemctl is-enabled "$timer" 2>/dev/null || true)"
+    echo "active: $(systemctl is-active "$timer" 2>/dev/null || true)"
+    systemctl show "$timer" \
+      -p Unit \
+      -p NextElapseUSecRealtime \
+      -p LastTriggerUSec \
+      -p Result \
+      --no-pager 2>/dev/null || true
+  done <<<"$timers"
+
+  echo
+  echo "PI_BRIDGE_TIMERS=ok count=$count"
 }
 
 run_health() {
@@ -463,6 +503,7 @@ update_and_restart() {
 case "$ACTION" in
   doctor) run_doctor ;;
   status) show_status ;;
+  bridge-timers) show_bridge_timers ;;
   health) run_health ;;
   dashboard) run_dashboard ;;
   logs) run_logs ;;

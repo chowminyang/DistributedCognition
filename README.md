@@ -243,6 +243,7 @@ After cutover, Mac Codex can operate the Pi through the SSH admin helper:
 
 ```bash
 pnpm run pi:ssh-admin -- status
+pnpm run pi:ssh-admin -- bridge-timers
 pnpm run pi:ssh-admin -- health
 pnpm run pi:ssh-admin -- doctor
 pnpm run pi:ssh-admin -- process-bridges

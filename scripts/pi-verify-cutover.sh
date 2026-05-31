@@ -31,9 +31,9 @@ Codex on the Mac controls the Pi over SSH, while Distributed Cognition runs
 fully on the Pi.
 
 Dry-run is the default. With --execute, it checks that the Mac host is stopped,
-then runs Pi SSH admin status, health, and dashboard checks. It still does not
-send WhatsApp messages, copy secrets, import/export state, or change service
-state.
+then runs Pi SSH admin status, bridge timer, health, and dashboard checks. It
+still does not send WhatsApp messages, copy secrets, import/export state, or
+change service state.
 
 Required for --execute, unless matching environment defaults are set:
   --host <host>                  Pi host or IP, for example nanoclaw-pi.local.
@@ -430,6 +430,7 @@ if [ "${#SSH_OPTIONS[@]}" -gt 0 ]; then
 fi
 
 status_cmd=("${admin_base[@]}" status "${admin_common[@]}")
+bridge_timers_cmd=("${admin_base[@]}" bridge-timers "${admin_common[@]}")
 health_cmd=("${admin_base[@]}" health "${admin_common[@]}" --second-brain-root "$SECOND_BRAIN_ROOT")
 dashboard_cmd=("${admin_base[@]}" dashboard "${admin_common[@]}" --second-brain-root "$SECOND_BRAIN_ROOT")
 logs_cmd=("${admin_base[@]}" logs "${admin_common[@]}" --lines "$LINES")
@@ -450,6 +451,7 @@ if [ "$EXECUTE" = "true" ]; then
 
   run_capture "$VERIFY_DIR/mac-stopped-check.txt" "Mac Host Stopped Check" "${mac_check_cmd[@]}"
   run_capture "$VERIFY_DIR/pi-status.txt" "Pi Status" "${status_cmd[@]}"
+  run_capture "$VERIFY_DIR/pi-bridge-timers.txt" "Pi Bridge Timers" "${bridge_timers_cmd[@]}"
   run_capture "$VERIFY_DIR/pi-health.txt" "Pi Health" "${health_cmd[@]}"
   if [ "$SKIP_DASHBOARD" = "true" ]; then
     write_dry_run_artifact "$VERIFY_DIR/pi-dashboard.txt" "Pi Dashboard" "${dashboard_cmd[@]}"
@@ -467,6 +469,7 @@ if [ "$EXECUTE" = "true" ]; then
 else
   write_dry_run_artifact "$VERIFY_DIR/mac-stopped-check.txt" "Mac Host Stopped Check" "${mac_check_cmd[@]}"
   write_dry_run_artifact "$VERIFY_DIR/pi-status.txt" "Pi Status" "${status_cmd[@]}"
+  write_dry_run_artifact "$VERIFY_DIR/pi-bridge-timers.txt" "Pi Bridge Timers" "${bridge_timers_cmd[@]}"
   write_dry_run_artifact "$VERIFY_DIR/pi-health.txt" "Pi Health" "${health_cmd[@]}"
   write_dry_run_artifact "$VERIFY_DIR/pi-dashboard.txt" "Pi Dashboard" "${dashboard_cmd[@]}"
   if [ "$INCLUDE_LOGS" = "true" ]; then
@@ -539,6 +542,7 @@ fi
   printf '## Artifacts\n\n'
   printf -- '- `mac-stopped-check.txt`\n'
   printf -- '- `pi-status.txt`\n'
+  printf -- '- `pi-bridge-timers.txt`\n'
   printf -- '- `pi-health.txt`\n'
   printf -- '- `pi-dashboard.txt`\n'
   [ "$INCLUDE_LOGS" = "true" ] && printf -- '- `pi-logs.txt`\n'
@@ -546,7 +550,7 @@ fi
   printf -- '- `manual-whatsapp-checklist.md`\n\n'
 
   printf '## Completion Rule\n\n'
-  printf 'This helper verifies the Mac stopped state plus Pi service/health/dashboard checks. If `--proof-text` is supplied after a manual WhatsApp test, it also verifies that the proof phrase landed in recent Pi second-brain files. The visual WhatsApp reply still needs to be confirmed from the allowlisted 1:1 chat before migration is complete.\n'
+  printf 'This helper verifies the Mac stopped state plus Pi service, bridge timer, health, and dashboard checks. If `--proof-text` is supplied after a manual WhatsApp test, it also verifies that the proof phrase landed in recent Pi second-brain files. The visual WhatsApp reply still needs to be confirmed from the allowlisted 1:1 chat before migration is complete.\n'
 } >"$VERIFY_DIR/summary.md"
 
 echo "PI_CUTOVER_VERIFY=$status"
