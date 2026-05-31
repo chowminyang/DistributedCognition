@@ -144,8 +144,14 @@ password prompt. Set up SSH key login from the Mac before cutover.
 You can check the Mac side before you know the Pi values:
 
 ```bash
+pnpm run pi:first-boot-checklist
 pnpm run pi:ssh-key-check
 ```
+
+`pi:first-boot-checklist` is safe to run before the Pi exists. It prints the
+Raspberry Pi Imager settings, planned Pi folders, dedicated SSH public key path,
+and the next Mac commands. It does not create SSH keys, open SSH, write files,
+copy state, inspect secrets, stop services, or touch WhatsApp runtime state.
 
 If that reports `PI_SSH_KEY_CHECK=missing_key`, create a dedicated
 automation-friendly key for this Pi handoff rather than reusing or overwriting a
@@ -183,14 +189,16 @@ pnpm run pi:mac-readiness -- \
 
 This writes `output/pi-mac-readiness/DD-MM-YY-HHMM/` with git status, public
 branch commit reachability, public-readiness, DC health, Mac export preflight,
-and the nested rehearsal bundle. It is safe to run while the Mac instance is
-live; a warning that the Mac host is running is expected before final export.
-The readiness output also prints `operator_env=.../rehearsal/operator-env.sh`.
-If Pi values are missing, use that generated file as the non-secret fillable
-template: uncomment and set the missing `NANOCLAW_PI_*` lines, source it from
-the Mac Codex shell, run `pi:operator-env-check`, then rerun readiness.
-The bundle also includes `ssh-key-setup.txt`, a non-mutating dry-run showing
-the exact dedicated-key command to run before Pi SSH control.
+Pi first-boot checklist, SSH-key checks, and the nested rehearsal bundle. It is
+safe to run while the Mac instance is live; a warning that the Mac host is
+running is expected before final export. The readiness output also prints
+`operator_env=.../rehearsal/operator-env.sh`. If Pi values are missing, use that
+generated file as the non-secret fillable template: uncomment and set the
+missing `NANOCLAW_PI_*` lines, source it from the Mac Codex shell, run
+`pi:operator-env-check`, then rerun readiness. The bundle also includes
+`pi-first-boot-checklist.txt` and `ssh-key-setup.txt`, both non-mutating dry-runs
+showing the exact first-boot and dedicated-key commands to run before Pi SSH
+control.
 
 When you are ready to capture the final state, stop the Mac launchd jobs first so SQLite, WhatsApp auth, bridge queues, and delivery ledgers are quiet:
 

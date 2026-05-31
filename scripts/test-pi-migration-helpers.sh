@@ -71,6 +71,7 @@ helper_scripts=(
   scripts/pi-codex-goal.sh
   scripts/pi-cutover-plan.sh
   scripts/pi-discover.sh
+  scripts/pi-first-boot-checklist.sh
   scripts/pi-mac-readiness.sh
   scripts/pi-operator-env-check.sh
   scripts/pi-rehearse-cutover.sh
@@ -125,6 +126,45 @@ pnpm run pi:ssh-key-setup -- --help >"$TMP_DIR/pi-ssh-key-setup-help.out"
 assert_contains "$TMP_DIR/pi-ssh-key-setup-help.out" "Creates the dedicated Mac SSH identity" "pi ssh key setup help documents purpose"
 assert_contains "$TMP_DIR/pi-ssh-key-setup-help.out" "--execute" "pi ssh key setup help documents execute flag"
 assert_contains "$TMP_DIR/pi-ssh-key-setup-help.out" "distributed_cognition_pi_ed25519" "pi ssh key setup help documents default key"
+
+pnpm run pi:first-boot-checklist -- --help >"$TMP_DIR/pi-first-boot-checklist-help.out"
+assert_contains "$TMP_DIR/pi-first-boot-checklist-help.out" "first-boot checklist" "pi first boot checklist help documents purpose"
+assert_contains "$TMP_DIR/pi-first-boot-checklist-help.out" "does not create SSH keys" "pi first boot checklist help documents non-mutating behavior"
+assert_contains "$TMP_DIR/pi-first-boot-checklist-help.out" "NANOCLAW_PI_HOST" "pi first boot checklist help documents env defaults"
+
+first_boot_no_key_home="$TMP_DIR/first-boot-no-key-home"
+mkdir -p "$first_boot_no_key_home"
+HOME="$first_boot_no_key_home" pnpm run pi:first-boot-checklist -- >"$TMP_DIR/pi-first-boot-no-key.out"
+assert_contains "$TMP_DIR/pi-first-boot-no-key.out" "PI_FIRST_BOOT_CHECKLIST=needs_ssh_key" "pi first boot checklist reports missing key"
+assert_contains "$TMP_DIR/pi-first-boot-no-key.out" "No SSH was opened" "pi first boot checklist is non-mutating"
+assert_contains "$TMP_DIR/pi-first-boot-no-key.out" "Raspberry Pi Imager Settings" "pi first boot checklist includes imager settings"
+assert_contains "$TMP_DIR/pi-first-boot-no-key.out" "pnpm run pi:ssh-key-setup -- --execute" "pi first boot checklist suggests key setup"
+assert_contains "$TMP_DIR/pi-first-boot-no-key.out" "pnpm run pi:discover -- --host nanoclaw-pi.local" "pi first boot checklist suggests discovery"
+assert_contains "$TMP_DIR/pi-first-boot-no-key.out" "ssh-copy-id -i" "pi first boot checklist includes public key copy command"
+[ ! -e "$first_boot_no_key_home/.ssh/distributed_cognition_pi_ed25519" ] || fail "pi first boot checklist created a private key"
+ok "pi first boot checklist does not create a private key"
+
+set +e
+HOME="$first_boot_no_key_home" pnpm run pi:first-boot-checklist -- --strict >"$TMP_DIR/pi-first-boot-strict.out" 2>"$TMP_DIR/pi-first-boot-strict.err"
+first_boot_strict_code="$?"
+pnpm run pi:first-boot-checklist -- --host localhost >"$TMP_DIR/pi-first-boot-localhost.out" 2>"$TMP_DIR/pi-first-boot-localhost.err"
+first_boot_localhost_code="$?"
+set -e
+assert_exit_code 1 "$first_boot_strict_code" "strict pi first boot checklist fails when dedicated key is missing"
+assert_contains "$TMP_DIR/pi-first-boot-strict.out" "PI_FIRST_BOOT_CHECKLIST=needs_ssh_key" "strict pi first boot checklist reports missing key"
+assert_exit_code 2 "$first_boot_localhost_code" "pi first boot checklist refuses localhost Pi host"
+assert_contains "$TMP_DIR/pi-first-boot-localhost.err" "target the Mac/local machine rather than the Raspberry Pi" "pi first boot checklist guard explains localhost refusal"
+
+first_boot_ready_home="$TMP_DIR/first-boot-ready-home"
+mkdir -p "$first_boot_ready_home/.ssh"
+printf 'ssh-ed25519 ready-public-key distributed-cognition-test\n' >"$first_boot_ready_home/.ssh/distributed_cognition_pi_ed25519.pub"
+HOME="$first_boot_ready_home" pnpm run pi:first-boot-checklist -- \
+  --host nanoclaw-pi.local \
+  --user pi \
+  >"$TMP_DIR/pi-first-boot-ready.out"
+assert_contains "$TMP_DIR/pi-first-boot-ready.out" "PI_FIRST_BOOT_CHECKLIST=ready" "pi first boot checklist reports ready when public key exists"
+assert_contains "$TMP_DIR/pi-first-boot-ready.out" "Hostname: \`nanoclaw-pi\`" "pi first boot checklist derives imager hostname"
+assert_not_contains "$TMP_DIR/pi-first-boot-ready.out" "pnpm run pi:ssh-key-setup -- --execute" "pi first boot checklist skips key setup when public key exists"
 
 ssh_key_setup_home="$TMP_DIR/ssh-key-setup-home"
 mkdir -p "$ssh_key_setup_home"
@@ -626,6 +666,7 @@ assert_contains "$TMP_DIR/readiness.out" "No SSH was opened" "mac readiness is n
 [ -f "$readiness_dir/public-readiness.txt" ] || fail "mac readiness writes public-readiness artifact"
 [ -f "$readiness_dir/health.json" ] || fail "mac readiness writes health artifact"
 [ -f "$readiness_dir/mac-preflight.txt" ] || fail "mac readiness writes mac preflight"
+[ -f "$readiness_dir/pi-first-boot-checklist.txt" ] || fail "mac readiness writes pi first boot checklist artifact"
 [ -f "$readiness_dir/pi-discovery.txt" ] || fail "mac readiness writes pi discovery artifact"
 [ -f "$readiness_dir/ssh-key-setup.txt" ] || fail "mac readiness writes ssh key setup dry-run artifact"
 [ -f "$readiness_dir/ssh-key-check.txt" ] || fail "mac readiness writes ssh key check artifact"
@@ -637,12 +678,15 @@ assert_contains "$TMP_DIR/readiness.out" "No SSH was opened" "mac readiness is n
 assert_contains "$readiness_dir/public-readiness.txt" "Skipped" "mac readiness can skip public readiness"
 assert_contains "$readiness_dir/health.json" "Skipped" "mac readiness can skip health"
 assert_contains "$readiness_dir/ssh-preflight.txt" "Skipped: --include-ssh-preflight was not supplied" "mac readiness skips SSH preflight by default"
+assert_contains "$readiness_dir/pi-first-boot-checklist.txt" "PI_FIRST_BOOT_CHECKLIST=needs_ssh_key" "mac readiness includes first boot checklist"
+assert_contains "$readiness_dir/pi-first-boot-checklist.txt" "No SSH was opened" "mac readiness first boot checklist is non-mutating"
 assert_contains "$readiness_dir/pi-discovery.txt" "PI_DISCOVERY=ok" "mac readiness includes non-mutating Pi discovery"
 assert_contains "$readiness_dir/ssh-key-setup.txt" "PI_SSH_KEY_SETUP=dry_run" "mac readiness includes SSH key setup dry-run"
 assert_contains "$readiness_dir/ssh-key-setup.txt" "No SSH was opened" "mac readiness SSH key setup is non-mutating"
 assert_contains "$readiness_dir/ssh-key-check.txt" "PI_SSH_KEY_CHECK=local_ready" "mac readiness includes local SSH key check"
 assert_contains "$readiness_dir/git-revision-check.txt" "GIT_REMOTE_COMMIT=ok" "mac readiness verifies expected commit is on configured branch"
 assert_contains "$readiness_dir/summary.md" "git-revision-check.txt" "mac readiness summary lists git revision check"
+assert_contains "$readiness_dir/summary.md" "pi-first-boot-checklist.txt" "mac readiness summary lists pi first boot checklist artifact"
 assert_contains "$readiness_dir/summary.md" "pi-discovery.txt" "mac readiness summary lists pi discovery artifact"
 assert_contains "$readiness_dir/summary.md" "ssh-key-setup.txt" "mac readiness summary lists ssh key setup artifact"
 assert_contains "$readiness_dir/summary.md" "ssh-key-check.txt" "mac readiness summary lists ssh key check artifact"
@@ -741,13 +785,17 @@ assert_contains "$TMP_DIR/readiness-missing.out" "No SSH was opened" "strict mac
 [ -f "$TMP_DIR/readiness-missing/rehearsal/operator-env.sh" ] || fail "strict mac readiness writes missing-value operator env"
 [ -f "$TMP_DIR/readiness-missing/operator-env-check.txt" ] || fail "strict mac readiness writes operator env check"
 [ -f "$TMP_DIR/readiness-missing/rehearsal/operator-env-check.txt" ] || fail "strict mac readiness writes missing-value operator env check"
+[ -f "$TMP_DIR/readiness-missing/pi-first-boot-checklist.txt" ] || fail "strict mac readiness writes pi first boot checklist artifact"
 [ -f "$TMP_DIR/readiness-missing/pi-discovery.txt" ] || fail "strict mac readiness writes pi discovery artifact"
 [ -f "$TMP_DIR/readiness-missing/ssh-key-setup.txt" ] || fail "strict mac readiness writes ssh key setup dry-run artifact"
 assert_contains "$TMP_DIR/readiness-missing/summary.md" "Fillable Operator Environment" "strict mac readiness explains fillable operator env"
 assert_contains "$TMP_DIR/readiness-missing/summary.md" "Check \`pi-discovery.txt\` for passive local-network hints" "strict mac readiness points to pi discovery"
 assert_contains "$TMP_DIR/readiness-missing/summary.md" "rehearsal/operator-env.sh" "strict mac readiness summary points to operator env"
 assert_contains "$TMP_DIR/readiness-missing/pi-discovery.txt" "No SSH was opened. No state was changed." "strict mac readiness discovery is non-mutating"
+assert_contains "$TMP_DIR/readiness-missing/pi-first-boot-checklist.txt" "PI_FIRST_BOOT_CHECKLIST=" "strict mac readiness includes first boot checklist artifact"
+assert_contains "$TMP_DIR/readiness-missing/pi-first-boot-checklist.txt" "Raspberry Pi Imager Settings" "strict mac readiness first boot checklist includes imager settings"
 assert_contains "$TMP_DIR/readiness-missing/ssh-key-setup.txt" "PI_SSH_KEY_SETUP=" "strict mac readiness includes SSH key setup artifact"
+assert_contains "$TMP_DIR/readiness-missing/summary.md" "pi-first-boot-checklist.txt" "strict mac readiness summary lists first boot checklist artifact"
 assert_contains "$TMP_DIR/readiness-missing/summary.md" "ssh-key-setup.txt" "strict mac readiness summary lists ssh key setup artifact"
 assert_contains "$TMP_DIR/readiness-missing/rehearsal/operator-env.sh" "# Missing: Pi host or IP" "strict mac readiness operator env marks missing Pi host"
 assert_contains "$TMP_DIR/readiness-missing/rehearsal/operator-env.sh" "# Missing: Pi Codex projects folder" "strict mac readiness operator env marks missing Pi Codex projects root"

@@ -36,6 +36,7 @@
     "pi:import": "bash scripts/pi-import-state.sh",
     "pi:mac-preflight": "bash scripts/pi-mac-export-preflight.sh",
     "pi:mac-readiness": "bash scripts/pi-mac-readiness.sh",
+    "pi:first-boot-checklist": "bash scripts/pi-first-boot-checklist.sh",
     "pi:codex-goal": "bash scripts/pi-codex-goal.sh",
     "pi:cutover-plan": "bash scripts/pi-cutover-plan.sh",
     "pi:discover": "bash scripts/pi-discover.sh",

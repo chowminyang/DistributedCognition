@@ -1041,16 +1041,17 @@ Short migration path:
 
 1. Use Codex on the Mac as the SSH control plane for the Pi.
 2. Stop the Mac launchd jobs before exporting state.
-3. Set up SSH key login from the Mac to the Pi with `pnpm run pi:ssh-key-setup -- --execute`; the helper creates the dedicated `~/.ssh/distributed_cognition_pi_ed25519` key only when explicitly executed, and the SSH helpers use non-interactive SSH by default.
-4. Clone the repo on the Raspberry Pi.
-5. Restore only the deliberate state bundle: `.env`, `data/`, `store/`, `groups/`, and NanoClaw allowlists.
-6. Create a local second-brain folder on the Pi.
-7. Use rclone or another external sync method to sync only the selected Dropbox `Distributed-Cognition` folder.
-8. Mount that local folder into Docker.
-9. Rebuild containers on the Raspberry Pi rather than copying Mac images.
-10. Re-pair WhatsApp if needed.
-11. Start the Pi systemd service with bridge timers in `memory` mode.
-12. Verify logs, health, Dropbox writes, and WhatsApp allowlist again.
-13. Use Mac Codex over SSH for checks and heavier app-visible Codex/action handoffs.
+3. Print the non-mutating Pi first-boot checklist with `pnpm run pi:first-boot-checklist`; use it to configure Raspberry Pi Imager, SSH, hostname, username, and planned folders.
+4. Set up SSH key login from the Mac to the Pi with `pnpm run pi:ssh-key-setup -- --execute`; the helper creates the dedicated `~/.ssh/distributed_cognition_pi_ed25519` key only when explicitly executed, and the SSH helpers use non-interactive SSH by default.
+5. Clone the repo on the Raspberry Pi.
+6. Restore only the deliberate state bundle: `.env`, `data/`, `store/`, `groups/`, and NanoClaw allowlists.
+7. Create a local second-brain folder on the Pi.
+8. Use rclone or another external sync method to sync only the selected Dropbox `Distributed-Cognition` folder.
+9. Mount that local folder into Docker.
+10. Rebuild containers on the Raspberry Pi rather than copying Mac images.
+11. Re-pair WhatsApp if needed.
+12. Start the Pi systemd service with bridge timers in `memory` mode.
+13. Verify logs, health, Dropbox writes, and WhatsApp allowlist again.
+14. Use Mac Codex over SSH for checks and heavier app-visible Codex/action handoffs.
 
 Do not add Dropbox sync inside NanoClaw. Dropbox or rclone belongs outside the app.

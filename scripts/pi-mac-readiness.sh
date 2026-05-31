@@ -451,6 +451,15 @@ else
   fi
 fi
 
+first_boot_checklist_cmd=(pnpm run pi:first-boot-checklist --)
+[ -n "$PI_HOST" ] && first_boot_checklist_cmd+=(--host "$PI_HOST")
+[ -n "$PI_USER" ] && first_boot_checklist_cmd+=(--user "$PI_USER")
+[ -n "$PI_PROJECT_ROOT" ] && first_boot_checklist_cmd+=(--pi-path "$PI_PROJECT_ROOT")
+[ -n "$PI_SECOND_BRAIN_ROOT" ] && first_boot_checklist_cmd+=(--pi-second-brain-root "$PI_SECOND_BRAIN_ROOT")
+[ -n "$PI_CODEX_PROJECTS_ROOT" ] && first_boot_checklist_cmd+=(--pi-codex-projects-root "$PI_CODEX_PROJECTS_ROOT")
+[ -n "$PI_RCLONE_REMOTE" ] && first_boot_checklist_cmd+=(--pi-rclone-remote "$PI_RCLONE_REMOTE")
+run_capture_allow_warn "$READINESS_DIR/pi-first-boot-checklist.txt" "Pi First Boot Checklist" "${first_boot_checklist_cmd[@]}"
+
 if [ "$SKIP_DISCOVERY" = "true" ]; then
   write_skipped "$READINESS_DIR/pi-discovery.txt" "Pi Discovery" "--skip-discovery supplied"
 elif is_missing_or_placeholder "$PI_HOST"; then
@@ -621,6 +630,7 @@ fi
   printf -- '- `public-readiness.txt`\n'
   printf -- '- `health.json`\n'
   printf -- '- `mac-preflight.txt`\n'
+  printf -- '- `pi-first-boot-checklist.txt`\n'
   printf -- '- `pi-discovery.txt`\n'
   printf -- '- `ssh-key-setup.txt`\n'
   printf -- '- `ssh-key-check.txt`\n'
