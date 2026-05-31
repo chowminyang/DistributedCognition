@@ -147,9 +147,21 @@ You can check the Mac side before you know the Pi values:
 pnpm run pi:ssh-key-check
 ```
 
+If that reports `PI_SSH_KEY_CHECK=missing_key`, create a dedicated
+automation-friendly key for this Pi handoff rather than reusing or overwriting a
+default personal SSH key:
+
+```bash
+mkdir -p "$HOME/.ssh"
+chmod 700 "$HOME/.ssh"
+ssh-keygen -t ed25519 -f "$HOME/.ssh/distributed_cognition_pi_ed25519" -N "" -C "distributed-cognition-mac-to-pi"
+export NANOCLAW_PI_SSH_IDENTITY_FILE="$HOME/.ssh/distributed_cognition_pi_ed25519"
+```
+
 After the Pi host and user are known, prove non-interactive login explicitly:
 
 ```bash
+ssh-copy-id -i "$NANOCLAW_PI_SSH_IDENTITY_FILE.pub" pi@nanoclaw-pi.local
 pnpm run pi:ssh-key-check -- --host nanoclaw-pi.local --user pi --test-login
 ```
 
@@ -460,6 +472,7 @@ quickly if key auth or host trust is not ready.
 Run the local key check first:
 
 ```bash
+export NANOCLAW_PI_SSH_IDENTITY_FILE="$HOME/.ssh/distributed_cognition_pi_ed25519"
 pnpm run pi:ssh-key-check -- --host nanoclaw-pi.local --user pi --test-login
 ```
 

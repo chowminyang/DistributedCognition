@@ -118,6 +118,7 @@ assert_contains "$TMP_DIR/pi-operator-env-check-help.out" "does not source files
 pnpm run pi:ssh-key-check -- --help >"$TMP_DIR/pi-ssh-key-check-help.out"
 assert_contains "$TMP_DIR/pi-ssh-key-check-help.out" "Mac Codex has the local SSH pieces" "pi ssh key check help documents purpose"
 assert_contains "$TMP_DIR/pi-ssh-key-check-help.out" "--test-login" "pi ssh key check help documents login test"
+assert_contains "$TMP_DIR/pi-ssh-key-check-help.out" "distributed_cognition_pi_ed25519" "pi ssh key check help documents dedicated key preference"
 
 ssh_key_home="$TMP_DIR/ssh-key-home"
 mkdir -p "$ssh_key_home/.ssh"
@@ -136,6 +137,20 @@ assert_contains "$TMP_DIR/pi-ssh-key-check-local.out" "BatchMode=yes" "pi ssh ke
 assert_contains "$TMP_DIR/pi-ssh-key-check-local.out" "StrictHostKeyChecking=accept-new" "pi ssh key check dry-run includes host key default"
 assert_contains "$TMP_DIR/pi-ssh-key-check-local.out" "ConnectTimeout=8" "pi ssh key check dry-run includes configured timeout"
 
+dedicated_key_home="$TMP_DIR/dedicated-key-home"
+mkdir -p "$dedicated_key_home/.ssh"
+printf 'dedicated private key placeholder\n' >"$dedicated_key_home/.ssh/distributed_cognition_pi_ed25519"
+printf 'ssh-ed25519 dedicated-public-key distributed-cognition-test\n' >"$dedicated_key_home/.ssh/distributed_cognition_pi_ed25519.pub"
+printf 'default private key placeholder\n' >"$dedicated_key_home/.ssh/id_ed25519"
+printf 'ssh-ed25519 default-public-key distributed-cognition-test\n' >"$dedicated_key_home/.ssh/id_ed25519.pub"
+chmod 600 "$dedicated_key_home/.ssh/distributed_cognition_pi_ed25519" "$dedicated_key_home/.ssh/id_ed25519"
+chmod 644 "$dedicated_key_home/.ssh/distributed_cognition_pi_ed25519.pub" "$dedicated_key_home/.ssh/id_ed25519.pub"
+HOME="$dedicated_key_home" pnpm run pi:ssh-key-check -- \
+  --host nanoclaw-pi.local \
+  --user pi \
+  >"$TMP_DIR/pi-ssh-key-check-dedicated.out"
+assert_contains "$TMP_DIR/pi-ssh-key-check-dedicated.out" "first_identity=$dedicated_key_home/.ssh/distributed_cognition_pi_ed25519" "pi ssh key check prefers dedicated DC identity"
+
 no_key_home="$TMP_DIR/no-key-home"
 mkdir -p "$no_key_home/.ssh"
 set +e
@@ -144,7 +159,9 @@ ssh_key_no_key_code="$?"
 set -e
 assert_exit_code 1 "$ssh_key_no_key_code" "strict pi ssh key check fails when no key exists"
 assert_contains "$TMP_DIR/pi-ssh-key-check-no-key.out" "PI_SSH_KEY_CHECK=missing_key" "pi ssh key check reports missing key"
-assert_contains "$TMP_DIR/pi-ssh-key-check-no-key.out" "ssh-keygen -t ed25519" "pi ssh key check suggests key generation"
+assert_contains "$TMP_DIR/pi-ssh-key-check-no-key.out" "distributed_cognition_pi_ed25519" "pi ssh key check suggests dedicated key generation"
+assert_contains "$TMP_DIR/pi-ssh-key-check-no-key.out" 'export NANOCLAW_PI_SSH_IDENTITY_FILE="$HOME/.ssh/distributed_cognition_pi_ed25519"' "pi ssh key check suggests identity-file env"
+assert_contains "$TMP_DIR/pi-ssh-key-check-no-key.out" 'ssh-copy-id -i "$NANOCLAW_PI_SSH_IDENTITY_FILE.pub"' "pi ssh key check suggests copying dedicated public key"
 
 fake_ssh_key_bin="$TMP_DIR/fake-ssh-key-bin"
 mkdir -p "$fake_ssh_key_bin"

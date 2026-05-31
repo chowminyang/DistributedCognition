@@ -23,6 +23,10 @@ Checks whether Mac Codex has the local SSH pieces needed to control the
 Raspberry Pi non-interactively. This helper is local-only by default and opens
 no SSH connection unless --test-login is supplied.
 
+When --identity-file is not supplied, the helper looks first for a dedicated
+Distributed Cognition key at ~/.ssh/distributed_cognition_pi_ed25519 before
+falling back to common default SSH identities.
+
 Options:
   --host <host>                  Pi host or IP, for example nanoclaw-pi.local.
   --user <user>                  SSH user, for example pi.
@@ -212,6 +216,7 @@ if [ -n "$IDENTITY_FILE" ]; then
   candidate_keys+=("$IDENTITY_FILE")
 else
   candidate_keys+=(
+    "$HOME/.ssh/distributed_cognition_pi_ed25519"
     "$HOME/.ssh/id_ed25519"
     "$HOME/.ssh/id_rsa"
     "$HOME/.ssh/id_ecdsa"
@@ -309,8 +314,12 @@ fi
 if [ -z "$found_key" ]; then
   printf 'Suggested one-time setup:\n\n'
   printf '```bash\n'
-  printf 'ssh-keygen -t ed25519 -C "distributed-cognition-mac-to-pi"\n'
-  printf 'ssh-copy-id %s@%s\n' "${REMOTE_USER:-<pi-user>}" "${HOST:-<pi-host>}"
+  printf 'mkdir -p "$HOME/.ssh"\n'
+  printf 'chmod 700 "$HOME/.ssh"\n'
+  printf 'ssh-keygen -t ed25519 -f "$HOME/.ssh/distributed_cognition_pi_ed25519" -N "" -C "distributed-cognition-mac-to-pi"\n'
+  printf 'export NANOCLAW_PI_SSH_IDENTITY_FILE="$HOME/.ssh/distributed_cognition_pi_ed25519"\n'
+  printf 'ssh-copy-id -i "$NANOCLAW_PI_SSH_IDENTITY_FILE.pub" %s@%s\n' "${REMOTE_USER:-<pi-user>}" "${HOST:-<pi-host>}"
+  printf 'pnpm run pi:ssh-key-check -- --identity-file "$NANOCLAW_PI_SSH_IDENTITY_FILE" --host %s --user %s --test-login\n' "${HOST:-<pi-host>}" "${REMOTE_USER:-<pi-user>}"
   printf '```\n\n'
 fi
 
