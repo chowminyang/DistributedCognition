@@ -166,7 +166,24 @@ assert_contains "$bridge_runner" "dc:codex-bridge" "bridge runner includes codex
 assert_contains "$bridge_runner" "--execute" "bridge runner can execute queued bridge work"
 assert_contains "$bridge_timer" "OnUnitActiveSec=5min" "bridge timer uses configured interval"
 assert_contains "$bridge_unit" "ExecStart=/bin/bash" "bridge unit calls runner"
-assert_contains "$TMP_DIR/bridge-timer-render.out" "Bridge jobs execute queued work." "bridge timer render reports execute mode"
+assert_contains "$TMP_DIR/bridge-timer-render.out" "Bridge execute mode: all" "bridge timer render reports all execute mode"
+assert_contains "$TMP_DIR/bridge-timer-render.out" "Bridge jobs execute queued memory, Codex, and action work." "bridge timer render reports all queue execution"
+
+bridge_timer_memory_dir="$TMP_DIR/bridge-timer-memory-render"
+bash scripts/pi-install-bridge-timers.sh \
+  --output-dir "$bridge_timer_memory_dir" \
+  --root /home/pi/Distributed-Cognition \
+  --codex-projects-root /home/pi/Codex \
+  --interval 5min \
+  --unit-prefix dc-bridge-memory-test \
+  --bridge-execute-mode memory \
+  >"$TMP_DIR/bridge-timer-memory-render.out"
+bridge_memory_runner="$bridge_timer_memory_dir/dc-pi-run-bridges-dc-bridge-memory-test.sh"
+[ -f "$bridge_memory_runner" ] || fail "bridge timer memory render writes runner"
+assert_contains "$bridge_memory_runner" "BRIDGE_EXECUTE_MODE=memory" "bridge runner records memory execute mode"
+assert_contains "$bridge_timer_memory_dir/dc-bridge-memory-test-codex-bridge.service" "ExecStart=/bin/bash" "bridge memory render writes codex unit"
+assert_contains "$TMP_DIR/bridge-timer-memory-render.out" "Bridge execute mode: memory" "bridge timer render reports memory mode"
+assert_contains "$TMP_DIR/bridge-timer-memory-render.out" "Memory bridge executes queued work; Codex/action bridge jobs stay dry-run" "bridge timer memory mode keeps Codex/action dry-run"
 
 action_bridge_root="$TMP_DIR/action-bridge-root"
 mkdir -p "$action_bridge_root"
@@ -205,6 +222,7 @@ assert_contains "$goal_out" "Raspberry Pi is the final always-on Distributed Cog
 assert_contains "$goal_out" "pnpm run pi:ssh-bootstrap" "codex goal includes SSH bootstrap"
 assert_contains "$goal_out" "pnpm run pi:ssh-restore-state" "codex goal includes SSH state restore"
 assert_contains "$goal_out" "pnpm run pi:ssh-start-runtime" "codex goal includes SSH runtime start"
+assert_contains "$goal_out" "--bridge-execute-mode memory" "codex goal defaults Pi bridge timers to memory mode"
 assert_contains "$goal_out" "execute path must refuse to start while the Mac NanoClaw host is still running" "codex goal includes Mac host runtime guard"
 assert_contains "$goal_out" "Mac NanoClaw Docker agent containers are still running" "codex goal includes Mac Docker runtime guard"
 assert_contains "$goal_out" "Mac runtime lock under logs/pi-cutover/" "codex goal includes Mac runtime lock"
@@ -249,6 +267,7 @@ assert_contains "$plan_out" "pnpm run dc:stop-host -- --execute" "cutover plan i
 assert_contains "$plan_out" "pnpm run pi:ssh-preflight" "cutover plan includes SSH preflight"
 assert_contains "$plan_out" "pnpm run pi:ssh-restore-state" "cutover plan includes SSH state restore"
 assert_contains "$plan_out" "pnpm run pi:ssh-start-runtime" "cutover plan includes SSH runtime start"
+assert_contains "$plan_out" "--bridge-execute-mode memory" "cutover plan defaults Pi bridge timers to memory mode"
 assert_contains "$plan_out" "Mac NanoClaw host or NanoClaw Docker agent containers appear to be running" "cutover plan documents Mac host and Docker runtime guard"
 assert_contains "$plan_out" "logs/pi-cutover/mac-runtime-disabled.lock" "cutover plan documents Mac runtime lock"
 assert_contains "$plan_out" "pnpm run pi:ssh-admin -- doctor" "cutover plan includes Pi doctor check"
@@ -472,10 +491,13 @@ assert_contains "$TMP_DIR/ssh-admin-help.out" "BatchMode=yes" "ssh admin help do
 assert_contains "$TMP_DIR/ssh-admin-help.out" "doctor" "ssh admin help documents doctor action"
 assert_contains "$TMP_DIR/ssh-admin-help.out" "bridge-timers" "ssh admin help documents bridge timer action"
 assert_contains "$TMP_DIR/ssh-admin-help.out" "process-bridges" "ssh admin help documents Pi-side bridge processing"
+assert_contains "$TMP_DIR/ssh-admin-help.out" "--bridge-execute-mode" "ssh admin help documents bridge mode option"
+assert_contains "$TMP_DIR/ssh-admin-help.out" "--execute-memory-bridge" "ssh admin help documents memory-only bridge execution"
 assert_contains "$TMP_DIR/ssh-admin-help.out" "--execute-bridges" "ssh admin help documents bridge execute flag"
 assert_contains "$TMP_DIR/ssh-admin-help.out" "--expected-commit" "ssh admin help documents expected commit"
 assert_contains "$TMP_DIR/ssh-admin-help.out" "--allow-mac-host-running" "ssh admin help documents Mac host guard override"
 assert_contains "$TMP_DIR/ssh-admin-help.out" "NANOCLAW_PI_SSH_CONNECT_TIMEOUT" "ssh admin help documents SSH timeout env"
+assert_contains "$TMP_DIR/ssh-admin-help.out" "NANOCLAW_PI_BRIDGE_EXECUTE_MODE" "ssh admin help documents bridge mode env"
 
 pnpm run pi:ssh-preflight -- --help >"$TMP_DIR/ssh-preflight-help.out"
 assert_contains "$TMP_DIR/ssh-preflight-help.out" "Required options, unless the matching environment defaults are set" "ssh preflight help documents env defaults"
@@ -496,6 +518,8 @@ pnpm run pi:ssh-start-runtime -- --help >"$TMP_DIR/ssh-start-runtime-help.out"
 assert_contains "$TMP_DIR/ssh-start-runtime-help.out" "dry-run by default" "ssh start runtime help documents dry-run default"
 assert_contains "$TMP_DIR/ssh-start-runtime-help.out" "systemd installation/startup" "ssh start runtime help documents systemd startup"
 assert_contains "$TMP_DIR/ssh-start-runtime-help.out" "--skip-bridge-timers" "ssh start runtime help documents bridge timer skip"
+assert_contains "$TMP_DIR/ssh-start-runtime-help.out" "--bridge-execute-mode" "ssh start runtime help documents bridge mode option"
+assert_contains "$TMP_DIR/ssh-start-runtime-help.out" "--execute-memory-bridge" "ssh start runtime help documents memory-only bridge timer mode"
 assert_contains "$TMP_DIR/ssh-start-runtime-help.out" "--execute-bridges" "ssh start runtime help documents bridge timer execute mode"
 assert_contains "$TMP_DIR/ssh-start-runtime-help.out" "--allow-mac-host-running" "ssh start runtime help documents Mac host guard override"
 assert_contains "$TMP_DIR/ssh-start-runtime-help.out" "NANOCLAW_PI_SSH_CONNECT_TIMEOUT" "ssh start runtime help documents SSH timeout env"
@@ -543,6 +567,43 @@ assert_contains "$TMP_DIR/ssh-preflight-missing.err" "Missing required --host" "
 assert_contains "$TMP_DIR/ssh-bootstrap-missing.err" "Missing required --host" "ssh bootstrap missing host is explicit"
 assert_contains "$TMP_DIR/ssh-restore-missing.err" "Missing required --host" "ssh restore missing host is explicit"
 assert_contains "$TMP_DIR/ssh-start-runtime-missing.err" "Missing required --host" "ssh start runtime missing host is explicit"
+
+fake_admin_bin="$TMP_DIR/fake-admin-bin"
+mkdir -p "$fake_admin_bin"
+cat >"$fake_admin_bin/ssh" <<'FAKE_ADMIN_SSH'
+#!/usr/bin/env bash
+set -euo pipefail
+cat >/dev/null
+echo "MOCK_SSH_ADMIN=ok"
+FAKE_ADMIN_SSH
+chmod +x "$fake_admin_bin/ssh"
+PATH="$fake_admin_bin:$PATH" pnpm run pi:ssh-admin -- process-bridges \
+  --host nanoclaw-pi.local \
+  --user pi \
+  --path /home/pi/NanoClaw \
+  --second-brain-root /home/pi/Distributed-Cognition \
+  --codex-projects-root /home/pi/Codex \
+  --bridge-execute-mode memory \
+  --limit 2 \
+  >"$TMP_DIR/ssh-admin-memory-mode.out"
+assert_contains "$TMP_DIR/ssh-admin-memory-mode.out" "Bridge execute mode: memory" "ssh admin reports memory bridge mode"
+assert_contains "$TMP_DIR/ssh-admin-memory-mode.out" "Bridge limit: 2" "ssh admin reports bridge limit"
+assert_contains "$TMP_DIR/ssh-admin-memory-mode.out" "MOCK_SSH_ADMIN=ok" "ssh admin opens SSH after local memory-mode validation"
+
+set +e
+pnpm run pi:ssh-admin -- process-bridges \
+  --host nanoclaw-pi.local \
+  --user pi \
+  --path /home/pi/NanoClaw \
+  --second-brain-root /home/pi/Distributed-Cognition \
+  --codex-projects-root /home/pi/Codex \
+  --bridge-execute-mode nope \
+  >"$TMP_DIR/ssh-admin-invalid-bridge-mode.out" \
+  2>"$TMP_DIR/ssh-admin-invalid-bridge-mode.err"
+invalid_admin_bridge_mode_code="$?"
+set -e
+assert_exit_code 2 "$invalid_admin_bridge_mode_code" "ssh admin rejects invalid bridge execute mode before SSH"
+assert_contains "$TMP_DIR/ssh-admin-invalid-bridge-mode.err" "--bridge-execute-mode must be dry-run, memory, or all" "ssh admin invalid bridge mode is explicit"
 
 pnpm run pi:ssh-bootstrap -- \
   --host nanoclaw-pi.local \
@@ -641,11 +702,25 @@ pnpm run pi:ssh-start-runtime -- \
 assert_contains "$TMP_DIR/ssh-start-runtime-dry-run.out" "PI_SSH_START_RUNTIME=dry_run" "ssh start runtime dry-run does not SSH"
 assert_contains "$TMP_DIR/ssh-start-runtime-dry-run.out" "No SSH was opened" "ssh start runtime dry-run is non-mutating"
 assert_contains "$TMP_DIR/ssh-start-runtime-dry-run.out" "Mac host guard: enforced" "ssh start runtime dry-run reports Mac host guard"
+assert_contains "$TMP_DIR/ssh-start-runtime-dry-run.out" "bridge execute mode: dry-run" "ssh start runtime dry-run reports bridge dry-run mode"
+assert_contains "$TMP_DIR/ssh-start-runtime-dry-run.out" "--bridge-execute-mode dry-run" "ssh start runtime dry-run command includes bridge mode"
 assert_contains "$TMP_DIR/ssh-start-runtime-dry-run.out" "pi-install-dropbox-sync.sh" "ssh start runtime dry-run shows rclone timer install"
 assert_contains "$TMP_DIR/ssh-start-runtime-dry-run.out" "dc:ensure-docker-access" "ssh start runtime dry-run shows Docker access update"
 assert_contains "$TMP_DIR/ssh-start-runtime-dry-run.out" "pi-install-systemd.sh" "ssh start runtime dry-run shows systemd install"
 assert_contains "$TMP_DIR/ssh-start-runtime-dry-run.out" "pi-install-bridge-timers.sh" "ssh start runtime dry-run shows Pi bridge timer install"
 assert_contains "$TMP_DIR/ssh-start-runtime-dry-run.out" "dc:health" "ssh start runtime dry-run shows health check"
+
+pnpm run pi:ssh-start-runtime -- \
+  --host nanoclaw-pi.local \
+  --user pi \
+  --path /home/pi/NanoClaw \
+  --second-brain-root /home/pi/Distributed-Cognition \
+  --codex-projects-root /home/pi/Codex \
+  --rclone-remote dropbox: \
+  --bridge-execute-mode memory \
+  >"$TMP_DIR/ssh-start-runtime-memory-dry-run.out"
+assert_contains "$TMP_DIR/ssh-start-runtime-memory-dry-run.out" "bridge execute mode: memory" "ssh start runtime reports memory bridge mode"
+assert_contains "$TMP_DIR/ssh-start-runtime-memory-dry-run.out" "--bridge-execute-mode memory" "ssh start runtime dry-run command includes memory mode"
 
 fake_docker_bin="$TMP_DIR/fake-docker-bin"
 mkdir -p "$fake_docker_bin"

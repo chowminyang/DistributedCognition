@@ -14,7 +14,7 @@ EXPECTED_COMMIT="${NANOCLAW_PI_EXPECTED_COMMIT:-}"
 ALLOW_MAC_HOST_RUNNING="${NANOCLAW_PI_ALLOW_MAC_HOST_RUNNING:-false}"
 LINES="120"
 BRIDGE_LIMIT="5"
-EXECUTE_BRIDGES="false"
+BRIDGE_EXECUTE_MODE="${NANOCLAW_PI_BRIDGE_EXECUTE_MODE:-dry-run}"
 SSH_OPTIONS=()
 
 usage() {
@@ -58,7 +58,9 @@ Optional:
   --expected-commit <sha>        Verify the Pi checkout commit starts with this SHA.
   --lines <count>                Log lines for logs action. Default: 120.
   --limit <count>                Bridge queue limit. Default: 5.
-  --execute-bridges              Execute bridge work. Without this, bridges dry-run.
+  --bridge-execute-mode <mode>   dry-run, memory, or all. Default: dry-run.
+  --execute-memory-bridge        Execute only the Mnemon memory bridge.
+  --execute-bridges              Execute memory, Codex, and action bridge work.
   --allow-mac-host-running       Allow start/restart/update even if this Mac
                                  checkout still appears to run NanoClaw. Use
                                  only for rollback/emergency work.
@@ -76,6 +78,7 @@ Environment defaults:
   NANOCLAW_PI_UNIT_NAME
   NANOCLAW_PI_SSH_CONNECT_TIMEOUT
   NANOCLAW_PI_EXPECTED_COMMIT
+  NANOCLAW_PI_BRIDGE_EXECUTE_MODE
   NANOCLAW_PI_ALLOW_MAC_HOST_RUNNING
 
 Examples:
@@ -84,6 +87,7 @@ Examples:
   bash scripts/pi-ssh-admin.sh bridge-timers --host nanoclaw-pi.local --user pi --path /home/pi/NanoClaw
   bash scripts/pi-ssh-admin.sh health --host nanoclaw-pi.local --user pi --path /home/pi/NanoClaw --second-brain-root /home/pi/Distributed-Cognition
   bash scripts/pi-ssh-admin.sh process-bridges --host nanoclaw-pi.local --user pi --path /home/pi/NanoClaw --second-brain-root /home/pi/Distributed-Cognition --codex-projects-root /home/pi/Codex
+  bash scripts/pi-ssh-admin.sh process-bridges --bridge-execute-mode memory --host nanoclaw-pi.local --user pi --path /home/pi/NanoClaw --second-brain-root /home/pi/Distributed-Cognition --codex-projects-root /home/pi/Codex
   bash scripts/pi-ssh-admin.sh process-bridges --execute-bridges --host nanoclaw-pi.local --user pi --path /home/pi/NanoClaw --second-brain-root /home/pi/Distributed-Cognition --codex-projects-root /home/pi/Codex
   bash scripts/pi-ssh-admin.sh restart --host nanoclaw-pi.local --user pi --path /home/pi/NanoClaw
   NANOCLAW_PI_HOST=nanoclaw-pi.local NANOCLAW_PI_USER=pi NANOCLAW_PI_PROJECT_ROOT=/home/pi/NanoClaw bash scripts/pi-ssh-admin.sh status
@@ -297,8 +301,17 @@ while [ "$#" -gt 0 ]; do
       [ "$BRIDGE_LIMIT" -gt 0 ] || { echo "--limit must be greater than 0" >&2; exit 2; }
       shift 2
       ;;
+    --bridge-execute-mode)
+      BRIDGE_EXECUTE_MODE="${2:-}"
+      [ -n "$BRIDGE_EXECUTE_MODE" ] || { echo "Missing value for --bridge-execute-mode" >&2; exit 2; }
+      shift 2
+      ;;
+    --execute-memory-bridge)
+      BRIDGE_EXECUTE_MODE="memory"
+      shift
+      ;;
     --execute-bridges)
-      EXECUTE_BRIDGES="true"
+      BRIDGE_EXECUTE_MODE="all"
       shift
       ;;
     --allow-mac-host-running)
@@ -330,6 +343,14 @@ done
 [ -n "$HOST" ] || { echo "Missing required --host" >&2; usage >&2; exit 2; }
 [ -n "$REMOTE_USER" ] || { echo "Missing required --user" >&2; usage >&2; exit 2; }
 [ -n "$REMOTE_PROJECT_ROOT" ] || { echo "Missing required --path" >&2; usage >&2; exit 2; }
+case "$BRIDGE_EXECUTE_MODE" in
+  dry-run|memory|all)
+    ;;
+  *)
+    echo "--bridge-execute-mode must be dry-run, memory, or all" >&2
+    exit 2
+    ;;
+esac
 case "$ACTION" in
   doctor|health|dashboard|memory-bridge|action-bridge|process-bridges)
     [ -n "$SECOND_BRAIN_ROOT" ] || { echo "$ACTION requires --second-brain-root" >&2; exit 2; }
@@ -355,7 +376,7 @@ echo "NanoClaw path: $REMOTE_PROJECT_ROOT"
 [ -n "$EXPECTED_COMMIT" ] && echo "Expected commit: $EXPECTED_COMMIT"
 case "$ACTION" in
   memory-bridge|codex-bridge|action-bridge|process-bridges)
-    echo "Bridge mode: $([ "$EXECUTE_BRIDGES" = "true" ] && echo execute || echo dry-run)"
+    echo "Bridge execute mode: $BRIDGE_EXECUTE_MODE"
     echo "Bridge limit: $BRIDGE_LIMIT"
     ;;
 esac
@@ -370,7 +391,7 @@ ssh "${SSH_OPTIONS[@]}" "$TARGET" 'bash -s' -- \
   "$UNIT_NAME" \
   "$LINES" \
   "$BRIDGE_LIMIT" \
-  "$EXECUTE_BRIDGES" \
+  "$BRIDGE_EXECUTE_MODE" \
   "$EXPECTED_COMMIT" <<'REMOTE'
 set -euo pipefail
 
@@ -382,7 +403,7 @@ MNEMON_DB="$5"
 UNIT_NAME="$6"
 LINES="$7"
 BRIDGE_LIMIT="$8"
-EXECUTE_BRIDGES="$9"
+BRIDGE_EXECUTE_MODE="$9"
 EXPECTED_COMMIT="${10}"
 
 expand_remote_path() {
@@ -580,7 +601,7 @@ run_memory_bridge() {
   if [ -n "$MNEMON_DB" ]; then
     cmd+=(--mnemon-db "$MNEMON_DB")
   fi
-  if [ "$EXECUTE_BRIDGES" = "true" ]; then
+  if [ "$BRIDGE_EXECUTE_MODE" = "memory" ] || [ "$BRIDGE_EXECUTE_MODE" = "all" ]; then
     cmd+=(--execute)
   fi
   "${cmd[@]}"
@@ -591,7 +612,7 @@ run_codex_bridge() {
   [ -n "$SECOND_BRAIN_ROOT" ] || { echo "Missing second brain root" >&2; exit 2; }
   [ -n "$CODEX_PROJECTS_ROOT" ] || { echo "Missing Codex projects root" >&2; exit 2; }
   cmd=(pnpm run dc:codex-bridge -- process --root "$SECOND_BRAIN_ROOT" --projects-root "$CODEX_PROJECTS_ROOT" --limit "$BRIDGE_LIMIT")
-  if [ "$EXECUTE_BRIDGES" = "true" ]; then
+  if [ "$BRIDGE_EXECUTE_MODE" = "all" ]; then
     cmd+=(--execute)
   fi
   "${cmd[@]}"
@@ -601,7 +622,7 @@ run_action_bridge() {
   require_project
   [ -n "$SECOND_BRAIN_ROOT" ] || { echo "Missing second brain root" >&2; exit 2; }
   cmd=(pnpm run dc:action-bridge -- process --root "$SECOND_BRAIN_ROOT" --limit "$BRIDGE_LIMIT")
-  if [ "$EXECUTE_BRIDGES" = "true" ]; then
+  if [ "$BRIDGE_EXECUTE_MODE" = "all" ]; then
     cmd+=(--execute)
   fi
   "${cmd[@]}"
@@ -609,11 +630,21 @@ run_action_bridge() {
 
 run_process_bridges() {
   echo "== Pi bridge mode =="
-  if [ "$EXECUTE_BRIDGES" = "true" ]; then
-    echo "Executing queued work on the Pi."
-  else
-    echo "Dry run only. Add --execute-bridges to process queued work on the Pi."
-  fi
+  case "$BRIDGE_EXECUTE_MODE" in
+    all)
+      echo "Executing queued memory, Codex, and action work on the Pi."
+      ;;
+    memory)
+      echo "Executing queued memory work on the Pi; Codex/action remain dry-run for Mac-visible handoff review."
+      ;;
+    dry-run)
+      echo "Dry run only. Add --bridge-execute-mode memory for Mnemon only or --execute-bridges for all queued work on the Pi."
+      ;;
+    *)
+      echo "Invalid bridge execute mode: $BRIDGE_EXECUTE_MODE" >&2
+      exit 2
+      ;;
+  esac
   echo
   echo "== Memory bridge =="
   run_memory_bridge

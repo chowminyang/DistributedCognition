@@ -4,13 +4,13 @@ set -euo pipefail
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ACTION="install"
 START="false"
-EXECUTE_BRIDGES="false"
 SECOND_BRAIN_ROOT="${NANOCLAW_PI_SECOND_BRAIN_ROOT:-${DC_SECOND_BRAIN_ROOT:-}}"
 CODEX_PROJECTS_ROOT="${NANOCLAW_PI_CODEX_PROJECTS_ROOT:-}"
 MNEMON_DB="${NANOCLAW_PI_MNEMON_DB:-}"
 PNPM_PATH="$(command -v pnpm 2>/dev/null || true)"
 INTERVAL="${NANOCLAW_PI_BRIDGE_INTERVAL:-5min}"
 UNIT_PREFIX="${NANOCLAW_PI_BRIDGE_UNIT_PREFIX:-}"
+BRIDGE_EXECUTE_MODE="${NANOCLAW_PI_BRIDGE_EXECUTE_MODE:-dry-run}"
 OUTPUT_DIR=""
 
 usage() {
@@ -36,7 +36,9 @@ Options:
   --interval <duration>          systemd OnUnitActiveSec value. Default: 5min.
   --unit-prefix <name>           Unit/timer prefix. Default: distributed-cognition-bridges-<slug>.
   --output-dir <path>            Render units and runner into a directory without installing.
-  --execute-bridges              Add --execute to memory/codex/action bridge jobs.
+  --bridge-execute-mode <mode>   dry-run, memory, or all. Default: dry-run.
+  --execute-memory-bridge        Execute only the Mnemon memory bridge.
+  --execute-bridges              Execute memory/codex/action bridge jobs.
   --start                        Start timers after installing.
   -h, --help                     Show this help.
 
@@ -47,9 +49,11 @@ Environment defaults:
   NANOCLAW_PI_MNEMON_DB
   NANOCLAW_PI_BRIDGE_INTERVAL
   NANOCLAW_PI_BRIDGE_UNIT_PREFIX
+  NANOCLAW_PI_BRIDGE_EXECUTE_MODE
 
 Examples:
   bash scripts/pi-install-bridge-timers.sh --root /home/pi/Distributed-Cognition --codex-projects-root /home/pi/Codex
+  bash scripts/pi-install-bridge-timers.sh --root /home/pi/Distributed-Cognition --codex-projects-root /home/pi/Codex --bridge-execute-mode memory --start
   bash scripts/pi-install-bridge-timers.sh --root /home/pi/Distributed-Cognition --codex-projects-root /home/pi/Codex --execute-bridges --start
   bash scripts/pi-install-bridge-timers.sh status
 EOF
@@ -91,13 +95,22 @@ while [ "$#" -gt 0 ]; do
       [ -n "$UNIT_PREFIX" ] || { echo "Missing value for --unit-prefix" >&2; exit 2; }
       shift 2
       ;;
+    --bridge-execute-mode)
+      BRIDGE_EXECUTE_MODE="${2:-}"
+      [ -n "$BRIDGE_EXECUTE_MODE" ] || { echo "Missing value for --bridge-execute-mode" >&2; exit 2; }
+      shift 2
+      ;;
     --output-dir)
       OUTPUT_DIR="${2:-}"
       [ -n "$OUTPUT_DIR" ] || { echo "Missing value for --output-dir" >&2; exit 2; }
       shift 2
       ;;
+    --execute-memory-bridge)
+      BRIDGE_EXECUTE_MODE="memory"
+      shift
+      ;;
     --execute-bridges)
-      EXECUTE_BRIDGES="true"
+      BRIDGE_EXECUTE_MODE="all"
       shift
       ;;
     --start)
@@ -209,6 +222,14 @@ fi
 [ -n "$SECOND_BRAIN_ROOT" ] || { echo "Missing required --root" >&2; usage >&2; exit 2; }
 [ -n "$CODEX_PROJECTS_ROOT" ] || { echo "Missing required --codex-projects-root" >&2; usage >&2; exit 2; }
 [ -n "$PNPM_PATH" ] || { echo "pnpm not found; pass --pnpm <path>" >&2; exit 1; }
+case "$BRIDGE_EXECUTE_MODE" in
+  dry-run|memory|all)
+    ;;
+  *)
+    echo "--bridge-execute-mode must be dry-run, memory, or all" >&2
+    exit 2
+    ;;
+esac
 
 TARGET_USER="$(target_user)"
 TARGET_HOME="$(resolve_home "$TARGET_USER")"
@@ -228,7 +249,7 @@ write_runner() {
     printf 'CODEX_PROJECTS_ROOT=%q\n' "$CODEX_PROJECTS_ROOT"
     printf 'MNEMON_DB=%q\n' "$MNEMON_DB"
     printf 'PNPM_PATH=%q\n' "$PNPM_PATH"
-    printf 'EXECUTE_BRIDGES=%q\n' "$EXECUTE_BRIDGES"
+    printf 'BRIDGE_EXECUTE_MODE=%q\n' "$BRIDGE_EXECUTE_MODE"
     cat <<'EOF'
 
 if [ "$#" -ne 1 ]; then
@@ -276,21 +297,21 @@ case "$JOB_NAME" in
     if [ -n "$MNEMON_DB" ]; then
       cmd+=(--mnemon-db "$MNEMON_DB")
     fi
-    if [ "$EXECUTE_BRIDGES" = "true" ]; then
+    if [ "$BRIDGE_EXECUTE_MODE" = "memory" ] || [ "$BRIDGE_EXECUTE_MODE" = "all" ]; then
       cmd+=(--execute)
     fi
     "${cmd[@]}"
     ;;
   codex-bridge)
     cmd=("$PNPM_PATH" run dc:codex-bridge -- process --root "$SECOND_BRAIN_ROOT" --projects-root "$CODEX_PROJECTS_ROOT")
-    if [ "$EXECUTE_BRIDGES" = "true" ]; then
+    if [ "$BRIDGE_EXECUTE_MODE" = "all" ]; then
       cmd+=(--execute)
     fi
     "${cmd[@]}"
     ;;
   action-bridge)
     cmd=("$PNPM_PATH" run dc:action-bridge -- process --root "$SECOND_BRAIN_ROOT")
-    if [ "$EXECUTE_BRIDGES" = "true" ]; then
+    if [ "$BRIDGE_EXECUTE_MODE" = "all" ]; then
       cmd+=(--execute)
     fi
     "${cmd[@]}"
@@ -388,11 +409,18 @@ done
 echo "Runner:"
 echo "  $RUNNER_PATH"
 echo "Interval: $INTERVAL"
-if [ "$EXECUTE_BRIDGES" = "true" ]; then
-  echo "Bridge jobs execute queued work."
-else
-  echo "Bridge jobs are dry-run. Reinstall with --execute-bridges to execute queued work."
-fi
+echo "Bridge execute mode: $BRIDGE_EXECUTE_MODE"
+case "$BRIDGE_EXECUTE_MODE" in
+  all)
+    echo "Bridge jobs execute queued memory, Codex, and action work."
+    ;;
+  memory)
+    echo "Memory bridge executes queued work; Codex/action bridge jobs stay dry-run for Mac-visible handoff review."
+    ;;
+  dry-run)
+    echo "Bridge jobs are dry-run. Reinstall with --bridge-execute-mode memory for Mnemon only or --execute-bridges for all queues."
+    ;;
+esac
 if [ "$START" = "true" ]; then
   echo "Started timers."
 else

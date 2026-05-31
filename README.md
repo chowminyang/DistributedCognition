@@ -149,9 +149,11 @@ installs/starts the rclone timer for only the selected
 `Distributed-Cognition` folder, updates the Docker mount allowlist and group
 mounts, installs/starts the Pi systemd service, installs/starts Pi bridge
 timers for health, dashboard, Mnemon, Codex, and action queues, and runs
-`dc:health`. Bridge timers are dry-run by default; pass `--execute-bridges` to
-`pi:ssh-start-runtime` only when you want queued bridge work to execute
-automatically on the Pi.
+`dc:health`. Bridge timers are dry-run by default. For the recommended Pi
+cutover mode, pass `--bridge-execute-mode memory` so Mnemon durable-memory
+promotion runs automatically on the Pi while Codex/action handoffs remain
+reviewable from Mac Codex. Use `--execute-bridges` only when you intentionally
+want memory, Codex, and action queues to execute automatically on the Pi.
 
 To generate a paste-ready `/goal` prompt for the Mac Codex thread that will
 control the Pi on migration day:
@@ -271,7 +273,7 @@ pnpm run pi:ssh-admin -- bridge-timers
 pnpm run pi:ssh-admin -- health
 pnpm run pi:ssh-admin -- doctor --expected-commit "$NANOCLAW_PI_EXPECTED_COMMIT"
 pnpm run pi:ssh-admin -- process-bridges
-pnpm run pi:ssh-admin -- process-bridges --execute-bridges
+pnpm run pi:ssh-admin -- process-bridges --bridge-execute-mode memory
 pnpm run pi:ssh-admin -- restart
 ```
 
@@ -324,15 +326,23 @@ second-brain files. The visible WhatsApp reply is still confirmed manually from
 the bundle checklist.
 
 After WhatsApp replies are proven to come from the Pi, keep the Mac
-NanoClaw/WhatsApp host stopped and process queued bridge work on the Pi from
-Mac Codex over SSH. The Pi bridge timers installed by `pi:ssh-start-runtime`
-will keep doing this periodically; the SSH admin command is useful for a manual
-run or proof check:
+NanoClaw/WhatsApp host stopped. The recommended migration mode is:
+Distributed Cognition runs fully on the Pi for WhatsApp capture, second-brain
+files, dashboard refreshes, and Mnemon promotion; Mac Codex is the SSH control
+plane for monitoring and for app-visible Codex/action handoffs. The Pi bridge
+timers installed by `pi:ssh-start-runtime` can run in `memory` mode
+periodically; the SSH admin command is useful for a manual run or proof check:
 
 ```bash
 pnpm run pi:ssh-admin -- process-bridges
-pnpm run pi:ssh-admin -- process-bridges --execute-bridges
+pnpm run pi:ssh-admin -- process-bridges --bridge-execute-mode memory
 ```
+
+The first command is a dry run at the bridge level. The second command
+executes only the Pi-side `dc:memory-bridge`; `dc:codex-bridge` and
+`dc:action-bridge` remain dry-run so the queued handoff can still be picked up
+from the Mac Codex app. Use `--execute-bridges` only when you intentionally
+want all queued bridge work to execute on the Pi.
 
 If you specifically need Codex Desktop/App-visible local handoffs on the Mac,
 you can install only the Mac bridge launchd jobs after the Pi WhatsApp runtime

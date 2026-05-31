@@ -34,6 +34,8 @@ describe('remote runtime context', () => {
     expect(markdown).toContain(
       "pnpm run pi:ssh-admin -- process-bridges --host 'nanoclaw-pi.local' --user 'pi' --path '/home/pi/NanoClaw' --second-brain-root '/home/pi/Distributed-Cognition' --codex-projects-root '/home/pi/Codex'",
     );
+    expect(markdown).toContain('--bridge-execute-mode memory');
+    expect(markdown).toContain('keeping Codex/action handoffs reviewable from Mac Codex');
     expect(markdown).toContain('--execute-bridges');
     expect(markdown).toContain("--expected-commit 'abc123'");
   });

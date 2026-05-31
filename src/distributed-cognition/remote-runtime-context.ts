@@ -48,7 +48,7 @@ function normalizedAdminCommand(command?: string): string {
 function adminCommand(
   config: RemoteRuntimeConfig,
   action: string,
-  options: { includeSecondBrain?: boolean; includeCodexProjects?: boolean; executeBridges?: boolean } = {},
+  options: { includeSecondBrain?: boolean; includeCodexProjects?: boolean; bridgeExecuteMode?: 'memory' | 'all' } = {},
 ): string {
   const parts = [
     normalizedAdminCommand(config.adminCommand),
@@ -59,7 +59,8 @@ function adminCommand(
   ];
   if (options.includeSecondBrain) parts.push(...commandOption('second-brain-root', config.secondBrainRoot));
   if (options.includeCodexProjects) parts.push(...commandOption('codex-projects-root', config.codexProjectsRoot));
-  if (options.executeBridges) parts.push('--execute-bridges');
+  if (options.bridgeExecuteMode === 'memory') parts.push('--bridge-execute-mode', 'memory');
+  if (options.bridgeExecuteMode === 'all') parts.push('--execute-bridges');
   if (config.expectedCommit && (action === 'status' || action === 'doctor')) {
     parts.push(...commandOption('expected-commit', config.expectedCommit));
   }
@@ -93,6 +94,9 @@ export function renderRemoteRuntimeContext(config?: RemoteRuntimeConfig): string
   lines.push(`- ${adminCommand(config, 'bridge-timers')}`);
   if (config.secondBrainRoot && config.codexProjectsRoot) {
     lines.push(
+      '- For bridge work, use dry-run first; use memory mode for Pi-side Mnemon promotion while keeping Codex/action handoffs reviewable from Mac Codex.',
+    );
+    lines.push(
       `- ${adminCommand(config, 'process-bridges', {
         includeSecondBrain: true,
         includeCodexProjects: true,
@@ -102,7 +106,14 @@ export function renderRemoteRuntimeContext(config?: RemoteRuntimeConfig): string
       `- ${adminCommand(config, 'process-bridges', {
         includeSecondBrain: true,
         includeCodexProjects: true,
-        executeBridges: true,
+        bridgeExecuteMode: 'memory',
+      })}`,
+    );
+    lines.push(
+      `- ${adminCommand(config, 'process-bridges', {
+        includeSecondBrain: true,
+        includeCodexProjects: true,
+        bridgeExecuteMode: 'all',
       })}`,
     );
   }

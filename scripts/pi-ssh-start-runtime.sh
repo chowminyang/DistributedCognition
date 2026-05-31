@@ -17,10 +17,10 @@ RCLONE_MODE="${NANOCLAW_PI_RCLONE_MODE:-copy}"
 UNIT_NAME="${NANOCLAW_PI_UNIT_NAME:-}"
 BRIDGE_INTERVAL="${NANOCLAW_PI_BRIDGE_INTERVAL:-5min}"
 BRIDGE_UNIT_PREFIX="${NANOCLAW_PI_BRIDGE_UNIT_PREFIX:-}"
+BRIDGE_EXECUTE_MODE="${NANOCLAW_PI_BRIDGE_EXECUTE_MODE:-dry-run}"
 SSH_CONNECT_TIMEOUT="${NANOCLAW_PI_SSH_CONNECT_TIMEOUT:-}"
 ALLOW_MAC_HOST_RUNNING="${NANOCLAW_PI_ALLOW_MAC_HOST_RUNNING:-false}"
 EXECUTE=false
-EXECUTE_BRIDGES=false
 SKIP_RCLONE=false
 SKIP_DOCKER_ACCESS=false
 SKIP_SYSTEMD=false
@@ -69,7 +69,9 @@ Optional:
   --unit-name <name>             NanoClaw systemd unit name override.
   --bridge-interval <duration>   Pi bridge timer interval. Default: 5min.
   --bridge-unit-prefix <name>    Pi bridge timer unit prefix.
-  --execute-bridges              Install Pi bridge timers in execute mode.
+  --bridge-execute-mode <mode>   dry-run, memory, or all. Default: dry-run.
+  --execute-memory-bridge        Install Pi bridge timers so only Mnemon executes.
+  --execute-bridges              Install Pi bridge timers so all queues execute.
   --skip-rclone                  Do not install/start the rclone timer.
   --skip-docker-access           Do not update Docker mount access.
   --skip-systemd                 Do not install/start the systemd service.
@@ -99,11 +101,13 @@ Environment defaults:
   NANOCLAW_PI_UNIT_NAME
   NANOCLAW_PI_BRIDGE_INTERVAL
   NANOCLAW_PI_BRIDGE_UNIT_PREFIX
+  NANOCLAW_PI_BRIDGE_EXECUTE_MODE
   NANOCLAW_PI_SSH_CONNECT_TIMEOUT
   NANOCLAW_PI_ALLOW_MAC_HOST_RUNNING
 
 Examples:
   bash scripts/pi-ssh-start-runtime.sh --host nanoclaw-pi.local --user pi --path /home/pi/NanoClaw --second-brain-root /home/pi/Distributed-Cognition --codex-projects-root /home/pi/Codex
+  bash scripts/pi-ssh-start-runtime.sh --host nanoclaw-pi.local --user pi --path /home/pi/NanoClaw --second-brain-root /home/pi/Distributed-Cognition --codex-projects-root /home/pi/Codex --bridge-execute-mode memory
   bash scripts/pi-ssh-start-runtime.sh --host nanoclaw-pi.local --user pi --path /home/pi/NanoClaw --second-brain-root /home/pi/Distributed-Cognition --codex-projects-root /home/pi/Codex --execute
 EOF
 }
@@ -326,8 +330,17 @@ while [ "$#" -gt 0 ]; do
       [ -n "$BRIDGE_UNIT_PREFIX" ] || { echo "Missing value for --bridge-unit-prefix" >&2; exit 2; }
       shift 2
       ;;
+    --bridge-execute-mode)
+      BRIDGE_EXECUTE_MODE="${2:-}"
+      [ -n "$BRIDGE_EXECUTE_MODE" ] || { echo "Missing value for --bridge-execute-mode" >&2; exit 2; }
+      shift 2
+      ;;
+    --execute-memory-bridge)
+      BRIDGE_EXECUTE_MODE=memory
+      shift
+      ;;
     --execute-bridges)
-      EXECUTE_BRIDGES=true
+      BRIDGE_EXECUTE_MODE=all
       shift
       ;;
     --skip-rclone)
@@ -391,6 +404,15 @@ if [ -z "$RCLONE_TARGET" ]; then
   RCLONE_TARGET="${RCLONE_REMOTE}${RCLONE_FOLDER}"
 fi
 
+case "$BRIDGE_EXECUTE_MODE" in
+  dry-run|memory|all)
+    ;;
+  *)
+    echo "--bridge-execute-mode must be dry-run, memory, or all" >&2
+    exit 2
+    ;;
+esac
+
 case "$ALLOW_MAC_HOST_RUNNING" in
   true|false)
     ;;
@@ -419,7 +441,7 @@ echo "rclone target: $RCLONE_TARGET"
 echo "rclone interval: $RCLONE_INTERVAL"
 echo "rclone mode: $RCLONE_MODE"
 echo "bridge timer interval: $BRIDGE_INTERVAL"
-echo "bridge timer mode: $([ "$EXECUTE_BRIDGES" = "true" ] && echo execute || echo dry-run)"
+echo "bridge execute mode: $BRIDGE_EXECUTE_MODE"
 echo "Mac host guard: $([ "$ALLOW_MAC_HOST_RUNNING" = "true" ] && echo bypassed || echo enforced)"
 [ -n "$SSH_CONNECT_TIMEOUT" ] && echo "SSH connect timeout: ${SSH_CONNECT_TIMEOUT}s"
 [ -n "$UNIT_NAME" ] && echo "Service unit: $UNIT_NAME"
@@ -459,15 +481,12 @@ if [ "$EXECUTE" != "true" ]; then
   if [ "$SKIP_BRIDGE_TIMERS" = "true" ]; then
     echo "  # skip Pi bridge timers"
   else
-    bridge_cmd="bash scripts/pi-install-bridge-timers.sh --root $(shell_quote "$SECOND_BRAIN_ROOT") --codex-projects-root $(shell_quote "$CODEX_PROJECTS_ROOT") --interval $(shell_quote "$BRIDGE_INTERVAL") --start"
+    bridge_cmd="bash scripts/pi-install-bridge-timers.sh --root $(shell_quote "$SECOND_BRAIN_ROOT") --codex-projects-root $(shell_quote "$CODEX_PROJECTS_ROOT") --interval $(shell_quote "$BRIDGE_INTERVAL") --bridge-execute-mode $(shell_quote "$BRIDGE_EXECUTE_MODE") --start"
     if [ -n "$MNEMON_DB" ]; then
       bridge_cmd="$bridge_cmd --mnemon-db $(shell_quote "$MNEMON_DB")"
     fi
     if [ -n "$BRIDGE_UNIT_PREFIX" ]; then
       bridge_cmd="$bridge_cmd --unit-prefix $(shell_quote "$BRIDGE_UNIT_PREFIX")"
-    fi
-    if [ "$EXECUTE_BRIDGES" = "true" ]; then
-      bridge_cmd="$bridge_cmd --execute-bridges"
     fi
     echo "  $bridge_cmd"
   fi
@@ -495,7 +514,7 @@ ssh "${SSH_OPTIONS[@]}" "$TARGET" 'bash -s' -- \
   "$UNIT_NAME" \
   "$BRIDGE_INTERVAL" \
   "$BRIDGE_UNIT_PREFIX" \
-  "$EXECUTE_BRIDGES" \
+  "$BRIDGE_EXECUTE_MODE" \
   "$SKIP_RCLONE" \
   "$SKIP_DOCKER_ACCESS" \
   "$SKIP_SYSTEMD" \
@@ -514,7 +533,7 @@ RCLONE_MODE="$8"
 UNIT_NAME="$9"
 BRIDGE_INTERVAL="${10}"
 BRIDGE_UNIT_PREFIX="${11}"
-EXECUTE_BRIDGES="${12}"
+BRIDGE_EXECUTE_MODE="${12}"
 SKIP_RCLONE="${13}"
 SKIP_DOCKER_ACCESS="${14}"
 SKIP_SYSTEMD="${15}"
@@ -607,15 +626,12 @@ fi
 if [ "$SKIP_BRIDGE_TIMERS" != "true" ]; then
   echo
   echo "== Install And Start Pi Bridge Timers =="
-  bridge_cmd=(bash scripts/pi-install-bridge-timers.sh --root "$SECOND_BRAIN_ROOT" --codex-projects-root "$CODEX_PROJECTS_ROOT" --interval "$BRIDGE_INTERVAL" --start)
+  bridge_cmd=(bash scripts/pi-install-bridge-timers.sh --root "$SECOND_BRAIN_ROOT" --codex-projects-root "$CODEX_PROJECTS_ROOT" --interval "$BRIDGE_INTERVAL" --bridge-execute-mode "$BRIDGE_EXECUTE_MODE" --start)
   if [ -n "$MNEMON_DB" ]; then
     bridge_cmd+=(--mnemon-db "$MNEMON_DB")
   fi
   if [ -n "$BRIDGE_UNIT_PREFIX" ]; then
     bridge_cmd+=(--unit-prefix "$BRIDGE_UNIT_PREFIX")
-  fi
-  if [ "$EXECUTE_BRIDGES" = "true" ]; then
-    bridge_cmd+=(--execute-bridges)
   fi
   "${bridge_cmd[@]}"
 else

@@ -271,10 +271,12 @@ fi
 if [ -n "$PI_UNIT_NAME" ]; then
   start_runtime_cmd="$start_runtime_cmd --unit-name $(quote_shell "$PI_UNIT_NAME")"
 fi
+start_runtime_cmd="$start_runtime_cmd --bridge-execute-mode memory"
 section "5. Configure Pi Sync And Service"
 print_command "$start_runtime_cmd"
 print_command "# The --execute path refuses to start while the Mac NanoClaw host or NanoClaw Docker agent containers appear to be running."
-print_command "# This also installs Pi bridge timers in dry-run mode by default. Add --execute-bridges only when queued bridge work should execute automatically on the Pi."
+print_command "# This also installs Pi bridge timers in memory mode: Mnemon executes on the Pi, while Codex/action queues stay reviewable from Mac Codex."
+print_command "# Use --execute-bridges only when all queued bridge work should execute automatically on the Pi."
 print_command "# If the dry run is correct, rerun the same command with --execute."
 
 section "6. Smoke Test From Mac"
@@ -316,15 +318,17 @@ section "8. Post-Cutover Bridge Work"
 cat <<'EOF'
   Default for the Pi migration: keep the Mac NanoClaw/WhatsApp host stopped and
   use Mac Codex only as an SSH operator. The Pi bridge timers handle queued
-  Mnemon, Codex, and action work periodically; run one manual check:
+  Mnemon promotion periodically while Codex/action queues stay reviewable from
+  Mac Codex; run one manual check:
 EOF
 if [ -n "$LOCAL_SECOND_BRAIN_ROOT" ]; then
   print_command "pnpm run pi:ssh-admin -- process-bridges"
-  print_command "pnpm run pi:ssh-admin -- process-bridges --execute-bridges"
+  print_command "pnpm run pi:ssh-admin -- process-bridges --bridge-execute-mode memory"
 else
   print_command "pnpm run pi:ssh-admin -- process-bridges"
-  print_command "pnpm run pi:ssh-admin -- process-bridges --execute-bridges"
+  print_command "pnpm run pi:ssh-admin -- process-bridges --bridge-execute-mode memory"
 fi
+print_command "# Use pnpm run pi:ssh-admin -- process-bridges --execute-bridges only if you intentionally want all queued bridge work to execute on the Pi."
 cat <<'EOF'
 
   Optional tradeoff: if you specifically need Codex Desktop/App-visible local

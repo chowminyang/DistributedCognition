@@ -241,7 +241,7 @@ Work plan:
    pnpm run pi:ssh-restore-state -- --host "${PI_HOST_DISPLAY}" --user "${PI_USER_DISPLAY}" --path "${PI_PROJECT_DISPLAY}" --bundle "\$STATE_BUNDLE" --force --cleanup-remote
    If the dry run is correct, rerun the same command with --execute. This must verify sha256 on the Pi before importing.
 9. Configure rclone sync, update Docker mount access, install/start systemd, install/start Pi bridge timers, and run health using the dry-run helper first:
-   pnpm run pi:ssh-start-runtime -- --host "${PI_HOST_DISPLAY}" --user "${PI_USER_DISPLAY}" --path "${PI_PROJECT_DISPLAY}" --second-brain-root "${PI_SECOND_BRAIN_DISPLAY}" --codex-projects-root "${PI_CODEX_DISPLAY}" --rclone-remote "${PI_RCLONE_REMOTE}"
+   pnpm run pi:ssh-start-runtime -- --host "${PI_HOST_DISPLAY}" --user "${PI_USER_DISPLAY}" --path "${PI_PROJECT_DISPLAY}" --second-brain-root "${PI_SECOND_BRAIN_DISPLAY}" --codex-projects-root "${PI_CODEX_DISPLAY}" --rclone-remote "${PI_RCLONE_REMOTE}" --bridge-execute-mode memory
    If the dry run is correct, rerun the same command with --execute. The execute path must refuse to start while the Mac NanoClaw host is still running or while Mac NanoClaw Docker agent containers are still running, unless I explicitly approve rollback/emergency override.
 10. Verify from the Mac:
    pnpm run pi:ssh-admin -- status --expected-commit "\$EXPECTED_COMMIT"
@@ -273,10 +273,11 @@ Work plan:
      --proof-text "\$PROOF_TEXT" \\
      --proof-since-minutes 30 \\
      --execute
-13. After WhatsApp is proven to be replying from the Pi, keep the Mac NanoClaw host stopped. Confirm Pi bridge timers are installed, then process DC bridge work on the Pi with one manual bridge dry-run/execution from Mac Codex over SSH:
+13. After WhatsApp is proven to be replying from the Pi, keep the Mac NanoClaw host stopped. Confirm Pi bridge timers are installed, then process DC bridge work on the Pi with one manual bridge dry-run/memory-only execution from Mac Codex over SSH:
    pnpm run pi:ssh-admin -- status --expected-commit "\$EXPECTED_COMMIT"
    pnpm run pi:ssh-admin -- process-bridges
-   pnpm run pi:ssh-admin -- process-bridges --execute-bridges
+   pnpm run pi:ssh-admin -- process-bridges --bridge-execute-mode memory
+   Use pnpm run pi:ssh-admin -- process-bridges --execute-bridges only if I explicitly want memory, Codex, and action queues to execute on the Pi.
    Do not restart the Mac NanoClaw/WhatsApp host unless I explicitly roll back.
 14. If I choose Mac-visible Codex Desktop/App handoffs after the Pi runtime is proven, source the rehearsal operator-env.sh, initialize/review the Mac bridge configs, and install only the Mac bridge jobs. The generated Codex/action prompts should include Pi SSH runtime context so Mac Codex controls the Pi instead of reviving the Mac WhatsApp host.
 
@@ -294,7 +295,7 @@ Completion evidence required:
 - The proof phrase from the live WhatsApp test is found in recent Pi second-brain files by running pnpm run pi:verify-cutover -- --proof-text ... --execute.
 - A raw note and processed note are created in the Pi Distributed-Cognition folder.
 - rclone sync is configured for only the selected Distributed-Cognition folder.
-- DC bridge work is either processed on the Pi through pnpm run pi:ssh-admin -- process-bridges, or Mac bridge jobs are intentionally enabled only after the Pi runtime is proven and their prompts include Pi SSH runtime context.
+- DC memory bridge work is processed on the Pi through pnpm run pi:ssh-admin -- process-bridges --bridge-execute-mode memory; Codex/action handoffs either remain queued for Mac Codex app visibility or are intentionally run on the Pi with --execute-bridges.
 - No secrets are printed, committed, or synced to Dropbox.
 - Rollback command is documented before the final switch.
 
